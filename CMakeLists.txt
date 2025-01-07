@@ -20,14 +20,19 @@ CPMAddPackage(
         "MLN_WITH_WERROR OFF"
         "MLN_LEGACY_RENDERER OFF"
         "MLN_DRAWABLE_RENDERER ON"
-        ${renderer_option}
-)
+        ${renderer_option})
 
-add_library(${PROJECT_NAME} SHARED
-        "src/ClientOptions.cpp")
+set(sources
+        "src/ClientOptions.cpp"
+        "src/ResourceOptions.cpp")
 
-set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER
-        "include/ClientOptions.h")
+add_library(${PROJECT_NAME} SHARED ${sources})
+
+set(public_headers
+        "include/ClientOptions.h"
+        "include/ResourceOptions.h")
+
+set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${public_headers}")
 
 include_directories("include")
 
