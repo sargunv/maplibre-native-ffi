@@ -1,13 +1,11 @@
 ---
-BasedOnStyle: Google
+BasedOnStyle: Microsoft
 ColumnLimit: 80
-TabWidth: 2
+IndentWidth: 2
+ContinuationIndentWidth: 2
 UseCRLF: false
 UseTab: Never
 AlignAfterOpenBracket: BlockIndent
-KeepEmptyLines:
-  AtStartOfFile: false
-  AtEndOfFile: false
 IncludeCategories:
   - Regex: '^<((mbgl)\/).*>$'
     Priority: 4
