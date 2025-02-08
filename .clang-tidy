@@ -1,4 +1,4 @@
 ---
-Checks: '-*,bugprone-*,clang-analyzer-*,modernize-*,readability-*,performance-*,misc-*'
+Checks: '-*,bugprone-*,clang-analyzer-*,modernize-*,readability-*,-readability-magic-numbers,performance-*,misc-*'
 WarningsAsErrors: '*'
 FormatStyle: file

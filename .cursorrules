@@ -18,11 +18,17 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 - My goal is to eventually use it to make map apps in other languages, like Kotlin Native, Kotlin JVM, Rust, and so on on platforms like macOS, Linux, Windows, Android, and iOS.
 - Our bindings are prefixed with `MLN_`. For example, `MLN_TypeName_methodName`.
 - We manage C++ objects as `void *`.
+- We write very modern C/C++, with clang-tidy for enforcement. This means `using`, `auto`, trailing return types, etc.
+- Setter methods should use `set` prefix (e.g. `MLN_MapOptions_setSize`), not `with` prefix.
+- Constructor/destructor pairs should use `new`/`delete` (e.g. `MLN_MapOptions_new`, `MLN_MapOptions_delete`), not `create`/`destroy`.
+- Getter methods should not use `get` prefix (e.g. `MLN_MapOptions_size`, not `MLN_MapOptions_getSize`).
+- Always run `just format` after making code changes to ensure consistent formatting.
 
 ## Cursor learned
 
 - Project uses CMake as build system, with clang-format and clang-tidy for code quality
 - Project uses justfile for common development tasks like building, formatting, and linting
+- Each component should have unit tests to verify the bindings work correctly.
 
 # Scratchpad
 
@@ -35,33 +41,46 @@ To create a minimal working map view, we need to implement bindings for the foll
    - Required for basic resource management
    - Key settings: API key, cache path, asset path
    - Minimal bindings needed:
-     - [ ] `MLN_ResourceOptions_create()`
-     - [ ] `MLN_ResourceOptions_destroy()`
-     - [ ] `MLN_ResourceOptions_withCachePath()`
-     - [ ] `MLN_ResourceOptions_withAssetPath()`
+     - [X] `MLN_ResourceOptions_new()`
+     - [X] `MLN_ResourceOptions_delete()`
+     - [X] `MLN_ResourceOptions_setCachePath()`
+     - [X] `MLN_ResourceOptions_setAssetPath()`
+   - Tests:
+     - [X] Basic creation/destruction
+     - [X] All setters/getters
+     - [X] Memory management
 
 2. ClientOptions
    - Identifies the client application
    - Minimal bindings needed:
-     - [ ] `MLN_ClientOptions_create()`
-     - [ ] `MLN_ClientOptions_destroy()`
-     - [ ] `MLN_ClientOptions_withName()`
+     - [X] `MLN_ClientOptions_new()`
+     - [X] `MLN_ClientOptions_delete()`
+     - [X] `MLN_ClientOptions_setName()`
+   - Tests:
+     - [X] Basic creation/destruction
+     - [X] All setters/getters
+     - [X] Memory management
 
 3. MapOptions
    - Configures the map view
    - Key settings: size, viewport mode, constrain mode
    - Minimal bindings needed:
-     - [ ] `MLN_MapOptions_create()`
-     - [ ] `MLN_MapOptions_destroy()`
-     - [ ] `MLN_MapOptions_withSize()`
-     - [ ] `MLN_MapOptions_withPixelRatio()`
+     - [X] `MLN_MapOptions_new()`
+     - [X] `MLN_MapOptions_delete()`
+     - [X] `MLN_MapOptions_setSize()`
+     - [X] `MLN_MapOptions_setPixelRatio()`
+   - Tests:
+     - [X] Basic creation/destruction
+     - [X] All setters/getters
+     - [X] Type conversions
+     - [X] Memory management
 
 4. Map
    - The main map object that ties everything together
    - Requires a renderer frontend and map observer
    - Minimal bindings needed:
-     - [ ] `MLN_Map_create()`
-     - [ ] `MLN_Map_destroy()`
+     - [ ] `MLN_Map_new()`
+     - [ ] `MLN_Map_delete()`
      - [ ] `MLN_Map_setStyle()`
      - [ ] `MLN_Map_jumpTo()` (for initial camera position)
 
@@ -69,10 +88,10 @@ To create a minimal working map view, we need to implement bindings for the foll
 1. CameraOptions
    - Required for setting the initial view
    - Minimal bindings needed:
-     - [ ] `MLN_CameraOptions_create()`
-     - [ ] `MLN_CameraOptions_destroy()`
-     - [ ] `MLN_CameraOptions_withCenter()`
-     - [ ] `MLN_CameraOptions_withZoom()`
+     - [ ] `MLN_CameraOptions_new()`
+     - [ ] `MLN_CameraOptions_delete()`
+     - [ ] `MLN_CameraOptions_setCenter()`
+     - [ ] `MLN_CameraOptions_setZoom()`
 
 2. RendererFrontend
    - Required for rendering the map
