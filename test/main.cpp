@@ -1,6 +1,5 @@
 #include <cstdio>
 
-// Test function declarations
 void run_map_options_tests();
 void run_client_options_tests();
 void run_resource_options_tests();
@@ -8,7 +7,7 @@ void run_resource_options_tests();
 void run_metal_renderer_backend_tests();
 #endif
 
-int main()
+auto main() -> int
 {
   printf("Running all tests...\n\n");
 

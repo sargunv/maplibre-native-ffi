@@ -30,7 +30,7 @@ public:
 
   void updateDrawableSize()
   {
-    CGSize size = CGSizeMake(
+    CGSize const size = CGSizeMake(
       static_cast<CGFloat>(width_) * pixelRatio_,
       static_cast<CGFloat>(height_) * pixelRatio_
     );
@@ -90,7 +90,7 @@ extern "C"
   auto MLN_MetalRendererBackend_getDevice(MLN_MetalRendererBackend *backend)
     -> void *
   {
-    auto *metal_backend = reinterpret_cast<MLN_MetalRendererBackend *>(backend);
+    auto *metal_backend = backend;
     return (__bridge void *)metal_backend->device();
   }
 
@@ -98,27 +98,27 @@ extern "C"
     MLN_MetalRendererBackend *backend
   ) -> void *
   {
-    auto *metal_backend = reinterpret_cast<MLN_MetalRendererBackend *>(backend);
+    auto *metal_backend = backend;
     return (__bridge void *)metal_backend->commandQueue();
   }
 
   auto MLN_MetalRendererBackend_getLayer(MLN_MetalRendererBackend *backend)
     -> void *
   {
-    auto *metal_backend = reinterpret_cast<MLN_MetalRendererBackend *>(backend);
+    auto *metal_backend = backend;
     return (__bridge void *)metal_backend->layer();
   }
 
   void MLN_MetalRendererBackend_delete(MLN_MetalRendererBackend *backend)
   {
-    delete reinterpret_cast<MLN_MetalRendererBackend *>(backend);
+    delete backend;
   }
 
   void MLN_MetalRendererBackend_setSize(
     MLN_MetalRendererBackend *backend, std::uint32_t width, std::uint32_t height
   )
   {
-    auto *metal_backend = reinterpret_cast<MLN_MetalRendererBackend *>(backend);
+    auto *metal_backend = backend;
     metal_backend->setSize(width, height);
   }
 }

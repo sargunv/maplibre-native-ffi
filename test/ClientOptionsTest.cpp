@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-static void test_create_destroy()
+void test_create_destroy()
 {
   printf("Running create_destroy... ");
   auto *options = MLN_ClientOptions_new();
@@ -12,7 +12,7 @@ static void test_create_destroy()
   printf("OK\n");
 }
 
-static void test_name()
+void test_name()
 {
   printf("Running name... ");
   auto *options = MLN_ClientOptions_new();

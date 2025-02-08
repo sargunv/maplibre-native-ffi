@@ -5,7 +5,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-void run_metal_renderer_backend_tests()
+void test_create_destroy()
 {
   printf("Running create_destroy... ");
 
@@ -21,7 +21,7 @@ void run_metal_renderer_backend_tests()
   layer.device = device;
 
   // Create backend options
-  MLN_MetalRendererBackend_Options options = {
+  MLN_MetalRendererBackend_Options const options = {
     .metal_device = (__bridge void *)device,
     .metal_layer = (__bridge void *)layer,
     .command_queue = (__bridge void *)commandQueue,
@@ -55,4 +55,9 @@ void run_metal_renderer_backend_tests()
   [commandQueue release];
 
   printf("OK\n");
+}
+
+void run_metal_renderer_backend_tests()
+{
+  test_create_destroy();
 }

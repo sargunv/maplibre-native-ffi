@@ -2,7 +2,7 @@
 #include <cassert>
 #include <cstdio>
 
-static void test_create_destroy()
+void test_create_destroy()
 {
   printf("Running create_destroy... ");
   auto *options = MLN_MapOptions_new();
@@ -11,7 +11,7 @@ static void test_create_destroy()
   printf("OK\n");
 }
 
-static void test_map_mode()
+void test_map_mode()
 {
   printf("Running map_mode... ");
   auto *options = MLN_MapOptions_new();
@@ -21,7 +21,7 @@ static void test_map_mode()
   printf("OK\n");
 }
 
-static void test_constrain_mode()
+void test_constrain_mode()
 {
   printf("Running constrain_mode... ");
   auto *options = MLN_MapOptions_new();
@@ -31,7 +31,7 @@ static void test_constrain_mode()
   printf("OK\n");
 }
 
-static void test_viewport_mode()
+void test_viewport_mode()
 {
   printf("Running viewport_mode... ");
   auto *options = MLN_MapOptions_new();
@@ -41,7 +41,7 @@ static void test_viewport_mode()
   printf("OK\n");
 }
 
-static void test_cross_source_collisions()
+void test_cross_source_collisions()
 {
   printf("Running cross_source_collisions... ");
   auto *options = MLN_MapOptions_new();
@@ -51,20 +51,20 @@ static void test_cross_source_collisions()
   printf("OK\n");
 }
 
-static void test_size()
+void test_size()
 {
   printf("Running size... ");
   auto *options = MLN_MapOptions_new();
-  MLN_Size size = {800.0F, 600.0F};
+  MLN_Size const size = {800.0F, 600.0F};
   MLN_MapOptions_setSize(options, size);
-  MLN_Size got = MLN_MapOptions_size(options);
+  MLN_Size const got = MLN_MapOptions_size(options);
   assert(got.width == size.width);
   assert(got.height == size.height);
   MLN_MapOptions_delete(options);
   printf("OK\n");
 }
 
-static void test_pixel_ratio()
+void test_pixel_ratio()
 {
   printf("Running pixel_ratio... ");
   auto *options = MLN_MapOptions_new();

@@ -31,7 +31,7 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 - Project uses justfile for common development tasks like building, formatting, and linting
 - Each component should have unit tests to verify the bindings work correctly
 - Tests are organized in a single executable with each component's tests in a separate file
-- Test functions should be static and each test file should expose a run_*_tests() function
+- Test functions should be in an anonymous namespace and each test file should expose a run_*_tests() function
 
 #Scratchpad
 

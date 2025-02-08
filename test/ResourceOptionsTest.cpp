@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-static void test_create_destroy()
+void test_create_destroy()
 {
   printf("Running create_destroy... ");
   auto *options = MLN_ResourceOptions_new();
@@ -12,7 +12,7 @@ static void test_create_destroy()
   printf("OK\n");
 }
 
-static void test_cache_path()
+void test_cache_path()
 {
   printf("Running cache_path... ");
   auto *options = MLN_ResourceOptions_new();
@@ -23,7 +23,7 @@ static void test_cache_path()
   printf("OK\n");
 }
 
-static void test_asset_path()
+void test_asset_path()
 {
   printf("Running asset_path... ");
   auto *options = MLN_ResourceOptions_new();

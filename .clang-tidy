@@ -1,3 +1,5 @@
 ---
-Checks: '-*,bugprone-*,clang-analyzer-*,modernize-*,readability-*,performance-*,misc-*,-readability-magic-numbers,-bugprone-easily-swappable-parameters'
+Checks: '-*,bugprone-*,clang-analyzer-*,modernize-*,readability-*,performance-*,misc-*,-readability-magic-numbers,-bugprone-easily-swappable-parameters,-performance-enum-size'
+WarningsAsErrors: '*'
 FormatStyle: file
+...
