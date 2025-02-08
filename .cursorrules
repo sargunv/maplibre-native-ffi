@@ -1,0 +1,200 @@
+# Instructions
+
+During your interaction with the user, if you find anything reusable in this project (e.g. version of a library, model name), especially about a fix to a mistake you made or a correction you received, you should take note in the `Lessons` section in the `.cursorrules` file so you will not make the same mistake again.
+
+You should also use the `.cursorrules` file as a Scratchpad to organize your thoughts. Especially when you receive a new task, you should first review the content of the Scratchpad, clear old different task if necessary, first explain the task, and plan the steps you need to take to complete the task. You can use todo markers to indicate the progress, e.g.
+[X] Task 1
+[ ] Task 2
+
+Also update the progress of the task in the Scratchpad when you finish a subtask.
+Especially when you finished a milestone, it will help to improve your depth of task accomplishment to use the Scratchpad to reflect and plan.
+The goal is to help you maintain a big picture as well as the progress of the task. Always refer to the Scratchpad when you plan the next step.
+
+# Lessons
+
+## User Specified Lessons
+
+- This project is intended to be a set of C bindings for using maplibre native.
+- My goal is to eventually use it to make map apps in other languages, like Kotlin Native, Kotlin JVM, Rust, and so on on platforms like macOS, Linux, Windows, Android, and iOS.
+- Our bindings are prefixed with `MLN_`. For example, `MLN_TypeName_methodName`.
+- We manage C++ objects as `void *`.
+
+## Cursor learned
+
+- Project uses CMake as build system, with clang-format and clang-tidy for code quality
+- Project uses justfile for common development tasks like building, formatting, and linting
+
+# Scratchpad
+
+## MapLibre Native Initialization Requirements
+
+To create a minimal working map view, we need to implement bindings for the following components:
+
+### Core Components (in order of initialization)
+1. ResourceOptions
+   - Required for basic resource management
+   - Key settings: API key, cache path, asset path
+   - Minimal bindings needed:
+     - [ ] `MLN_ResourceOptions_create()`
+     - [ ] `MLN_ResourceOptions_destroy()`
+     - [ ] `MLN_ResourceOptions_withCachePath()`
+     - [ ] `MLN_ResourceOptions_withAssetPath()`
+
+2. ClientOptions
+   - Identifies the client application
+   - Minimal bindings needed:
+     - [ ] `MLN_ClientOptions_create()`
+     - [ ] `MLN_ClientOptions_destroy()`
+     - [ ] `MLN_ClientOptions_withName()`
+
+3. MapOptions
+   - Configures the map view
+   - Key settings: size, viewport mode, constrain mode
+   - Minimal bindings needed:
+     - [ ] `MLN_MapOptions_create()`
+     - [ ] `MLN_MapOptions_destroy()`
+     - [ ] `MLN_MapOptions_withSize()`
+     - [ ] `MLN_MapOptions_withPixelRatio()`
+
+4. Map
+   - The main map object that ties everything together
+   - Requires a renderer frontend and map observer
+   - Minimal bindings needed:
+     - [ ] `MLN_Map_create()`
+     - [ ] `MLN_Map_destroy()`
+     - [ ] `MLN_Map_setStyle()`
+     - [ ] `MLN_Map_jumpTo()` (for initial camera position)
+
+### Additional Components for Basic Functionality
+1. CameraOptions
+   - Required for setting the initial view
+   - Minimal bindings needed:
+     - [ ] `MLN_CameraOptions_create()`
+     - [ ] `MLN_CameraOptions_destroy()`
+     - [ ] `MLN_CameraOptions_withCenter()`
+     - [ ] `MLN_CameraOptions_withZoom()`
+
+2. RendererFrontend
+   - Required for rendering the map
+   - This will be platform-specific (GLFW, Qt, etc.)
+   - The caller must implement:
+     1. A platform-specific View class that:
+        - Manages the window/surface for rendering
+        - Handles input events (mouse, keyboard, etc.)
+        - Implements MapObserver for map event callbacks
+        - Provides access to the RendererBackend
+     2. A platform-specific RendererBackend that:
+        - Manages the graphics context (OpenGL, Metal, Vulkan)
+        - Handles frame buffer management
+        - Implements platform-specific rendering
+   - Interface definition:
+     ```c
+     // Function pointer types
+     typedef void (*MLN_RendererFrontend_Reset_Fn)(void *context);
+     typedef void (*MLN_RendererFrontend_SetObserver_Fn)(void *context, void *observer);
+     typedef void (*MLN_RendererFrontend_Update_Fn)(void *context, void *parameters);
+     typedef void (*MLN_RendererFrontend_GetThreadPool_Fn)(void *context, void *out_scheduler);
+     typedef void (*MLN_RendererFrontend_Render_Fn)(void *context);
+
+     // Interface struct
+     typedef struct MLN_RendererFrontend_Interface {
+         void *context;
+         MLN_RendererFrontend_Reset_Fn reset;
+         MLN_RendererFrontend_SetObserver_Fn set_observer;
+         MLN_RendererFrontend_Update_Fn update;
+         MLN_RendererFrontend_GetThreadPool_Fn get_thread_pool;
+         MLN_RendererFrontend_Render_Fn render;
+     } MLN_RendererFrontend_Interface;
+     ```
+   - Minimal bindings needed:
+     - [ ] `MLN_RendererFrontend_create(const MLN_RendererFrontend_Interface *interface)`
+     - [ ] `MLN_RendererFrontend_destroy(void *frontend)`
+     - [ ] `MLN_RendererFrontend_reset(void *frontend)`
+     - [ ] `MLN_RendererFrontend_setObserver(void *frontend, void *observer)`
+     - [ ] `MLN_RendererFrontend_update(void *frontend, void *parameters)`
+     - [ ] `MLN_RendererFrontend_render(void *frontend)`
+
+3. MapObserver
+   - Required for handling map events
+   - Interface definition:
+     ```c
+     // Function pointer types
+     typedef void (*MLN_MapObserver_OnCameraWillChange_Fn)(void *context, bool animated);
+     typedef void (*MLN_MapObserver_OnCameraDidChange_Fn)(void *context, bool animated);
+     typedef void (*MLN_MapObserver_OnWillStartLoadingMap_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnDidFinishLoadingMap_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnDidFailLoadingMap_Fn)(void *context, const char *error);
+     typedef void (*MLN_MapObserver_OnWillStartRenderingFrame_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnDidFinishRenderingFrame_Fn)(void *context, bool fully_rendered);
+     typedef void (*MLN_MapObserver_OnWillStartRenderingMap_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnDidFinishRenderingMap_Fn)(void *context, bool fully_rendered);
+     typedef void (*MLN_MapObserver_OnDidBecomeIdle_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnDidFinishLoadingStyle_Fn)(void *context);
+     typedef void (*MLN_MapObserver_OnSourceChanged_Fn)(void *context, const char *source_id);
+
+     // Interface struct
+     typedef struct MLN_MapObserver_Interface {
+         void *context;
+         MLN_MapObserver_OnCameraWillChange_Fn on_camera_will_change;
+         MLN_MapObserver_OnCameraDidChange_Fn on_camera_did_change;
+         MLN_MapObserver_OnWillStartLoadingMap_Fn on_will_start_loading_map;
+         MLN_MapObserver_OnDidFinishLoadingMap_Fn on_did_finish_loading_map;
+         MLN_MapObserver_OnDidFailLoadingMap_Fn on_did_fail_loading_map;
+         MLN_MapObserver_OnWillStartRenderingFrame_Fn on_will_start_rendering_frame;
+         MLN_MapObserver_OnDidFinishRenderingFrame_Fn on_did_finish_rendering_frame;
+         MLN_MapObserver_OnWillStartRenderingMap_Fn on_will_start_rendering_map;
+         MLN_MapObserver_OnDidFinishRenderingMap_Fn on_did_finish_rendering_map;
+         MLN_MapObserver_OnDidBecomeIdle_Fn on_did_become_idle;
+         MLN_MapObserver_OnDidFinishLoadingStyle_Fn on_did_finish_loading_style;
+         MLN_MapObserver_OnSourceChanged_Fn on_source_changed;
+     } MLN_MapObserver_Interface;
+     ```
+   - Minimal bindings needed:
+     - [ ] `MLN_MapObserver_create(const MLN_MapObserver_Interface *interface)`
+     - [ ] `MLN_MapObserver_destroy(void *observer)`
+
+### Platform Integration Requirements
+
+To use these bindings, the caller must provide:
+
+1. Platform View Implementation
+   - Create and manage window/surface
+   - Handle window events (resize, focus, etc.)
+   - Handle input events (mouse, keyboard, etc.)
+   - Implement the following callbacks:
+     - Window lifecycle (create, destroy, resize)
+     - Input handling (mouse, keyboard, scroll)
+     - Frame timing and refresh
+     - Map event observation
+
+2. Platform Renderer Implementation
+   - Graphics API initialization (OpenGL, Metal, Vulkan)
+   - Frame buffer management
+   - Render loop implementation
+   - Platform-specific rendering details
+
+3. Event Loop Integration
+   - Main loop for rendering and event handling
+   - Frame timing and synchronization
+   - Event dispatch to appropriate handlers
+
+The `MLN_RendererFrontend_create` function will take pointers to the platform-specific implementations as opaque void pointers. The caller is responsible for:
+1. Implementing the required platform interfaces
+2. Managing the lifecycle of platform objects
+3. Providing the correct function pointers for callbacks
+4. Handling platform-specific rendering details
+
+This design allows the bindings to be platform-agnostic while enabling platform-specific rendering and event handling.
+
+### Initialization Flow
+1. Create ResourceOptions with cache and asset paths
+2. Create ClientOptions with application name
+3. Create MapOptions with window size and pixel ratio
+4. Create RendererFrontend for the target platform
+5. Create MapObserver for handling events
+6. Create Map with all the above components
+7. Set the map style
+8. Set initial camera position
+9. Start the render loop
+
+This represents the minimum set of bindings needed to get a working map view. Additional functionality like gestures, annotations, or custom layers would require more bindings.
