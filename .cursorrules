@@ -1,4 +1,4 @@
-# Instructions
+#Instructions
 
 During your interaction with the user, if you find anything reusable in this project (e.g. version of a library, model name), especially about a fix to a mistake you made or a correction you received, you should take note in the `Lessons` section in the `.cursorrules` file so you will not make the same mistake again.
 
@@ -10,7 +10,7 @@ Also update the progress of the task in the Scratchpad when you finish a subtask
 Especially when you finished a milestone, it will help to improve your depth of task accomplishment to use the Scratchpad to reflect and plan.
 The goal is to help you maintain a big picture as well as the progress of the task. Always refer to the Scratchpad when you plan the next step.
 
-# Lessons
+#Lessons
 
 ## User Specified Lessons
 
@@ -23,14 +23,17 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 - Constructor/destructor pairs should use `new`/`delete` (e.g. `MLN_MapOptions_new`, `MLN_MapOptions_delete`), not `create`/`destroy`.
 - Getter methods should not use `get` prefix (e.g. `MLN_MapOptions_size`, not `MLN_MapOptions_getSize`).
 - Always run `just format` after making code changes to ensure consistent formatting.
+- Never use `using namespace`. Always use qualified names.
 
 ## Cursor learned
 
 - Project uses CMake as build system, with clang-format and clang-tidy for code quality
 - Project uses justfile for common development tasks like building, formatting, and linting
-- Each component should have unit tests to verify the bindings work correctly.
+- Each component should have unit tests to verify the bindings work correctly
+- Tests are organized in a single executable with each component's tests in a separate file
+- Test functions should be static and each test file should expose a run_*_tests() function
 
-# Scratchpad
+#Scratchpad
 
 ## MapLibre Native Initialization Requirements
 
@@ -110,20 +113,25 @@ To create a minimal working map view, we need to implement bindings for the foll
      ```c
      // Function pointer types
      typedef void (*MLN_RendererFrontend_Reset_Fn)(void *context);
-     typedef void (*MLN_RendererFrontend_SetObserver_Fn)(void *context, void *observer);
-     typedef void (*MLN_RendererFrontend_Update_Fn)(void *context, void *parameters);
-     typedef void (*MLN_RendererFrontend_GetThreadPool_Fn)(void *context, void *out_scheduler);
-     typedef void (*MLN_RendererFrontend_Render_Fn)(void *context);
+typedef void (*MLN_RendererFrontend_SetObserver_Fn)(
+  void *context, void *observer
+);
+typedef void (*MLN_RendererFrontend_Update_Fn)(void *context, void *parameters);
+typedef void (*MLN_RendererFrontend_GetThreadPool_Fn)(
+  void *context, void *out_scheduler
+);
+typedef void (*MLN_RendererFrontend_Render_Fn)(void *context);
 
-     // Interface struct
-     typedef struct MLN_RendererFrontend_Interface {
-         void *context;
-         MLN_RendererFrontend_Reset_Fn reset;
-         MLN_RendererFrontend_SetObserver_Fn set_observer;
-         MLN_RendererFrontend_Update_Fn update;
-         MLN_RendererFrontend_GetThreadPool_Fn get_thread_pool;
-         MLN_RendererFrontend_Render_Fn render;
-     } MLN_RendererFrontend_Interface;
+// Interface struct
+typedef struct MLN_RendererFrontend_Interface
+{
+  void *context;
+  MLN_RendererFrontend_Reset_Fn reset;
+  MLN_RendererFrontend_SetObserver_Fn set_observer;
+  MLN_RendererFrontend_Update_Fn update;
+  MLN_RendererFrontend_GetThreadPool_Fn get_thread_pool;
+  MLN_RendererFrontend_Render_Fn render;
+} MLN_RendererFrontend_Interface;
      ```
    - Minimal bindings needed:
      - [ ] `MLN_RendererFrontend_create(const MLN_RendererFrontend_Interface *interface)`
@@ -139,33 +147,47 @@ To create a minimal working map view, we need to implement bindings for the foll
      ```c
      // Function pointer types
      typedef void (*MLN_MapObserver_OnCameraWillChange_Fn)(void *context, bool animated);
-     typedef void (*MLN_MapObserver_OnCameraDidChange_Fn)(void *context, bool animated);
+     typedef void (*MLN_MapObserver_OnCameraDidChange_Fn)(
+       void *context, bool animated
+     );
      typedef void (*MLN_MapObserver_OnWillStartLoadingMap_Fn)(void *context);
      typedef void (*MLN_MapObserver_OnDidFinishLoadingMap_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFailLoadingMap_Fn)(void *context, const char *error);
-     typedef void (*MLN_MapObserver_OnWillStartRenderingFrame_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFinishRenderingFrame_Fn)(void *context, bool fully_rendered);
+     typedef void (*MLN_MapObserver_OnDidFailLoadingMap_Fn)(
+       void *context, const char *error
+     );
+     typedef void (*MLN_MapObserver_OnWillStartRenderingFrame_Fn)(void *context
+     );
+     typedef void (*MLN_MapObserver_OnDidFinishRenderingFrame_Fn)(
+       void *context, bool fully_rendered
+     );
      typedef void (*MLN_MapObserver_OnWillStartRenderingMap_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFinishRenderingMap_Fn)(void *context, bool fully_rendered);
+     typedef void (*MLN_MapObserver_OnDidFinishRenderingMap_Fn)(
+       void *context, bool fully_rendered
+     );
      typedef void (*MLN_MapObserver_OnDidBecomeIdle_Fn)(void *context);
      typedef void (*MLN_MapObserver_OnDidFinishLoadingStyle_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnSourceChanged_Fn)(void *context, const char *source_id);
+     typedef void (*MLN_MapObserver_OnSourceChanged_Fn)(
+       void *context, const char *source_id
+     );
 
      // Interface struct
-     typedef struct MLN_MapObserver_Interface {
-         void *context;
-         MLN_MapObserver_OnCameraWillChange_Fn on_camera_will_change;
-         MLN_MapObserver_OnCameraDidChange_Fn on_camera_did_change;
-         MLN_MapObserver_OnWillStartLoadingMap_Fn on_will_start_loading_map;
-         MLN_MapObserver_OnDidFinishLoadingMap_Fn on_did_finish_loading_map;
-         MLN_MapObserver_OnDidFailLoadingMap_Fn on_did_fail_loading_map;
-         MLN_MapObserver_OnWillStartRenderingFrame_Fn on_will_start_rendering_frame;
-         MLN_MapObserver_OnDidFinishRenderingFrame_Fn on_did_finish_rendering_frame;
-         MLN_MapObserver_OnWillStartRenderingMap_Fn on_will_start_rendering_map;
-         MLN_MapObserver_OnDidFinishRenderingMap_Fn on_did_finish_rendering_map;
-         MLN_MapObserver_OnDidBecomeIdle_Fn on_did_become_idle;
-         MLN_MapObserver_OnDidFinishLoadingStyle_Fn on_did_finish_loading_style;
-         MLN_MapObserver_OnSourceChanged_Fn on_source_changed;
+     typedef struct MLN_MapObserver_Interface
+     {
+       void *context;
+       MLN_MapObserver_OnCameraWillChange_Fn on_camera_will_change;
+       MLN_MapObserver_OnCameraDidChange_Fn on_camera_did_change;
+       MLN_MapObserver_OnWillStartLoadingMap_Fn on_will_start_loading_map;
+       MLN_MapObserver_OnDidFinishLoadingMap_Fn on_did_finish_loading_map;
+       MLN_MapObserver_OnDidFailLoadingMap_Fn on_did_fail_loading_map;
+       MLN_MapObserver_OnWillStartRenderingFrame_Fn
+         on_will_start_rendering_frame;
+       MLN_MapObserver_OnDidFinishRenderingFrame_Fn
+         on_did_finish_rendering_frame;
+       MLN_MapObserver_OnWillStartRenderingMap_Fn on_will_start_rendering_map;
+       MLN_MapObserver_OnDidFinishRenderingMap_Fn on_did_finish_rendering_map;
+       MLN_MapObserver_OnDidBecomeIdle_Fn on_did_become_idle;
+       MLN_MapObserver_OnDidFinishLoadingStyle_Fn on_did_finish_loading_style;
+       MLN_MapObserver_OnSourceChanged_Fn on_source_changed;
      } MLN_MapObserver_Interface;
      ```
    - Minimal bindings needed:
@@ -217,3 +239,63 @@ This design allows the bindings to be platform-agnostic while enabling platform-
 9. Start the render loop
 
 This represents the minimum set of bindings needed to get a working map view. Additional functionality like gestures, annotations, or custom layers would require more bindings.
+
+## Current Task: Implementing Metal Renderer Backend
+
+### Architecture Overview
+1. Base Renderer Backend Interface (`RendererBackend.h`)
+   - Generic interface for all rendering backends
+   - Defines common operations (init, destroy, resize, etc.)
+   - Platform-agnostic thread pool management
+
+2. Metal-Specific Backend (`MetalRendererBackend.h`)
+   - Implements the base interface for Metal
+   - Manages Metal-specific resources:
+     - MTLDevice
+     - CAMetalLayer
+     - MTLCommandQueue
+     - Frame buffers
+   - Handles Metal-specific initialization and cleanup
+
+### Implementation Progress
+1. Base Backend Interface:
+   [X] Define base interface struct
+   [X] Create common operations
+   [X] Define thread pool interface
+
+2. Metal Backend Implementation:
+   [X] Define Metal-specific options struct
+   [X] Create Metal backend constructor
+   [ ] Implement Metal backend class
+   [ ] Add Metal resource management
+   [ ] Add frame buffer handling
+   [ ] Add thread pool implementation
+   [ ] Write unit tests
+
+3. Next Steps:
+   [ ] Create src/MetalRendererBackend.mm implementation
+   [ ] Add Metal device initialization
+   [ ] Add command queue management
+   [ ] Add frame buffer setup
+   [ ] Add basic rendering pipeline
+
+### Key Design Decisions
+1. Using opaque pointers for Metal types (MTLDevice*, CAMetalLayer*, etc.)
+   - Allows C API without exposing Objective-C/Metal headers
+   - Caller is responsible for proper Metal setup
+   - Backend validates Metal resources at runtime
+
+2. Thread Pool Management
+   - Metal backend will provide its own thread pool
+   - Used for async texture uploads and render preparation
+   - Coordinated with Metal's command queue
+
+3. Frame Buffer Management
+   - Metal backend manages drawable acquisition
+   - Coordinates with CAMetalLayer for presentation
+   - Handles display synchronization
+
+4. Error Handling
+   - Need to add error reporting mechanism
+   - Consider adding validation of Metal resources
+   - Add debug logging for Metal operations

@@ -26,14 +26,22 @@ clean:
 
 # Format code using clang-format
 format:
-    find src include -type f \( -name "*.cpp" -o -name "*.h" \) -exec clang-format -i {} +
+    find src include test -type f \( -name "*.cpp" -name "*.mm" -o -name "*.h" \) -exec clang-format -i {} +
 
 # Run clang-tidy checks
 lint: configure
-    find src include -type f \( -name "*.cpp" -o -name "*.h" \) -exec clang-tidy -p=build {} +
+    find src include test -type f \( -name "*.cpp" -name "*.mm" -o -name "*.h" \) -exec clang-tidy -p=build {} +
+
+# Run clang-tidy and fix issues
+tidy: configure
+    find src include test -type f \( -name "*.cpp" -name "*.mm" -o -name "*.h" \) -exec clang-tidy -fix -p=build {} +
 
 # Format and lint
 check: format lint
 
 # Clean build and rebuild
 rebuild: clean build
+
+# Run tests
+test: configure
+    cd build && ./tests

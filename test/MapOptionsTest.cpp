@@ -2,87 +2,85 @@
 #include <cassert>
 #include <cstdio>
 
-#define TEST(name) void test_##name()
-#define RUN_TEST(name)                                                         \
-  do                                                                           \
-  {                                                                            \
-    printf("Running " #name "...");                                            \
-    test_##name();                                                             \
-    printf(" OK\n");                                                           \
-  } while (0)
-#define ASSERT(cond) assert(cond)
-
-TEST(create_destroy)
+static void test_create_destroy()
 {
-  void *options = MLN_MapOptions_new();
-  ASSERT(options != nullptr);
+  printf("Running create_destroy... ");
+  auto *options = MLN_MapOptions_new();
+  assert(options != nullptr && "Failed to create MapOptions");
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(map_mode)
+static void test_map_mode()
 {
-  void *options = MLN_MapOptions_new();
+  printf("Running map_mode... ");
+  auto *options = MLN_MapOptions_new();
   MLN_MapOptions_setMapMode(options, MLN_MapMode_Static);
-  ASSERT(MLN_MapOptions_mapMode(options) == MLN_MapMode_Static);
+  assert(MLN_MapOptions_mapMode(options) == MLN_MapMode_Static);
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(constrain_mode)
+static void test_constrain_mode()
 {
-  void *options = MLN_MapOptions_new();
-  MLN_MapOptions_setConstrainMode(options, MLN_ConstrainMode_WidthAndHeight);
-  ASSERT(
-    MLN_MapOptions_constrainMode(options) == MLN_ConstrainMode_WidthAndHeight
-  );
+  printf("Running constrain_mode... ");
+  auto *options = MLN_MapOptions_new();
+  MLN_MapOptions_setConstrainMode(options, MLN_ConstrainMode_HeightOnly);
+  assert(MLN_MapOptions_constrainMode(options) == MLN_ConstrainMode_HeightOnly);
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(viewport_mode)
+static void test_viewport_mode()
 {
-  void *options = MLN_MapOptions_new();
+  printf("Running viewport_mode... ");
+  auto *options = MLN_MapOptions_new();
   MLN_MapOptions_setViewportMode(options, MLN_ViewportMode_FlippedY);
-  ASSERT(MLN_MapOptions_viewportMode(options) == MLN_ViewportMode_FlippedY);
+  assert(MLN_MapOptions_viewportMode(options) == MLN_ViewportMode_FlippedY);
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(cross_source_collisions)
+static void test_cross_source_collisions()
 {
-  void *options = MLN_MapOptions_new();
+  printf("Running cross_source_collisions... ");
+  auto *options = MLN_MapOptions_new();
   MLN_MapOptions_setCrossSourceCollisions(options, false);
-  ASSERT(MLN_MapOptions_crossSourceCollisions(options) == false);
+  assert(!MLN_MapOptions_crossSourceCollisions(options));
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(size)
+static void test_size()
 {
-  void *options = MLN_MapOptions_new();
+  printf("Running size... ");
+  auto *options = MLN_MapOptions_new();
   MLN_Size size = {800.0F, 600.0F};
   MLN_MapOptions_setSize(options, size);
   MLN_Size got = MLN_MapOptions_size(options);
-  ASSERT(got.width == size.width);
-  ASSERT(got.height == size.height);
+  assert(got.width == size.width);
+  assert(got.height == size.height);
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(pixel_ratio)
+static void test_pixel_ratio()
 {
-  void *options = MLN_MapOptions_new();
-  float ratio = 2.0F;
-  MLN_MapOptions_setPixelRatio(options, ratio);
-  ASSERT(MLN_MapOptions_pixelRatio(options) == ratio);
+  printf("Running pixel_ratio... ");
+  auto *options = MLN_MapOptions_new();
+  MLN_MapOptions_setPixelRatio(options, 2.0F);
+  assert(MLN_MapOptions_pixelRatio(options) == 2.0F);
   MLN_MapOptions_delete(options);
+  printf("OK\n");
 }
 
-auto main() -> int
+void run_map_options_tests()
 {
-  printf("Running MapOptions tests...\n");
-  RUN_TEST(create_destroy);
-  RUN_TEST(map_mode);
-  RUN_TEST(constrain_mode);
-  RUN_TEST(viewport_mode);
-  RUN_TEST(cross_source_collisions);
-  RUN_TEST(size);
-  RUN_TEST(pixel_ratio);
-  printf("All tests passed!\n");
-  return 0;
+  test_create_destroy();
+  test_map_mode();
+  test_constrain_mode();
+  test_viewport_mode();
+  test_cross_source_collisions();
+  test_size();
+  test_pixel_ratio();
 }

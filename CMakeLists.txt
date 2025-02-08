@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # set renderer to opengl or metal depending on platform to pass to options
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set(renderer_option "MLN_WITH_METAL ON" "MLN_WITH_OPENGL OFF")
+    find_library(METAL_LIBRARY Metal REQUIRED)
+    find_library(CORE_ANIMATION QuartzCore REQUIRED)
 else ()
     set(renderer_option "MLN_WITH_OPENGL ON")
 endif ()
@@ -32,12 +34,20 @@ set(sources
         "src/ResourceOptions.cpp"
         "src/MapOptions.cpp")
 
+if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set(sources ${sources} "src/MetalRendererBackend.mm")
+endif ()
+
 add_library(${PROJECT_NAME} SHARED ${sources})
 
 set(public_headers
         "include/ClientOptions.h"
         "include/ResourceOptions.h"
         "include/MapOptions.h")
+
+if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set(public_headers ${public_headers} "include/MetalRendererBackend.h")
+endif ()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${public_headers}")
 
@@ -52,14 +62,25 @@ install(TARGETS ${PROJECT_NAME}
 # Tests
 enable_testing()
 
-add_executable(test_map_options "test/MapOptionsTest.cpp")
-target_link_libraries(test_map_options PRIVATE ${PROJECT_NAME})
-add_test(NAME test_map_options COMMAND test_map_options)
+set(test_sources
+    "test/main.cpp"
+    "test/MapOptionsTest.cpp"
+    "test/ClientOptionsTest.cpp"
+    "test/ResourceOptionsTest.cpp")
 
-add_executable(test_client_options "test/ClientOptionsTest.cpp")
-target_link_libraries(test_client_options PRIVATE ${PROJECT_NAME})
-add_test(NAME test_client_options COMMAND test_client_options)
+if(APPLE)
+    set(test_sources ${test_sources} "test/MetalRendererBackendTest.mm")
+endif()
 
-add_executable(test_resource_options "test/ResourceOptionsTest.cpp")
-target_link_libraries(test_resource_options PRIVATE ${PROJECT_NAME})
-add_test(NAME test_resource_options COMMAND test_resource_options)
+add_executable(tests ${test_sources})
+target_link_libraries(tests PRIVATE ${PROJECT_NAME})
+
+if(APPLE)
+    target_link_libraries(tests
+        PRIVATE
+            ${METAL_LIBRARY}
+            ${CORE_ANIMATION}
+    )
+endif()
+
+add_test(NAME tests COMMAND tests)

@@ -3,38 +3,28 @@
 #include <cstdio>
 #include <cstring>
 
-#define TEST(name) void test_##name()
-#define RUN_TEST(name)                                                         \
-  do                                                                           \
-  {                                                                            \
-    printf("Running " #name "...");                                            \
-    test_##name();                                                             \
-    printf(" OK\n");                                                           \
-  } while (0)
-#define ASSERT(cond) assert(cond)
-
-TEST(create_destroy)
+static void test_create_destroy()
 {
-  void *options = MLN_ClientOptions_new();
-  ASSERT(options != nullptr);
+  printf("Running create_destroy... ");
+  auto *options = MLN_ClientOptions_new();
+  assert(options != nullptr && "Failed to create ClientOptions");
   MLN_ClientOptions_delete(options);
+  printf("OK\n");
 }
 
-TEST(name)
+static void test_name()
 {
-  void *options = MLN_ClientOptions_new();
-  const char *name = "MyTestApp";
+  printf("Running name... ");
+  auto *options = MLN_ClientOptions_new();
+  const char *name = "test-client";
   MLN_ClientOptions_setName(options, name);
-  const char *got = MLN_ClientOptions_name(options);
-  ASSERT(strcmp(got, name) == 0);
+  assert(strcmp(MLN_ClientOptions_name(options), name) == 0);
   MLN_ClientOptions_delete(options);
+  printf("OK\n");
 }
 
-auto main() -> int
+void run_client_options_tests()
 {
-  printf("Running ClientOptions tests...\n");
-  RUN_TEST(create_destroy);
-  RUN_TEST(name);
-  printf("All tests passed!\n");
-  return 0;
+  test_create_destroy();
+  test_name();
 }

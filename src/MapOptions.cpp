@@ -1,6 +1,7 @@
 #include "MapOptions.h"
-#include <mbgl/gfx/renderable.hpp>
+#include <cstdint>
 #include <mbgl/map/map_options.hpp>
+#include <mbgl/map/mode.hpp>
 #include <mbgl/util/size.hpp>
 
 using namespace mbgl;
