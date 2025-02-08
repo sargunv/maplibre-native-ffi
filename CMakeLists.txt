@@ -35,7 +35,9 @@ set(sources
         "src/MapOptions.cpp")
 
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
-    set(sources ${sources} "src/MetalRendererBackend.mm")
+    set(sources ${sources}
+        "src/MetalRendererBackend.mm"
+        "src/MetalRendererFrontend.mm")
 endif ()
 
 add_library(${PROJECT_NAME} SHARED ${sources})
@@ -46,7 +48,9 @@ set(public_headers
         "include/MapOptions.h")
 
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
-    set(public_headers ${public_headers} "include/MetalRendererBackend.h")
+    set(public_headers ${public_headers}
+        "include/MetalRendererBackend.h"
+        "include/MetalRendererFrontend.h")
 endif ()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${public_headers}")
@@ -69,7 +73,9 @@ set(test_sources
     "test/ResourceOptionsTest.cpp")
 
 if(APPLE)
-    set(test_sources ${test_sources} "test/MetalRendererBackendTest.mm")
+    set(test_sources ${test_sources}
+        "test/MetalRendererBackendTest.mm"
+        "test/MetalRendererFrontendTest.mm")
 endif()
 
 add_executable(tests ${test_sources})

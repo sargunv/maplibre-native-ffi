@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <cstring>
 
+namespace
+{
+
 void test_create_destroy()
 {
   printf("Running create_destroy... ");
@@ -22,6 +25,8 @@ void test_name()
   MLN_ClientOptions_delete(options);
   printf("OK\n");
 }
+
+} // namespace
 
 void run_client_options_tests()
 {

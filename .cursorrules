@@ -240,62 +240,70 @@ This design allows the bindings to be platform-agnostic while enabling platform-
 
 This represents the minimum set of bindings needed to get a working map view. Additional functionality like gestures, annotations, or custom layers would require more bindings.
 
-## Current Task: Implementing Metal Renderer Backend
+## Current Task: Implementing Metal Renderer Frontend
 
 ### Architecture Overview
-1. Base Renderer Backend Interface (`RendererBackend.h`)
-   - Generic interface for all rendering backends
-   - Defines common operations (init, destroy, resize, etc.)
-   - Platform-agnostic thread pool management
+- Direct Metal renderer frontend implementation
+- Uses Metal backend for resource management
+- Handles frame scheduling and presentation
+- Coordinates with map observer
+- Provides C API for map integration
 
-2. Metal-Specific Backend (`MetalRendererBackend.h`)
-   - Implements the base interface for Metal
-   - Manages Metal-specific resources:
-     - MTLDevice
-     - CAMetalLayer
-     - MTLCommandQueue
-     - Frame buffers
-   - Handles Metal-specific initialization and cleanup
-
-### Implementation Progress
-1. Base Backend Interface:
-   [X] Define base interface struct
-   [X] Create common operations
-   [X] Define thread pool interface
-
-2. Metal Backend Implementation:
-   [X] Define Metal-specific options struct
-   [X] Create Metal backend constructor
-   [ ] Implement Metal backend class
-   [ ] Add Metal resource management
-   [ ] Add frame buffer handling
-   [ ] Add thread pool implementation
+### Implementation Plan
+1. Core Frontend Implementation:
+   [ ] Define frontend options struct (Metal backend, observer interface)
+   [ ] Create frontend constructor/destructor
+   [ ] Implement frame scheduling and rendering
+   [ ] Add map observer callbacks
    [ ] Write unit tests
 
+2. C API:
+   [ ] `MLN_MetalRendererFrontend_new(MLN_MetalRendererFrontend_Options *options)`
+   [ ] `MLN_MetalRendererFrontend_delete(void *frontend)`
+   [ ] `MLN_MetalRendererFrontend_setObserver(void *frontend, MLN_MapObserver_Interface *observer)`
+   [ ] `MLN_MetalRendererFrontend_update(void *frontend)`
+   [ ] `MLN_MetalRendererFrontend_render(void *frontend)`
+
 3. Next Steps:
-   [ ] Create src/MetalRendererBackend.mm implementation
-   [ ] Add Metal device initialization
-   [ ] Add command queue management
-   [ ] Add frame buffer setup
-   [ ] Add basic rendering pipeline
+   [ ] Create include/MetalRendererFrontend.h
+   [ ] Create src/MetalRendererFrontend.mm
+   [ ] Create test/MetalRendererFrontendTest.mm
+   [ ] Update CMakeLists.txt to include new files
 
 ### Key Design Decisions
-1. Using opaque pointers for Metal types (MTLDevice*, CAMetalLayer*, etc.)
-   - Allows C API without exposing Objective-C/Metal headers
-   - Caller is responsible for proper Metal setup
-   - Backend validates Metal resources at runtime
+1. Metal Integration
+   - Direct use of Metal backend without abstraction layer
+   - Tight coupling with Metal-specific functionality
+   - Focus on performance and simplicity
 
-2. Thread Pool Management
-   - Metal backend will provide its own thread pool
-   - Used for async texture uploads and render preparation
-   - Coordinated with Metal's command queue
+2. Frame Scheduling
+   - Frontend manages frame timing
+   - Coordinates with map observer for frame triggers
+   - Handles continuous vs on-demand rendering
 
-3. Frame Buffer Management
-   - Metal backend manages drawable acquisition
-   - Coordinates with CAMetalLayer for presentation
-   - Handles display synchronization
+3. Map Observer Integration
+   - Frontend implements map observer interface
+   - Handles map state changes
+   - Triggers redraws when needed
 
 4. Error Handling
-   - Need to add error reporting mechanism
-   - Consider adding validation of Metal resources
-   - Add debug logging for Metal operations
+   - Direct error reporting through return values
+   - Validation of Metal resources and observer
+   - Debug logging for rendering operations
+
+### Testing Strategy
+1. Basic Functionality
+   [ ] Constructor/destructor
+   [ ] Observer integration
+   [ ] Frame scheduling
+   [ ] Resource management
+
+2. Rendering Pipeline
+   [ ] Frame presentation
+   [ ] Observer callbacks
+   [ ] Error conditions
+
+3. Performance
+   [ ] Frame timing
+   [ ] Resource usage
+   [ ] Memory management

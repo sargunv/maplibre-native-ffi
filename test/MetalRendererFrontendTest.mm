@@ -1,6 +1,7 @@
-#include "MetalRendererBackend.h"
+#include "MetalRendererFrontend.h"
 #include <cassert>
 #include <cstdio>
+#include "MetalRendererBackend.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -23,8 +24,8 @@ void test_create_destroy()
   assert(layer != nullptr && "Failed to create Metal layer");
   layer.device = device;
 
-  // Create backend options
-  MLN_MetalRendererBackend_Options const options = {
+  // Create backend
+  MLN_MetalRendererBackend_Options const backend_options = {
     .metal_device = (__bridge void *)device,
     .metal_layer = (__bridge void *)layer,
     .command_queue = (__bridge void *)commandQueue,
@@ -33,26 +34,21 @@ void test_create_destroy()
     .pixel_ratio = 2.0F
   };
 
-  // Create backend
-  auto *backend = MLN_MetalRendererBackend_new(&options);
+  MLN_MetalRendererBackend *backend =
+    MLN_MetalRendererBackend_new(&backend_options);
   assert(backend != nullptr && "Failed to create Metal backend");
 
-  // Test getting Metal resources
-  auto *retrieved_device = MLN_MetalRendererBackend_getDevice(backend);
-  assert(retrieved_device == (__bridge void *)device && "Device mismatch");
+  // Create frontend
+  MLN_MetalRendererFrontend_Options const frontend_options = {
+    .backend = backend, .observer = nullptr, .continuous_rendering = false
+  };
 
-  auto *retrieved_queue = MLN_MetalRendererBackend_getCommandQueue(backend);
-  assert(
-    retrieved_queue == (__bridge void *)commandQueue && "Command queue mismatch"
-  );
-
-  auto *retrieved_layer = MLN_MetalRendererBackend_getLayer(backend);
-  assert(retrieved_layer == (__bridge void *)layer && "Layer mismatch");
-
-  // Test resizing
-  MLN_MetalRendererBackend_setSize(backend, 1024, 768);
+  MLN_MetalRendererFrontend *frontend =
+    MLN_MetalRendererFrontend_new(&frontend_options);
+  assert(frontend != nullptr && "Failed to create Metal frontend");
 
   // Cleanup
+  MLN_MetalRendererFrontend_delete(frontend);
   MLN_MetalRendererBackend_delete(backend);
   [layer release];
   [commandQueue release];
@@ -62,7 +58,7 @@ void test_create_destroy()
 
 } // namespace
 
-void run_metal_renderer_backend_tests()
+void run_metal_renderer_frontend_tests()
 {
   test_create_destroy();
 }

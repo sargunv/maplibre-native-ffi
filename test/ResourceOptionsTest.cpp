@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <cstring>
 
+namespace
+{
+
 void test_create_destroy()
 {
   printf("Running create_destroy... ");
@@ -33,6 +36,8 @@ void test_asset_path()
   MLN_ResourceOptions_delete(options);
   printf("OK\n");
 }
+
+} // namespace
 
 void run_resource_options_tests()
 {

@@ -2,6 +2,9 @@
 #include <cassert>
 #include <cstdio>
 
+namespace
+{
+
 void test_create_destroy()
 {
   printf("Running create_destroy... ");
@@ -73,6 +76,8 @@ void test_pixel_ratio()
   MLN_MapOptions_delete(options);
   printf("OK\n");
 }
+
+} // namespace
 
 void run_map_options_tests()
 {

@@ -5,6 +5,7 @@ void run_client_options_tests();
 void run_resource_options_tests();
 #ifdef __APPLE__
 void run_metal_renderer_backend_tests();
+void run_metal_renderer_frontend_tests();
 #endif
 
 auto main() -> int
@@ -26,6 +27,10 @@ auto main() -> int
 #ifdef __APPLE__
   printf("Running MetalRendererBackend tests...\n");
   run_metal_renderer_backend_tests();
+  printf("\n");
+
+  printf("Running MetalRendererFrontend tests...\n");
+  run_metal_renderer_frontend_tests();
   printf("\n");
 #endif
 
