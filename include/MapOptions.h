@@ -1,7 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
 extern "C"
 {
+#endif
+
   using MLN_MapMode = enum MLN_MapMode
   {
     MLN_MapMode_Continuous,
@@ -50,4 +53,7 @@ extern "C"
 
   void MLN_MapOptions_setPixelRatio(void *options, float ratio);
   auto MLN_MapOptions_pixelRatio(void *options) -> float;
+
+#ifdef __cplusplus
 }
+#endif

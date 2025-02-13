@@ -14,6 +14,7 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 
 ## User Specified Lessons
 
+- Don't fix lints, unless I explicitly ask you to fix a lint for your task.
 - This project is intended to be a set of C bindings for using maplibre native.
 - My goal is to eventually use it to make map apps in other languages, like Kotlin Native, Kotlin JVM, Rust, and so on on platforms like macOS, Linux, Windows, Android, and iOS.
 - Our bindings are prefixed with `MLN_`. For example, `MLN_TypeName_methodName`.
@@ -24,6 +25,7 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 - Getter methods should not use `get` prefix (e.g. `MLN_MapOptions_size`, not `MLN_MapOptions_getSize`).
 - Always run `just format` after making code changes to ensure consistent formatting.
 - Never use `using namespace`. Always use qualified names.
+- The full maplibre-native source is available in ./build/_deps/maplibre-native-src
 
 ## Cursor learned
 
@@ -35,275 +37,55 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 
 #Scratchpad
 
-## MapLibre Native Initialization Requirements
+## Metal Renderer FFI Implementation Plan
 
-To create a minimal working map view, we need to implement bindings for the following components:
+Task: Implement Metal renderer FFI to allow rendering MapLibre maps to an MKTView
 
-### Core Components (in order of initialization)
-1. ResourceOptions
-   - Required for basic resource management
-   - Key settings: API key, cache path, asset path
-   - Minimal bindings needed:
-     - [X] `MLN_ResourceOptions_new()`
-     - [X] `MLN_ResourceOptions_delete()`
-     - [X] `MLN_ResourceOptions_setCachePath()`
-     - [X] `MLN_ResourceOptions_setAssetPath()`
-   - Tests:
-     - [X] Basic creation/destruction
-     - [X] All setters/getters
-     - [X] Memory management
+Components needed:
+1. Metal Renderer Backend (MLN_MetalRendererBackend)
+   - Will wrap mbgl::gfx::RendererBackend
+   - Needs to integrate with Metal/MKTView
+   - Manages the Metal device, command queue, etc.
 
-2. ClientOptions
-   - Identifies the client application
-   - Minimal bindings needed:
-     - [X] `MLN_ClientOptions_new()`
-     - [X] `MLN_ClientOptions_delete()`
-     - [X] `MLN_ClientOptions_setName()`
-   - Tests:
-     - [X] Basic creation/destruction
-     - [X] All setters/getters
-     - [X] Memory management
+2. Metal Renderer Frontend (MLN_MetalRendererFrontend)
+   - Will wrap mbgl::RendererFrontend
+   - Manages the renderer lifecycle
+   - Handles updates and observer pattern
+   - Similar structure to GLFWRendererFrontend
 
-3. MapOptions
-   - Configures the map view
-   - Key settings: size, viewport mode, constrain mode
-   - Minimal bindings needed:
-     - [X] `MLN_MapOptions_new()`
-     - [X] `MLN_MapOptions_delete()`
-     - [X] `MLN_MapOptions_setSize()`
-     - [X] `MLN_MapOptions_setPixelRatio()`
-   - Tests:
-     - [X] Basic creation/destruction
-     - [X] All setters/getters
-     - [X] Type conversions
-     - [X] Memory management
+3. Metal Renderer (internal)
+   - Created by the frontend
+   - Handles actual rendering operations
+   - Will be managed internally, not exposed in FFI
 
-4. Map
-   - The main map object that ties everything together
-   - Requires a renderer frontend and map observer
-   - Minimal bindings needed:
-     - [ ] `MLN_Map_new()`
-     - [ ] `MLN_Map_delete()`
-     - [ ] `MLN_Map_setStyle()`
-     - [ ] `MLN_Map_jumpTo()` (for initial camera position)
+Implementation Steps:
+[ ] 1. Create header files
+   [ ] include/MetalRendererBackend.h
+   [ ] include/MetalRendererFrontend.h
 
-### Additional Components for Basic Functionality
-1. CameraOptions
-   - Required for setting the initial view
-   - Minimal bindings needed:
-     - [ ] `MLN_CameraOptions_new()`
-     - [ ] `MLN_CameraOptions_delete()`
-     - [ ] `MLN_CameraOptions_setCenter()`
-     - [ ] `MLN_CameraOptions_setZoom()`
+[ ] 2. Implement Metal Renderer Backend
+   [ ] Basic Metal setup (device, command queue)
+   [ ] Integration with MKTView
+   [ ] Implementation of RendererBackend interface
 
-2. RendererFrontend
-   - Required for rendering the map
-   - This will be platform-specific (GLFW, Qt, etc.)
-   - The caller must implement:
-     1. A platform-specific View class that:
-        - Manages the window/surface for rendering
-        - Handles input events (mouse, keyboard, etc.)
-        - Implements MapObserver for map event callbacks
-        - Provides access to the RendererBackend
-     2. A platform-specific RendererBackend that:
-        - Manages the graphics context (OpenGL, Metal, Vulkan)
-        - Handles frame buffer management
-        - Implements platform-specific rendering
-   - Interface definition:
-     ```c
-     // Function pointer types
-     typedef void (*MLN_RendererFrontend_Reset_Fn)(void *context);
-typedef void (*MLN_RendererFrontend_SetObserver_Fn)(
-  void *context, void *observer
-);
-typedef void (*MLN_RendererFrontend_Update_Fn)(void *context, void *parameters);
-typedef void (*MLN_RendererFrontend_GetThreadPool_Fn)(
-  void *context, void *out_scheduler
-);
-typedef void (*MLN_RendererFrontend_Render_Fn)(void *context);
-
-// Interface struct
-typedef struct MLN_RendererFrontend_Interface
-{
-  void *context;
-  MLN_RendererFrontend_Reset_Fn reset;
-  MLN_RendererFrontend_SetObserver_Fn set_observer;
-  MLN_RendererFrontend_Update_Fn update;
-  MLN_RendererFrontend_GetThreadPool_Fn get_thread_pool;
-  MLN_RendererFrontend_Render_Fn render;
-} MLN_RendererFrontend_Interface;
-     ```
-   - Minimal bindings needed:
-     - [ ] `MLN_RendererFrontend_create(const MLN_RendererFrontend_Interface *interface)`
-     - [ ] `MLN_RendererFrontend_destroy(void *frontend)`
-     - [ ] `MLN_RendererFrontend_reset(void *frontend)`
-     - [ ] `MLN_RendererFrontend_setObserver(void *frontend, void *observer)`
-     - [ ] `MLN_RendererFrontend_update(void *frontend, void *parameters)`
-     - [ ] `MLN_RendererFrontend_render(void *frontend)`
-
-3. MapObserver
-   - Required for handling map events
-   - Interface definition:
-     ```c
-     // Function pointer types
-     typedef void (*MLN_MapObserver_OnCameraWillChange_Fn)(void *context, bool animated);
-     typedef void (*MLN_MapObserver_OnCameraDidChange_Fn)(
-       void *context, bool animated
-     );
-     typedef void (*MLN_MapObserver_OnWillStartLoadingMap_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFinishLoadingMap_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFailLoadingMap_Fn)(
-       void *context, const char *error
-     );
-     typedef void (*MLN_MapObserver_OnWillStartRenderingFrame_Fn)(void *context
-     );
-     typedef void (*MLN_MapObserver_OnDidFinishRenderingFrame_Fn)(
-       void *context, bool fully_rendered
-     );
-     typedef void (*MLN_MapObserver_OnWillStartRenderingMap_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFinishRenderingMap_Fn)(
-       void *context, bool fully_rendered
-     );
-     typedef void (*MLN_MapObserver_OnDidBecomeIdle_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnDidFinishLoadingStyle_Fn)(void *context);
-     typedef void (*MLN_MapObserver_OnSourceChanged_Fn)(
-       void *context, const char *source_id
-     );
-
-     // Interface struct
-     typedef struct MLN_MapObserver_Interface
-     {
-       void *context;
-       MLN_MapObserver_OnCameraWillChange_Fn on_camera_will_change;
-       MLN_MapObserver_OnCameraDidChange_Fn on_camera_did_change;
-       MLN_MapObserver_OnWillStartLoadingMap_Fn on_will_start_loading_map;
-       MLN_MapObserver_OnDidFinishLoadingMap_Fn on_did_finish_loading_map;
-       MLN_MapObserver_OnDidFailLoadingMap_Fn on_did_fail_loading_map;
-       MLN_MapObserver_OnWillStartRenderingFrame_Fn
-         on_will_start_rendering_frame;
-       MLN_MapObserver_OnDidFinishRenderingFrame_Fn
-         on_did_finish_rendering_frame;
-       MLN_MapObserver_OnWillStartRenderingMap_Fn on_will_start_rendering_map;
-       MLN_MapObserver_OnDidFinishRenderingMap_Fn on_did_finish_rendering_map;
-       MLN_MapObserver_OnDidBecomeIdle_Fn on_did_become_idle;
-       MLN_MapObserver_OnDidFinishLoadingStyle_Fn on_did_finish_loading_style;
-       MLN_MapObserver_OnSourceChanged_Fn on_source_changed;
-     } MLN_MapObserver_Interface;
-     ```
-   - Minimal bindings needed:
-     - [ ] `MLN_MapObserver_create(const MLN_MapObserver_Interface *interface)`
-     - [ ] `MLN_MapObserver_destroy(void *observer)`
-
-### Platform Integration Requirements
-
-To use these bindings, the caller must provide:
-
-1. Platform View Implementation
-   - Create and manage window/surface
-   - Handle window events (resize, focus, etc.)
-   - Handle input events (mouse, keyboard, etc.)
-   - Implement the following callbacks:
-     - Window lifecycle (create, destroy, resize)
-     - Input handling (mouse, keyboard, scroll)
-     - Frame timing and refresh
-     - Map event observation
-
-2. Platform Renderer Implementation
-   - Graphics API initialization (OpenGL, Metal, Vulkan)
-   - Frame buffer management
-   - Render loop implementation
-   - Platform-specific rendering details
-
-3. Event Loop Integration
-   - Main loop for rendering and event handling
-   - Frame timing and synchronization
-   - Event dispatch to appropriate handlers
-
-The `MLN_RendererFrontend_create` function will take pointers to the platform-specific implementations as opaque void pointers. The caller is responsible for:
-1. Implementing the required platform interfaces
-2. Managing the lifecycle of platform objects
-3. Providing the correct function pointers for callbacks
-4. Handling platform-specific rendering details
-
-This design allows the bindings to be platform-agnostic while enabling platform-specific rendering and event handling.
-
-### Initialization Flow
-1. Create ResourceOptions with cache and asset paths
-2. Create ClientOptions with application name
-3. Create MapOptions with window size and pixel ratio
-4. Create RendererFrontend for the target platform
-5. Create MapObserver for handling events
-6. Create Map with all the above components
-7. Set the map style
-8. Set initial camera position
-9. Start the render loop
-
-This represents the minimum set of bindings needed to get a working map view. Additional functionality like gestures, annotations, or custom layers would require more bindings.
-
-## Current Task: Implementing Metal Renderer Frontend
-
-### Architecture Overview
-- Direct Metal renderer frontend implementation
-- Uses Metal backend for resource management
-- Handles frame scheduling and presentation
-- Coordinates with map observer
-- Provides C API for map integration
-
-### Implementation Plan
-1. Core Frontend Implementation:
-   [ ] Define frontend options struct (Metal backend, observer interface)
-   [ ] Create frontend constructor/destructor
-   [ ] Implement frame scheduling and rendering
-   [ ] Add map observer callbacks
-   [ ] Write unit tests
-
-2. C API:
-   [ ] `MLN_MetalRendererFrontend_new(MLN_MetalRendererFrontend_Options *options)`
-   [ ] `MLN_MetalRendererFrontend_delete(void *frontend)`
-   [ ] `MLN_MetalRendererFrontend_setObserver(void *frontend, MLN_MapObserver_Interface *observer)`
-   [ ] `MLN_MetalRendererFrontend_update(void *frontend)`
-   [ ] `MLN_MetalRendererFrontend_render(void *frontend)`
-
-3. Next Steps:
-   [ ] Create include/MetalRendererFrontend.h
-   [ ] Create src/MetalRendererFrontend.mm
-   [ ] Create test/MetalRendererFrontendTest.mm
-   [ ] Update CMakeLists.txt to include new files
-
-### Key Design Decisions
-1. Metal Integration
-   - Direct use of Metal backend without abstraction layer
-   - Tight coupling with Metal-specific functionality
-   - Focus on performance and simplicity
-
-2. Frame Scheduling
-   - Frontend manages frame timing
-   - Coordinates with map observer for frame triggers
-   - Handles continuous vs on-demand rendering
-
-3. Map Observer Integration
-   - Frontend implements map observer interface
-   - Handles map state changes
-   - Triggers redraws when needed
-
-4. Error Handling
-   - Direct error reporting through return values
-   - Validation of Metal resources and observer
-   - Debug logging for rendering operations
-
-### Testing Strategy
-1. Basic Functionality
+[ ] 3. Implement Metal Renderer Frontend
    [ ] Constructor/destructor
-   [ ] Observer integration
-   [ ] Frame scheduling
-   [ ] Resource management
+   [ ] Update mechanism
+   [ ] Observer pattern
+   [ ] Render loop
 
-2. Rendering Pipeline
-   [ ] Frame presentation
-   [ ] Observer callbacks
-   [ ] Error conditions
+[ ] 4. Create C FFI bindings
+   [ ] MLN_MetalRendererBackend_new/delete
+   [ ] MLN_MetalRendererFrontend_new/delete
+   [ ] Other necessary methods
 
-3. Performance
-   [ ] Frame timing
-   [ ] Resource usage
-   [ ] Memory management
+[ ] 5. Write tests
+   [ ] Basic creation/destruction
+   [ ] Update handling
+   [ ] Observer pattern
+   [ ] Rendering tests
+
+Dependencies to investigate:
+- Metal.framework
+- MetalKit.framework
+- QuartzCore.framework (for CAMetalLayer)

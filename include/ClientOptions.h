@@ -1,7 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
 extern "C"
 {
+#endif
+
   using MLN_ClientOptions = void;
   auto MLN_ClientOptions_new() -> MLN_ClientOptions *;
   void MLN_ClientOptions_delete(MLN_ClientOptions *nativePtr);
@@ -13,4 +16,7 @@ extern "C"
     MLN_ClientOptions *nativePtr, const char *version
   );
   auto MLN_ClientOptions_version(MLN_ClientOptions *nativePtr) -> const char *;
+
+#ifdef __cplusplus
 }
+#endif

@@ -1,8 +1,11 @@
 #pragma once
 #include <cstdint>
 
+#ifdef __cplusplus
 extern "C"
 {
+#endif
+
   using MLN_ResourceOptions = void;
   auto MLN_ResourceOptions_new() -> MLN_ResourceOptions *;
   void MLN_ResourceOptions_delete(MLN_ResourceOptions *nativePtr);
@@ -21,4 +24,7 @@ extern "C"
   );
   auto MLN_ResourceOptions_maximumCacheSize(MLN_ResourceOptions *nativePtr)
     -> uint64_t;
+
+#ifdef __cplusplus
 }
+#endif
