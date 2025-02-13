@@ -34,58 +34,68 @@ The goal is to help you maintain a big picture as well as the progress of the ta
 - Each component should have unit tests to verify the bindings work correctly
 - Tests are organized in a single executable with each component's tests in a separate file
 - Test functions should be in an anonymous namespace and each test file should expose a run_*_tests() function
+- MapLibre Native's renderer architecture consists of:
+  - Backend: Platform-specific graphics API implementation (Metal/OpenGL/Vulkan)
+  - Frontend: Coordinates between Map and Backend, handles when to render
+  - View: Manages window/view lifecycle and input handling
+- For Metal specifically:
+  - Backend needs MTKView or similar Metal-capable view
+  - Rendering should happen on main thread
+  - Need proper resource management for Metal objects
+  - Should support view resizing and orientation changes
 
 #Scratchpad
 
-## Metal Renderer FFI Implementation Plan
+Current Task: Understanding MapLibre Native's Metal renderer for FFI implementation
 
-Task: Implement Metal renderer FFI to allow rendering MapLibre maps to an MKTView
+Key Components to Expose:
+[X] Metal Backend creation/configuration
+[X] Renderer Frontend interface
+[ ] View/Window management (implementation)
+[ ] Resource cleanup and lifecycle management (implementation)
 
-Components needed:
-1. Metal Renderer Backend (MLN_MetalRendererBackend)
-   - Will wrap mbgl::gfx::RendererBackend
-   - Needs to integrate with Metal/MKTView
-   - Manages the Metal device, command queue, etc.
+Implementation Strategy:
+1. Create C bindings that allow users to:
+   [X] Initialize Metal rendering context with their own MTKView
+   [X] Configure rendering parameters
+   [X] Handle view lifecycle events
+   [X] Clean up resources properly
 
-2. Metal Renderer Frontend (MLN_MetalRendererFrontend)
-   - Will wrap mbgl::RendererFrontend
-   - Manages the renderer lifecycle
-   - Handles updates and observer pattern
-   - Similar structure to GLFWRendererFrontend
+2. Keep the API simple but flexible:
+   [X] Hide complex C++ template machinery
+   [X] Expose only necessary configuration options
+   [X] Provide clear ownership semantics
+   [X] Document threading requirements
 
-3. Metal Renderer (internal)
-   - Created by the frontend
-   - Handles actual rendering operations
-   - Will be managed internally, not exposed in FFI
+3. Focus on macOS/iOS specific needs:
+   [X] Metal is Apple-specific, so we can be platform-opinionated
+   [X] Integrate well with platform conventions
+   [X] Support both MTKView and CAMetalLayer cases
 
-Implementation Steps:
-[ ] 1. Create header files
-   [ ] include/MetalRendererBackend.h
-   [ ] include/MetalRendererFrontend.h
+Next Steps:
+1. Implement MetalRendererBackend.mm:
+   [X] Create the C++ wrapper class
+   [X] Implement the Metal backend creation/deletion
+   [X] Handle view size updates and invalidation
+   [X] Simplify FFI to just new/delete
 
-[ ] 2. Implement Metal Renderer Backend
-   [ ] Basic Metal setup (device, command queue)
-   [ ] Integration with MKTView
-   [ ] Implementation of RendererBackend interface
+2. Implement MetalRendererFrontend.mm:
+   [ ] Create the C++ wrapper class
+   [ ] Implement rendering coordination
+   [ ] Handle state updates
+   [ ] Keep FFI minimal with just new/delete
 
-[ ] 3. Implement Metal Renderer Frontend
-   [ ] Constructor/destructor
-   [ ] Update mechanism
-   [ ] Observer pattern
-   [ ] Render loop
+3. Create unit tests:
+   [ ] Test backend creation/deletion
+   [ ] Test frontend creation/deletion
+   [ ] Test internal view lifecycle events
+   [ ] Test internal rendering coordination
 
-[ ] 4. Create C FFI bindings
-   [ ] MLN_MetalRendererBackend_new/delete
-   [ ] MLN_MetalRendererFrontend_new/delete
-   [ ] Other necessary methods
+Notes:
+- Simplified FFI approach: Only expose new/delete for both backend and frontend
+- Internal coordination: Frontend handles view updates and invalidation
+- View lifecycle: Managed internally through MTKView delegate pattern
+- Resource cleanup: Handled automatically through RAII
 
-[ ] 5. Write tests
-   [ ] Basic creation/destruction
-   [ ] Update handling
-   [ ] Observer pattern
-   [ ] Rendering tests
+Would you like me to proceed with implementing the Metal renderer frontend next?
 
-Dependencies to investigate:
-- Metal.framework
-- MetalKit.framework
-- QuartzCore.framework (for CAMetalLayer)

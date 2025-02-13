@@ -11,8 +11,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # set renderer to opengl or metal depending on platform to pass to options
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set(renderer_option "MLN_WITH_METAL ON" "MLN_WITH_OPENGL OFF")
-    find_library(METAL_LIBRARY Metal REQUIRED)
-    find_library(CORE_ANIMATION QuartzCore REQUIRED)
 else ()
     set(renderer_option "MLN_WITH_OPENGL ON")
 endif ()
@@ -36,8 +34,7 @@ set(sources
 
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set(sources ${sources}
-        "src/MetalRendererBackend.mm"
-        "src/MetalRendererFrontend.mm")
+        "src/MetalRendererBackend.mm")
 endif ()
 
 add_library(${PROJECT_NAME} SHARED ${sources})
@@ -49,8 +46,7 @@ set(public_headers
 
 if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set(public_headers ${public_headers}
-        "include/MetalRendererBackend.h"
-        "include/MetalRendererFrontend.h")
+        "include/MetalRendererBackend.h")
 endif ()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${public_headers}")
@@ -73,20 +69,10 @@ set(test_sources
     "test/ResourceOptionsTest.cpp")
 
 if(APPLE)
-    set(test_sources ${test_sources}
-        "test/MetalRendererBackendTest.mm"
-        "test/MetalRendererFrontendTest.mm")
+    set(test_sources ${test_sources})
 endif()
 
 add_executable(tests ${test_sources})
 target_link_libraries(tests PRIVATE ${PROJECT_NAME})
-
-if(APPLE)
-    target_link_libraries(tests
-        PRIVATE
-            ${METAL_LIBRARY}
-            ${CORE_ANIMATION}
-    )
-endif()
 
 add_test(NAME tests COMMAND tests)
