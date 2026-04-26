@@ -87,6 +87,72 @@ The C ABI owns cross-language concerns:
 - Native surface attach, resize, render, detach, and loss semantics as a fallback
   or comparison path.
 
+## Project Structure
+
+This repository should start as a small C/C++ ABI project with Zig smoke tests.
+Keep bindings and toolkit adapters outside the core until the ABI shape is
+proven.
+
+```text
+include/
+  maplibre_native_abi.h
+
+src/
+  abi/
+    runtime.cpp
+    map.cpp
+    texture.cpp
+    surface.cpp
+    events.cpp
+    errors.cpp
+  cpp/
+    map_runtime.hpp/.cpp
+    map_observer.hpp/.cpp
+    renderer_frontend.hpp/.cpp
+    metal_texture_target.hpp/.mm
+    vulkan_texture_target.hpp/.cpp
+
+examples/
+  zig-headless/
+  zig-metal-texture/
+
+tests/
+  abi/
+  lifecycle/
+  texture/
+
+cmake/
+  toolchains/
+
+third_party/
+  maplibre-native/  # git submodule pinned to a known MapLibre Native commit
+```
+
+`include/maplibre_native_abi.h` is the product boundary. It should contain only C
+types, opaque handles, status codes, versioned structs, and exported functions.
+
+`src/abi` implements exported C functions and performs ABI validation: null
+checks, struct-size checks, state checks, thread checks, error conversion, and
+handle lookup.
+
+`src/cpp` owns MapLibre Native C++ integration: `mbgl::Map`, `RunLoop`, observer
+subclasses, renderer frontend, texture targets, surface targets, exception
+containment, and conversions between ABI structs and C++ types.
+
+`examples/zig-headless` validates the C header with `@cImport` and exercises
+runtime/map/event lifecycle without depending on a UI toolkit.
+
+`examples/zig-metal-texture` validates the primary rendering path: render into an
+offscreen Metal texture and sample it with a tiny host Metal renderer.
+
+`third_party/maplibre-native` is the initial development source for MapLibre
+Native. Keeping it as a pinned submodule makes it possible to inspect, debug, and
+patch backend internals such as Metal `HeadlessBackend` and `OffscreenTexture`
+while the texture-session API is being designed.
+
+Do not add JNI, Kotlin/Native, Swift, Rust, Flutter, React Native, or DVUI
+adapters to the core layout until the C ABI and texture-session model are proven.
+
 ## Why C First
 
 The primary product is a universal ABI for many ecosystems. C is the best common
@@ -100,9 +166,7 @@ denominator for that goal.
   paths.
 
 Rust may still be useful later as an idiomatic binding over the C ABI. Zig is a
-good smoke-test consumer and may help with build orchestration. But neither Rust
-nor Zig should be mandatory transit layers between consumers and MapLibre Native
-if the product goal is a universal native ABI.
+good smoke-test consumer and may help with build orchestration.
 
 ## ABI Shape
 
@@ -654,6 +718,10 @@ Initial candidates:
 Build rules:
 
 - Pin the MapLibre Native revision or core release.
+- During development, build against `third_party/maplibre-native`, a pinned git
+  submodule.
+- Allow a local `MLN_SOURCE_DIR` override for working against a sibling MapLibre
+  Native checkout.
 - Keep backend selection explicit.
 - Do not download native dependencies implicitly from normal builds.
 - Support local prebuilt headers/libraries for debugging.

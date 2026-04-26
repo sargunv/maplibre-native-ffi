@@ -10,6 +10,7 @@ hk = "1.40.0"
 pkl = "0.30.2"
 dprint = "0.53.2"
 "github:sargunv/jvl" = "2026.04.03"
+cmake = "4.1.2"
 
 [settings]
 pin = true
