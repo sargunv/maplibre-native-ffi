@@ -3,6 +3,7 @@ pin = true
 experimental = true
 
 [tools]
+cmake = "3.31.6"
 zig = "0.16.0"
 hk = "1.40.0"
 pkl = "0.31.0"
@@ -13,6 +14,23 @@ dprint = "0.53.2"
 postinstall = [
   "hk install --mise",
 ]
+
+[tasks.build]
+description = "Build core library"
+run = [
+  "cmake -S . -B build",
+  "cmake --build build",
+]
+
+[tasks."build:hello"]
+description = "Build hello-world Zig example"
+depends = ["build"]
+run = "zig build"
+
+[tasks."run:hello"]
+description = "Run hello-world Zig example"
+depends = ["build:hello"]
+run = "zig build run"
 
 [tasks.check]
 description = "Run all checks"

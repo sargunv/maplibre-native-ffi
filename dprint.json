@@ -4,7 +4,7 @@
   "indentWidth": 2,
   "useTabs": false,
   "newLineKind": "lf",
-  "excludes": ["**/node_modules", "**/*-lock.yaml", "**/target"],
+  "excludes": ["third-party/**"],
   "json": { "preferSingleLine": true },
   "markdown": { "textWrap": "always" },
   "plugins": [
