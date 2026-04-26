@@ -317,6 +317,11 @@ public function should validate:
 - call is on an allowed thread, or the function is explicitly documented as an
   enqueueing command.
 
+Map/control ownership is host-pumped initially. The host creates `mln_runtime` on
+an owner thread and must call map/control APIs and runtime pumping APIs from that
+thread. The ABI should not create a hidden map/control thread in the initial
+design. Adapters that want a threaded model can build one above the C ABI.
+
 ## RendererFrontend Model
 
 `mbgl::Map` requires a `RendererFrontend`. The wrapper's frontend is the bridge
@@ -656,10 +661,3 @@ Build rules:
 - Defer full artifact publishing, support tiers, symbols, license bundles,
   Android AARs, iOS XCFrameworks, and Gradle capabilities until the native
   texture design is proven.
-
-## Open Questions
-
-- Which exact Metal texture target API can MapLibre Native support with the least
-  invasive backend work?
-- Should map/control ownership be wrapper-thread-owned, host-pumped, or support
-  both from the beginning?
