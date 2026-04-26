@@ -177,7 +177,6 @@ typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
 typedef struct mln_texture_session mln_texture_session;
 typedef struct mln_surface_session mln_surface_session;
-typedef struct mln_event_queue mln_event_queue;
 ```
 
 Use versioned plain-data structs:
@@ -194,6 +193,10 @@ typedef struct mln_camera_options {
 } mln_camera_options;
 ```
 
+`size` is the caller-visible struct size for ABI evolution. `fields` is a
+bitmask of intentionally supplied values so zero remains a valid value instead
+of meaning "unset".
+
 Use status returns:
 
 ```c
@@ -208,13 +211,15 @@ typedef enum mln_status {
 } mln_status;
 ```
 
-Representative API:
+Each ABI function must document the exact `mln_status` values it can return and
+the meaning of each value for that function.
+
+Representative control API shape, not yet a frozen ABI contract:
 
 ```c
 mln_status mln_runtime_create(const mln_runtime_options* options,
                               mln_runtime** out_runtime);
 mln_status mln_runtime_destroy(mln_runtime* runtime);
-mln_status mln_runtime_poll_event(mln_runtime* runtime, mln_event* out_event);
 
 mln_status mln_map_create(mln_runtime* runtime,
                           const mln_map_options* options,
@@ -289,6 +294,7 @@ mln_status mln_texture_acquire_frame(mln_texture_session* texture,
 mln_status mln_texture_release_frame(mln_texture_session* texture,
                                      const mln_texture_frame* frame);
 mln_status mln_texture_detach(mln_texture_session* texture);
+mln_status mln_texture_destroy(mln_texture_session* texture);
 ```
 
 Representative native-surface API:
@@ -303,7 +309,13 @@ mln_status mln_surface_resize(mln_surface_session* surface,
                               double scale_factor);
 mln_status mln_surface_render(mln_surface_session* surface);
 mln_status mln_surface_detach(mln_surface_session* surface);
+mln_status mln_surface_destroy(mln_surface_session* surface);
 ```
+
+All render target integrations should follow the same lifecycle shape: attach,
+resize, render, detach, destroy. Backend-specific native handles and GPU
+synchronization rules must still be documented per integration because Metal,
+Vulkan, and native surfaces do not share identical ownership rules.
 
 Each surface integration must document:
 
@@ -318,7 +330,7 @@ Each surface integration must document:
 
 Each texture integration must document:
 
-- Backend type: Metal, Vulkan, Direct3D, or future WebGPU.
+- Backend type. Initial texture targets are Metal and Vulkan.
 - Whether the host or wrapper owns the GPU device/queue.
 - Whether the host or wrapper owns the texture/image.
 - Texture format, dimensions, scale factor, color space, and alpha behavior.
@@ -328,8 +340,9 @@ Each texture integration must document:
 - Resize and invalidation behavior.
 - Teardown requirements.
 
-Start with one concrete texture descriptor. Generalize only after a second
-backend proves which fields are shared.
+OpenGL is not a primary target and may be added only as a compatibility fallback
+for a concrete host or platform requirement. WebGPU is a future research target,
+not an initial ABI target.
 
 `mln_map` may live without an attached `mln_texture_session` or
 `mln_surface_session`. Detaching a render target does not destroy map state. This
@@ -341,23 +354,22 @@ Detached maps should support:
 - style URL/JSON commands;
 - camera commands and camera snapshots;
 - bounds/options/debug settings;
-- event queue ownership;
+- map event delivery;
 - pending map state that applies to the next attached render target.
 
 Operations that require render state may return `MLN_STATUS_NO_RENDER_TARGET` or
-`MLN_STATUS_NOT_READY` while detached, including frame rendering, snapshots,
-rendered-feature queries, and projection APIs that require current render target
-size or placement state.
+`MLN_STATUS_NOT_READY` while detached.
 
 ## Thread Ownership
 
-GPU texture and native surface rendering require split ownership.
-
-The wrapper should not assume one internal thread can own everything.
+Thread ownership is described in terms of logical roles, not mandatory physical
+threads. Some hosts may run all roles on one thread. Others may split map
+control, rendering, and UI lifecycle across different threads because their
+graphics API or UI toolkit requires it.
 
 ```text
 Map/control owner
-  owns mbgl::Map, RunLoop, style/camera commands, observer queue
+  owns mbgl::Map, RunLoop, style/camera commands, observer delivery
 
 Render target owner
   owns graphics context, renderable, texture or drawable acquisition,
@@ -366,6 +378,10 @@ Render target owner
 Host/application owner
   owns UI state, gestures, toolkit view lifecycle, event draining
 ```
+
+The wrapper should record which thread owns each created object and return
+`MLN_STATUS_WRONG_THREAD` when an API is called from an invalid thread. For
+simple hosts, the same thread may own all roles.
 
 Some functions are command functions and may be thread-safe by enqueueing work.
 Other functions are thread-bound and must return `MLN_STATUS_WRONG_THREAD` when
@@ -406,17 +422,18 @@ resources directly. Instead, it connects to the currently attached
 `mln_texture_session` or `mln_surface_session`.
 
 When no render target is attached, frontend `update(UpdateParameters)` should
-store or coalesce the latest update and mark rendering pending without touching
-backend or renderable resources. When a new texture or surface target attaches,
-the render target consumes the latest update and requests a render.
+store the latest render update needed to initialize the next attached target and
+mark rendering pending without touching backend or renderable resources. When a
+new texture or surface target attaches, the render target consumes the latest
+update and requests a render.
 
-`RendererBackend`, `Renderable`, and renderer resources are owned by the active
-render target session, not by `mln_map`. For texture targets they are coupled to
-the offscreen texture/render target and synchronization objects. For native
-surface targets they are coupled to the surface/window/layer that makes those
-resources valid.
+`RendererBackend`, `Renderable`, and backend-bound renderer/renderable resources
+are owned by the active render target session, not by `mln_map`. For texture
+targets they are coupled to the offscreen texture/render target and
+synchronization objects. For native surface targets they are coupled to the
+surface/window/layer that makes those resources valid.
 
-Representative lifecycle:
+Representative ownership lifecycle, not exact exported function names:
 
 ```text
 mln_map_create
@@ -428,14 +445,14 @@ mln_map_create
 mln_texture_attach or mln_surface_attach
   create platform RendererBackend
   create Renderable / texture or surface resources
-  create renderer resources
+  create backend-bound renderer/renderable resources
   connect frontend to render target session
   consume latest UpdateParameters
   request render
 
 mln_texture_detach or mln_surface_detach
   disconnect frontend from render target session
-  synchronously reset/destroy renderer resources
+  synchronously reset/destroy backend-bound renderer/renderable resources
   destroy Renderable / RendererBackend / context-bound resources
   increment render target generation
   keep mbgl::Map alive
@@ -446,25 +463,28 @@ mln_map_destroy
   destroy frontend, observer, RunLoop resources
 ```
 
-Initial detach policy should be simple: detach must be called on the render
-target owner thread and returns `MLN_STATUS_WRONG_THREAD` otherwise. Async detach
-can be added later if a real adapter requires it.
+Initial detach policy should be simple: `detach` releases backend-bound render
+resources and must be called on the render target owner thread. `destroy`
+releases the opaque session handle after detach, or performs detach first if the
+session is still attached. Both functions return `MLN_STATUS_WRONG_THREAD` when
+called from an invalid thread.
 
 For texture and native surface targets, the host or framework often controls when
 rendering is allowed. The wrapper should support framework-driven rendering:
 
 ```text
-Map state changes -> RendererFrontend update -> render invalidated event
+Map state changes -> RendererFrontend update -> map render-invalidated event
 Host schedules frame -> mln_texture_render(texture) or mln_surface_render(surface)
 ```
 
 ## Events and Observers
 
-MapLibre Native observer callbacks should become queued C events. Host languages
-should poll or drain events; the C++ wrapper should not call directly into JVM,
-Swift, Kotlin/Native, JS, or other host runtimes from arbitrary native threads.
+MapLibre Native observer callbacks should become queued C events owned by
+`mln_map`. Host languages should poll or drain events through documented map
+event APIs; the C++ wrapper should not call directly into JVM, Swift,
+Kotlin/Native, JS, or other host runtimes from arbitrary native threads.
 
-Initial event mapping:
+Initial event candidates:
 
 | C event | Native grounding |
 | --- | --- |
@@ -478,6 +498,10 @@ Initial event mapping:
 | Glyph/sprite/tile events | glyph callbacks, sprite callbacks, `onTileAction` |
 | Render error | `onRenderError` |
 | Render target invalidated/lost/destroyed | wrapper/frontend/session derived |
+
+The final ABI does not need to expose every native observer callback initially.
+Start with events needed for camera state, style/load lifecycle, render
+invalidation, render completion, and errors.
 
 Event payloads should be plain data. Events should include map identity and, when
 useful, generation counters such as style generation or render target generation.
