@@ -39,10 +39,13 @@ the lower-level native API.
 ## Prior Art
 
 - MapLibre Native: <https://github.com/maplibre/maplibre-native>
-- MapLibre Native architecture: <https://github.com/maplibre/maplibre-native/blob/main/ARCHITECTURE.md>
+- MapLibre Native architecture:
+  <https://github.com/maplibre/maplibre-native/blob/main/ARCHITECTURE.md>
 - MapLibre Compose: <https://github.com/maplibre/maplibre-compose>
-- MapLibre Native Rust bindings: <https://github.com/maplibre/maplibre-native-rs>
-- MapLibre Native Slint experiment: <https://github.com/maplibre/maplibre-native-slint>
+- MapLibre Native Rust bindings:
+  <https://github.com/maplibre/maplibre-native-rs>
+- MapLibre Native Slint experiment:
+  <https://github.com/maplibre/maplibre-native-slint>
 - CXX Rust/C++ bridge: <https://cxx.rs/>
 - Rust JNI bindings: <https://github.com/jni-rs/jni-rs>
 
@@ -84,8 +87,8 @@ The C ABI owns cross-language concerns:
 - Thread ownership rules.
 - Texture target attach, resize, render, frame acquire/release, and loss
   semantics.
-- Native surface attach, resize, render, detach, and loss semantics as a fallback
-  or comparison path.
+- Native surface attach, resize, render, detach, and loss semantics as a
+  fallback or comparison path.
 
 ## Project Structure
 
@@ -128,8 +131,9 @@ third_party/
   maplibre-native/  # git submodule pinned to a known MapLibre Native commit
 ```
 
-`include/maplibre_native_abi.h` is the product boundary. It should contain only C
-types, opaque handles, status codes, versioned structs, and exported functions.
+`include/maplibre_native_abi.h` is the product boundary. It should contain only
+C types, opaque handles, status codes, versioned structs, and exported
+functions.
 
 `src/abi` implements exported C functions and performs ABI validation: null
 checks, struct-size checks, state checks, thread checks, error conversion, and
@@ -142,16 +146,17 @@ containment, and conversions between ABI structs and C++ types.
 `examples/zig-headless` validates the C header with `@cImport` and exercises
 runtime/map/event lifecycle without depending on a UI toolkit.
 
-`examples/zig-metal-texture` validates the primary rendering path: render into an
-offscreen Metal texture and sample it with a tiny host Metal renderer.
+`examples/zig-metal-texture` validates the primary rendering path: render into
+an offscreen Metal texture and sample it with a tiny host Metal renderer.
 
 `third_party/maplibre-native` is the initial development source for MapLibre
-Native. Keeping it as a pinned submodule makes it possible to inspect, debug, and
-patch backend internals such as Metal `HeadlessBackend` and `OffscreenTexture`
-while the texture-session API is being designed.
+Native. Keeping it as a pinned submodule makes it possible to inspect, debug,
+and patch backend internals such as Metal `HeadlessBackend` and
+`OffscreenTexture` while the texture-session API is being designed.
 
 Do not add JNI, Kotlin/Native, Swift, Rust, Flutter, React Native, or DVUI
-adapters to the core layout until the C ABI and texture-session model are proven.
+adapters to the core layout until the C ABI and texture-session model are
+proven.
 
 ## Why C First
 
@@ -162,8 +167,8 @@ denominator for that goal.
 - Swift and ObjC can import C directly or through a small ObjC++ shim.
 - Zig can validate the ABI with `@cImport`.
 - JNI can call C functions directly.
-- Flutter, React Native, Python, C#/.NET, Rust, GTK, and Qt all have mature C FFI
-  paths.
+- Flutter, React Native, Python, C#/.NET, Rust, GTK, and Qt all have mature C
+  FFI paths.
 
 Rust may still be useful later as an idiomatic binding over the C ABI. Zig is a
 good smoke-test consumer and may help with build orchestration.
@@ -259,8 +264,8 @@ mln_status mln_map_rotate_by(mln_map* map,
 mln_status mln_map_cancel_transitions(mln_map* map);
 ```
 
-Do not expose C++ types, STL types, exceptions, callbacks, references, templates,
-or C++ object ownership through the ABI.
+Do not expose C++ types, STL types, exceptions, callbacks, references,
+templates, or C++ object ownership through the ABI.
 
 ## Map and Render Targets Are Separate
 
@@ -353,9 +358,9 @@ for a concrete host or platform requirement. WebGPU is a future research target,
 not an initial ABI target.
 
 `mln_map` may live without an attached `mln_texture_session` or
-`mln_surface_session`. Detaching a render target does not destroy map state. This
-is important for declarative UI frameworks where map state can outlive native
-view/surface/texture lifetime.
+`mln_surface_session`. Detaching a render target does not destroy map state.
+This is important for declarative UI frameworks where map state can outlive
+native view/surface/texture lifetime.
 
 Detached maps should support:
 
@@ -396,8 +401,8 @@ Other functions are thread-bound and must return `MLN_STATUS_WRONG_THREAD` when
 called from the wrong thread. The ABI should not silently switch behavior based
 on caller thread.
 
-Thread-affine handles should store their owner thread or executor identity. Every
-public function should validate:
+Thread-affine handles should store their owner thread or executor identity.
+Every public function should validate:
 
 - handle is non-null;
 - handle is alive;
@@ -405,10 +410,11 @@ public function should validate:
 - call is on an allowed thread, or the function is explicitly documented as an
   enqueueing command.
 
-Map/control ownership is host-pumped initially. The host creates `mln_runtime` on
-an owner thread and must call map/control APIs and runtime pumping APIs from that
-thread. The ABI should not create a hidden map/control thread in the initial
-design. Adapters that want a threaded model can build one above the C ABI.
+Map/control ownership is host-pumped initially. The host creates `mln_runtime`
+on an owner thread and must call map/control APIs and runtime pumping APIs from
+that thread. The ABI should not create a hidden map/control thread in the
+initial design. Adapters that want a threaded model can build one above the C
+ABI.
 
 ## RendererFrontend Model
 
@@ -477,8 +483,9 @@ releases the opaque session handle after detach, or performs detach first if the
 session is still attached. Both functions return `MLN_STATUS_WRONG_THREAD` when
 called from an invalid thread.
 
-For texture and native surface targets, the host or framework often controls when
-rendering is allowed. The wrapper should support framework-driven rendering:
+For texture and native surface targets, the host or framework often controls
+when rendering is allowed. The wrapper should support framework-driven
+rendering:
 
 ```text
 Map state changes -> RendererFrontend update -> map render-invalidated event
@@ -494,27 +501,27 @@ Kotlin/Native, JS, or other host runtimes from arbitrary native threads.
 
 Initial event candidates:
 
-| C event | Native grounding |
-| --- | --- |
-| Camera will/is/did change | `MapObserver::onCameraWillChange`, `onCameraIsChanging`, `onCameraDidChange` |
-| Style loaded | `MapObserver::onDidFinishLoadingStyle` |
-| Map loading started/finished/failed | `onWillStartLoadingMap`, `onDidFinishLoadingMap`, `onDidFailLoadingMap` |
-| Map idle | `onDidBecomeIdle` |
-| Frame render started/finished | `onWillStartRenderingFrame`, `onDidFinishRenderingFrame` |
-| Map render started/finished | `onWillStartRenderingMap`, `onDidFinishRenderingMap` |
-| Style image missing | `onStyleImageMissing` |
-| Glyph/sprite/tile events | glyph callbacks, sprite callbacks, `onTileAction` |
-| Render error | `onRenderError` |
-| Render target invalidated/lost/destroyed | wrapper/frontend/session derived |
+| C event                                  | Native grounding                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| Camera will/is/did change                | `MapObserver::onCameraWillChange`, `onCameraIsChanging`, `onCameraDidChange` |
+| Style loaded                             | `MapObserver::onDidFinishLoadingStyle`                                       |
+| Map loading started/finished/failed      | `onWillStartLoadingMap`, `onDidFinishLoadingMap`, `onDidFailLoadingMap`      |
+| Map idle                                 | `onDidBecomeIdle`                                                            |
+| Frame render started/finished            | `onWillStartRenderingFrame`, `onDidFinishRenderingFrame`                     |
+| Map render started/finished              | `onWillStartRenderingMap`, `onDidFinishRenderingMap`                         |
+| Style image missing                      | `onStyleImageMissing`                                                        |
+| Glyph/sprite/tile events                 | glyph callbacks, sprite callbacks, `onTileAction`                            |
+| Render error                             | `onRenderError`                                                              |
+| Render target invalidated/lost/destroyed | wrapper/frontend/session derived                                             |
 
 The final ABI does not need to expose every native observer callback initially.
 Start with events needed for camera state, style/load lifecycle, render
 invalidation, render completion, and errors.
 
-Event payloads should be plain data. Events should include map identity and, when
-useful, generation counters such as style generation or render target generation.
-Generations are for stale-event filtering; they are not exact request IDs unless
-the underlying native API provides such a request identity.
+Event payloads should be plain data. Events should include map identity and,
+when useful, generation counters such as style generation or render target
+generation. Generations are for stale-event filtering; they are not exact
+request IDs unless the underlying native API provides such a request identity.
 
 ## Async Semantics Without Futures
 
@@ -524,14 +531,14 @@ promises at the C layer.
 
 Classify each operation:
 
-| Category | Meaning |
-| --- | --- |
-| Immediate | Completes synchronously and the result is final. |
-| Command | Applies or enqueues a native command; later effects may produce events. |
-| Snapshot | Returns last-known state and may be stale relative to pending work. |
+| Category       | Meaning                                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Immediate      | Completes synchronously and the result is final.                                                                                   |
+| Command        | Applies or enqueues a native command; later effects may produce events.                                                            |
+| Snapshot       | Returns last-known state and may be stale relative to pending work.                                                                |
 | Blocking query | Explicit synchronous query that may cross to the render/orchestration thread and block. Use sparingly and document deadlock risks. |
-| Request | Wrapper- or adapter-modeled async operation with completion/failure/cancellation events. Use only where intentionally modeled. |
-| Event stream | Produces many events over time, such as camera animation or resource loading. |
+| Request        | Wrapper- or adapter-modeled async operation with completion/failure/cancellation events. Use only where intentionally modeled.     |
+| Event stream   | Produces many events over time, such as camera animation or resource loading.                                                      |
 
 Each ABI function should document its async category, valid calling thread, and
 whether completion is represented by the return status, later map events, or
@@ -542,8 +549,8 @@ callbacks, bindings, or futures appropriate to their ecosystem.
 
 ## Camera and Gestures
 
-The C ABI exposes MapLibre Native camera operations. Application SDKs own gesture
-recognition and declarative state.
+The C ABI exposes MapLibre Native camera operations. Application SDKs own
+gesture recognition and declarative state.
 
 These operations should be grounded in `mbgl::Map` camera and projection APIs,
 not invented as adapter-specific gesture concepts. The ABI should expose camera
@@ -568,9 +575,9 @@ intentionally differ.
 ## Texture Rendering
 
 Texture rendering is the strategic target because it lets UI toolkits composite
-the map inside their own scene graph. This is the path that can avoid native view
-interop problems in Compose, Flutter, React Native, DVUI, and other GPU-rendered
-or declarative UI systems.
+the map inside their own scene graph. This is the path that can avoid native
+view interop problems in Compose, Flutter, React Native, DVUI, and other
+GPU-rendered or declarative UI systems.
 
 The ABI should make texture rendering explicit instead of treating it as a
 special case of native surfaces.
@@ -630,8 +637,8 @@ to MapLibre Native APIs, not as wrapper-invented policy:
 
 - ambient cache maintenance: reset database, invalidate ambient cache, clear
   ambient cache, pack database, and maximum ambient cache size;
-- offline regions: list, get, create, update metadata, set observer, set download
-  state, get status, merge, delete, and invalidate;
+- offline regions: list, get, create, update metadata, set observer, set
+  download state, get status, merge, delete, and invalidate;
 - process-level network status: expose only if wrapping `mbgl::NetworkStatus` is
   intentional for the target platform.
 
@@ -645,9 +652,9 @@ by dropping the returned `AsyncRequest`.
 
 ## Style and Data APIs
 
-MapLibre Native exposes style mutation through `mbgl::style::Style`, reached from
-`mbgl::Map::getStyle()`. The C ABI should wrap that model instead of inventing a
-separate declarative style system.
+MapLibre Native exposes style mutation through `mbgl::style::Style`, reached
+from `mbgl::Map::getStyle()`. The C ABI should wrap that model instead of
+inventing a separate declarative style system.
 
 Initial style API:
 
@@ -661,8 +668,8 @@ Initial style API:
 
 Source and layer mutation should be added in stages:
 
-1. JSON-first source/layer insertion: accept style-spec JSON fragments, construct
-   the corresponding native `Source` or `Layer`, and add them through
+1. JSON-first source/layer insertion: accept style-spec JSON fragments,
+   construct the corresponding native `Source` or `Layer`, and add them through
    `Style::addSource` and `Style::addLayer`.
 2. Common typed source helpers: GeoJSON source with URL or inline GeoJSON first,
    then vector, raster, raster-dem, image, and so on.
@@ -680,7 +687,8 @@ coverage.
 
 Rendered-feature queries and screen/geographic projection helpers are map/render
 queries, not style construction APIs. They belong near the map or render target
-query surface and should document whether they require an attached render target.
+query surface and should document whether they require an attached render
+target.
 
 ## Error Handling
 
@@ -755,9 +763,9 @@ SDL3 or a tiny native shell may be used to provide a window and input, but the
 example should render through the texture-session path rather than treating a
 window surface as the primary integration model.
 
-DVUI is the relevant Zig-native UI toolkit for a later architecture check against
-a non-Compose toolkit. Use it after the minimal Zig texture example proves the C
-ABI and texture-session contract.
+DVUI is the relevant Zig-native UI toolkit for a later architecture check
+against a non-Compose toolkit. Use it after the minimal Zig texture example
+proves the C ABI and texture-session contract.
 
 ## Build Policy
 

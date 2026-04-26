@@ -10,16 +10,15 @@ The design reference is `DESIGN.md`.
 
 ## M0: Repository and Core Source
 
-Goal:
-Establish a reproducible native build against a known MapLibre Native source
-revision.
+Goal: Establish a reproducible native build against a known MapLibre Native
+source revision.
 
 Deliverables:
 
 - Add `third_party/maplibre-native` as a pinned git submodule.
 - Support `MLN_SOURCE_DIR` for working against a sibling checkout.
-- Build a minimal C++ wrapper library against MapLibre Native on the first target
-  platform.
+- Build a minimal C++ wrapper library against MapLibre Native on the first
+  target platform.
 - Export at least one C symbol from the wrapper library.
 
 Acceptance:
@@ -36,8 +35,7 @@ Out of scope:
 
 ## M1: Minimal C ABI Skeleton
 
-Goal:
-Create the public C boundary and prove it is consumable outside C++.
+Goal: Create the public C boundary and prove it is consumable outside C++.
 
 Deliverables:
 
@@ -63,9 +61,8 @@ Out of scope:
 
 ## M2: Headless Map Lifecycle Smoke
 
-Goal:
-Prove map lifecycle, style loading, camera control, and map-owned event plumbing
-before introducing GPU texture ownership.
+Goal: Prove map lifecycle, style loading, camera control, and map-owned event
+plumbing before introducing GPU texture ownership.
 
 Deliverables:
 
@@ -89,9 +86,8 @@ Acceptance:
 - Style parse/load failures produce status codes, map events, and diagnostics.
 - Wrong-thread and invalid-lifecycle calls return documented statuses.
 
-Confidence:
-This milestone proves ABI shape and map/event plumbing. It does not prove GPU
-rendering, texture synchronization, or UI integration.
+Confidence: This milestone proves ABI shape and map/event plumbing. It does not
+prove GPU rendering, texture synchronization, or UI integration.
 
 Out of scope:
 
@@ -101,9 +97,8 @@ Out of scope:
 
 ## M3: ABI Contracts and Test Harness
 
-Goal:
-Make the C boundary reliable enough to extend without accumulating undefined
-behavior.
+Goal: Make the C boundary reliable enough to extend without accumulating
+undefined behavior.
 
 Deliverables:
 
@@ -129,9 +124,8 @@ Out of scope:
 
 ## M4: Metal Texture Session
 
-Goal:
-Prove the primary rendering model on Apple platforms by rendering MapLibre into
-an offscreen Metal texture and sampling it from a host renderer.
+Goal: Prove the primary rendering model on Apple platforms by rendering MapLibre
+into an offscreen Metal texture and sampling it from a host renderer.
 
 Deliverables:
 
@@ -159,8 +153,8 @@ Out of scope:
 
 ## M5: Interactive Zig Map Example
 
-Goal:
-Use Zig as a real non-C++ ABI consumer for an interactive texture-rendered map.
+Goal: Use Zig as a real non-C++ ABI consumer for an interactive texture-rendered
+map.
 
 Deliverables:
 
@@ -186,9 +180,8 @@ Out of scope:
 
 ## M6: Style and Data Mutation Slice
 
-Goal:
-Expose enough style/data APIs to support representative dynamic map UI without
-building a generated style SDK in C.
+Goal: Expose enough style/data APIs to support representative dynamic map UI
+without building a generated style SDK in C.
 
 Deliverables:
 
@@ -216,23 +209,22 @@ Out of scope:
 
 ## M7: Vulkan Texture Session
 
-Goal:
-Validate that the texture-session model generalizes beyond Metal.
+Goal: Validate that the texture-session model generalizes beyond Metal.
 
 Deliverables:
 
 - Vulkan texture descriptor and frame structs.
 - Vulkan attach/resize/render/acquire/release/detach/destroy implementation.
-- Documented Vulkan ownership and synchronization contract: device/queue,
-  image ownership, layouts, semaphores/fences, and in-flight frames.
+- Documented Vulkan ownership and synchronization contract: device/queue, image
+  ownership, layouts, semaphores/fences, and in-flight frames.
 - Minimal host renderer that samples the produced Vulkan image.
 
 Acceptance:
 
 - A visible local style renders through the Vulkan texture path.
 - Host Vulkan code samples the produced image correctly.
-- Metal-specific assumptions are either removed from the common ABI or documented
-  as backend-specific.
+- Metal-specific assumptions are either removed from the common ABI or
+  documented as backend-specific.
 
 Out of scope:
 
@@ -241,9 +233,8 @@ Out of scope:
 
 ## M8: Non-Compose UI Validation
 
-Goal:
-Test the architecture against a real non-Compose UI toolkit before designing
-Compose-specific bindings.
+Goal: Test the architecture against a real non-Compose UI toolkit before
+designing Compose-specific bindings.
 
 Deliverables:
 
@@ -254,7 +245,8 @@ Deliverables:
 
 Acceptance:
 
-- DVUI can display and interact with the map through the same texture-session ABI.
+- DVUI can display and interact with the map through the same texture-session
+  ABI.
 - Any required ABI changes are general-purpose, not DVUI-specific.
 - The experiment confirms whether the ABI is usable by a toolkit that is not
   Compose-shaped.
@@ -279,10 +271,10 @@ Out of scope:
 
 ## Not Yet
 
-- Do not add JNI, Compose, Swift, Rust, Flutter, React Native, or DVUI adapters to
-  the core before the C ABI and texture-session contract are proven.
-- Do not generate exhaustive per-layer C setters unless the core ABI deliberately
-  becomes a generated style SDK.
+- Do not add JNI, Compose, Swift, Rust, Flutter, React Native, or DVUI adapters
+  to the core before the C ABI and texture-session contract are proven.
+- Do not generate exhaustive per-layer C setters unless the core ABI
+  deliberately becomes a generated style SDK.
 - Do not make CPU readback a product rendering path.
 - Do not build around WebGPU or OpenGL first.
 - Do not introduce a wrapper-owned futures/coroutines/promises model at the C

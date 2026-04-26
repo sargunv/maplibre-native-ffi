@@ -1,10 +1,23 @@
-[tools]
-zig = "0.16.0"
-hk = "1.40.0"
-pkl = "0.30.2"
-dprint = "0.53.2"
-"github:sargunv/jvl" = "2026.04.03"
-
 [settings]
 pin = true
 experimental = true
+
+[tools]
+zig = "0.16.0"
+hk = "1.40.0"
+pkl = "0.31.0"
+dprint = "0.53.2"
+"github:sargunv/jvl" = "2026.04.03"
+
+[hooks]
+postinstall = [
+  "hk install --mise",
+]
+
+[tasks.check]
+description = "Run all checks"
+run = "hk check --all"
+
+[tasks.fix]
+description = "Fix all auto-fixable issues"
+run = "hk fix --all"

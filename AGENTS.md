@@ -15,7 +15,8 @@
 - Record important discoveries in `DESIGN.md` if they affect architecture.
 - Record sequencing changes, deferred work, or newly split milestones in
   `ROADMAP.md`.
-- Do not leave important architectural decisions only in commit messages or chat.
+- Do not leave important architectural decisions only in commit messages or
+  chat.
 
 ## Implementation Notes
 
