@@ -3,14 +3,17 @@ pin = true
 experimental = true
 
 [tools]
-cmake = "3.31.6"
-zig = "0.16.0"
 hk = "1.40.0"
 pkl = "0.31.0"
 dprint = "0.53.2"
-"conda:clang-format" = "21.1.8"
 "github:sargunv/jvl" = "2026.04.03"
+cmake = "3.31.6"
 "github:blankspruce/gersemi" = "0.27.2"
+"conda:clang-format" = "21.1.8"
+"conda:clang-tools" = "21.1.8"
+"conda:clang" = "21.1.8"
+"conda:clangxx" = "21.1.8"
+zig = "0.16.0"
 
 [hooks]
 postinstall = [
@@ -21,7 +24,7 @@ postinstall = [
 description = "Build core library"
 run = [
   "cmake -S . -B build",
-  "cmake --build build",
+  "cmake --build build --parallel",
 ]
 
 [tasks."build:hello"]

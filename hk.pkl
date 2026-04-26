@@ -4,9 +4,22 @@ import "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Builtin
 
 local allSteps = new Mapping<String, Step> {
   ["dprint"] = Builtins.dprint
+  ["cmake-configure"] {
+    glob = List("CMakeLists.txt", "**/*.cmake", "**/*.cmake.in")
+    check = "cmake -S . -B build"
+  }
+  ["clang-tidy"] {
+    glob = List("src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx")
+    depends = List("cmake-configure")
+    check = "clang-tidy -p build {{files}} --extra-arg=-resource-dir=\"$(clang -print-resource-dir)\""
+  }
   ["jvl"] {
     glob = List("**/*.json", "**/*.jsonc")
     check = "jvl check {{files}}"
+  }
+  ["zig-ast-check"] {
+    glob = List("**/*.zig")
+    check = "for file in {{files}}; do zig ast-check \"$file\"; done"
   }
 }
 

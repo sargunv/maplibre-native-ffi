@@ -8,7 +8,7 @@ leaking C++ ownership, exceptions, or threading assumptions.
 
 The design reference is `DESIGN.md`.
 
-## M0: Repository and Core Source
+## M0: Repository and Core Source Completed
 
 Goal: Establish a reproducible native build against a known MapLibre Native
 source revision.
@@ -26,6 +26,16 @@ Acceptance:
 - Fresh checkout can initialize the submodule and configure the wrapper build.
 - Local `~/Code/maplibre-native` can be used via `MLN_SOURCE_DIR`.
 - Build does not implicitly download native dependencies.
+
+Acceptance evidence:
+
+- `third_party/maplibre-native` is pinned as a git submodule at
+  `2489914ec28a196a7979bf4fafa10f87c9c99cb8`.
+- `cmake -S . -B build` configures MapLibre Native through `add_subdirectory`,
+  using `MLN_SOURCE_DIR` when provided and the submodule by default.
+- `cmake --build build` builds `maplibre_native_abi` linked against MapLibre
+  Native `mbgl-core` with the Metal backend on macOS.
+- `zig build run` prints the ABI hello-world message through the shared library.
 
 Out of scope:
 
