@@ -517,6 +517,30 @@ The initial Zig smoke should use `@cImport` against the public C header and:
 - poll native events;
 - optionally render/read back a frame.
 
+The Zig smoke is not a product adapter. It validates that the ABI is actually C,
+not accidentally C++, Rust, or JNI shaped.
+
+For the first native-surface smoke, prefer SDL3 as the small cross-platform host.
+It can teach the right surface-level lessons without starting from a full UI
+toolkit:
+
+- macOS: create a Metal view and obtain the backing `CAMetalLayer`.
+- Linux/Windows: create Vulkan-capable windows/surfaces.
+- All platforms: exercise resize, DPI, event loop, render scheduling, and teardown
+  through a C/Zig-friendly API.
+
+Keep the graphics backend constraint explicit: Metal on Apple platforms and
+Vulkan elsewhere. Do not choose an OpenGL-first smoke path.
+
+For a real small Zig application UI, DVUI is the most relevant Zig-native toolkit
+to track. It should be considered only after the ABI and native-surface contract
+are proven with SDL3-based Metal/Vulkan smoke tests, and only if it teaches us
+something about embedding in a real Zig application UI.
+
+MapLibre Native has an experimental WebGPU backend, but the initial ABI and
+surface contract should not be based on WebGPU or `wgpu`. Revisit WebGPU after
+Metal and Vulkan native-surface sessions are proven.
+
 ## Build Policy
 
 Start with one platform/backend. MapLibre Native validates exactly one graphics
@@ -543,8 +567,6 @@ Build rules:
 
 ## Open Questions
 
-- Should the implementation live in a new repository, inside `maplibre-native`,
-  or adjacent to `maplibre-native-rs`?
 - Which first native surface path is lowest risk: GLFW, AWT desktop, or another
   desktop backend?
 - Should map/control ownership be wrapper-thread-owned, host-pumped, or support
@@ -553,3 +575,7 @@ Build rules:
   without relying on internal parser/conversion details?
 - What is the minimum ABI needed for MapLibre Compose Desktop to replace its
   current JNI/C++ experiment?
+
+Resolved decisions:
+
+- The implementation starts in this repository.
