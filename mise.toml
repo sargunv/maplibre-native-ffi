@@ -1,0 +1,6 @@
+[tools]
+rust = "1.95.0"
+
+[settings]
+pin = true
+experimental = true
