@@ -1,712 +1,359 @@
-# Design: Thin Rust Wrapper for MapLibre Native UI Rendering
+# Design: Universal C ABI for MapLibre Native UI Rendering
 
 ## Purpose
 
-This repository explores a new Rust crate that provides a thin, safer, faithful
-wrapper over MapLibre Native for interactive UI rendering.
+This project explores a safe, simple, universal native API for embedding
+MapLibre Native interactive maps in many UI ecosystems.
 
-The crate is not intended to be a MapLibre Compose implementation detail. It
-should be usable by MapLibre Compose first and should avoid design choices that
-would unnecessarily block future adapters for other UI frameworks.
+The primary product is a C ABI over MapLibre Native's C++ core. The C ABI should
+be usable from Kotlin/JVM, Kotlin/Native, Swift/ObjC, Zig, Rust, Flutter, React
+Native, C#/.NET, Python, GTK, Qt, WinUI, SwiftUI, Slint, egui, iced, and other
+native or Rust UI toolkits.
 
-Future adapter context matters even though it is not part of the initial phase.
-Potential later consumers include GTK, Qt, WinUI, SwiftUI, Flutter, React Native,
-Slint, egui, iced, C#/.NET, Python, and other Rust or native UI toolkits. The
-initial wrapper should not build abstractions for all of them up front, but it
-should avoid Compose-specific assumptions in the core Rust API.
-
-The near-term user is MapLibre Compose's JVM desktop target. Later Android, iOS,
-or other framework adapters should be treated as separate experiments once the
-desktop path proves the wrapper useful.
+MapLibre Compose is the motivating first application, but the ABI should not be
+Compose-shaped. Compose, React Native, SwiftUI, Flutter, and other application
+SDKs should build idiomatic state, gesture, lifecycle, and view APIs on top of
+the lower-level native API.
 
 ## Goals
 
-- Provide a Rust-owned wrapper over MapLibre Native Core for interactive maps.
-- Hide most C++ ownership and lifetime hazards behind Rust types.
-- Preserve MapLibre Native rendering behavior and compatibility.
-- Keep UI framework and language binding layers thin.
-- Support multiple rendering backends as package/build variants.
-- Make MapLibre Compose desktop more capable without baking Compose concepts
-  into the Rust runtime.
-- Do not knowingly block later Android or iOS native-core experiments.
+- Provide a safe and simple C ABI over MapLibre Native for interactive maps.
+- Keep the API faithful to MapLibre Native's real C++ model.
+- Make native surface rendering the primary path, not an afterthought.
+- Keep language and UI framework adapters thin.
+- Make ownership, thread affinity, lifecycle, and async observer behavior
+  explicit at the ABI boundary.
+- Support future bindings for JVM/JNI, Kotlin/Native, Swift/ObjC, Zig, Rust,
+  Flutter, React Native, and other ecosystems from the same low-level API.
 
 ## Non-Goals
 
-- Reimplement MapLibre Native in Rust.
+- Reimplement MapLibre Native.
 - Expose the complete MapLibre Native C++ API directly.
-- Replace MapLibre Compose's public Kotlin API.
-- Provide a full declarative map SDK in Rust.
-- Abstract every GUI toolkit as a lowest-common-denominator widget API.
-- Make WebAssembly support part of the initial native-core path.
-- Promise Android or iOS SDK replacement before their lifecycle, gestures,
-  offline/cache, permissions, location, annotations, and platform UI behavior are
+- Provide a declarative map SDK in the C ABI.
+- Own gesture recognition in the C ABI.
+- Abstract every GUI toolkit as a generic widget API.
+- Promise Android, iOS, or Web parity before their platform SDK behavior is
   inventoried.
-
-Web should continue to use MapLibre GL JS for the foreseeable future. A future
-Wasm experiment can be designed separately once the native runtime is proven.
 
 ## Prior Art
 
 - MapLibre Native: <https://github.com/maplibre/maplibre-native>
 - MapLibre Native architecture: <https://github.com/maplibre/maplibre-native/blob/main/ARCHITECTURE.md>
-- MapLibre Native Rust bindings: <https://github.com/maplibre/maplibre-native-rs>
-- `maplibre_native` crate docs: <https://docs.rs/maplibre_native>
 - MapLibre Compose: <https://github.com/maplibre/maplibre-compose>
-- MapLibre Compose roadmap: <https://maplibre.org/maplibre-compose/roadmap>
+- MapLibre Native Rust bindings: <https://github.com/maplibre/maplibre-native-rs>
 - MapLibre Native Slint experiment: <https://github.com/maplibre/maplibre-native-slint>
 - CXX Rust/C++ bridge: <https://cxx.rs/>
 - Rust JNI bindings: <https://github.com/jni-rs/jni-rs>
-- Gobley/UniFFI KMP bindings: <https://github.com/gobley/gobley>
 
-## Key Existing Lessons
-
-`maplibre-native-rs` already proves that Rust can wrap MapLibre Native Core with
-`cxx`. It also contains reusable ideas for:
-
-- Pinning a MapLibre Native Core release.
-- Downloading or building MapLibre Native Core.
-- Selecting Metal, OpenGL, or Vulkan backends with Cargo features.
-- Linking native system libraries and frameworks.
-- Bridging C++ objects through `cxx`.
-- Providing typed Rust wrappers for camera, size, coordinates, style loading,
-  observers, images, sources, and layers.
-
-Its current public API is primarily image/headless/server oriented. It has a
-continuous renderer and a Slint example, but that example performs GPU render to
-CPU readback to UI pixel buffer. This is useful as an MVP pattern, but it should
-not define the final UI runtime architecture.
-
-MapLibre Compose already has a desktop native path based on JVM, AWT `Canvas`,
-SimpleJNI, CMake, and C++ glue. The public Kotlin API is separated from platform
-implementation internals by `MapAdapter` and platform `ComposableMapView`
-actuals. That boundary should be preserved.
-
-MapLibre Native platform SDKs show that interactive rendering is not only a map
-API problem. It also requires careful handling of `RendererFrontend`,
-`RendererBackend`, `Renderable`, `RunLoop`, surface creation/destruction,
-render-thread scheduling, app lifecycle, and context loss.
-
-## High-Level Architecture
+## Architecture
 
 ```text
 MapLibre Native C++ Core
         |
-small C++ shim compatible with cxx
+small C++ wrapper/shim
         |
-maplibre-native-core
+universal C ABI
         |
-maplibre-native-runtime Rust API
+language bindings and toolkit adapters
         |
-optional adapters: JNI, Compose, Rust UI examples
-        |
-MapLibre Compose first
+Compose, JNI, Kotlin/Native, Swift, Zig, Rust, Flutter, RN, GTK, Qt, etc.
 ```
 
-The Rust crate should expose the smallest safe model that can drive MapLibre
-Native correctly. It should preserve native concepts where possible and only
-introduce Rust abstractions to make ownership, threading, error handling, and
-lifecycle constraints explicit.
+The implementation can use modern C++ internally. The exported product boundary
+is C.
 
-## Why Rust
+The C++ wrapper owns C++-specific concerns:
 
-Rust is an implementation choice for the wrapper's internal safety boundary, not
-because MapLibre Native requires a Rust-shaped public API. The wrapper still aims
-to be thin and faithful to MapLibre Native.
+- `mbgl::Map` construction and destruction.
+- `mbgl::util::RunLoop` ownership and pumping.
+- `mbgl::MapObserver` subclasses.
+- `mbgl::RendererFrontend` implementation.
+- Renderer/backend/renderable ownership.
+- Exception containment.
+- Thread-affine teardown.
+- Conversion between MapLibre Native types and ABI structs.
 
-Rust is useful here because it can make these wrapper-level concerns explicit:
+The C ABI owns cross-language concerns:
 
-- Ownership of native map, observer, frontend, surface, and event objects.
-- Intentional `Send`/`Sync` behavior for thread-affine handles.
-- Concentration of unsafe code at the C++ bridge.
-- Explicit shutdown instead of accidental destructor-thread behavior.
-- Command/event APIs that avoid pretending native loading and rendering are
-  synchronously complete.
-- Safe adapters for Rust callers and a strong implementation layer for JNI or
-  future FFI shims.
+- Opaque handles.
+- Explicit create/destroy/shutdown.
+- Plain-data option, camera, size, coordinate, and event structs.
+- Status codes and diagnostics.
+- Event polling or draining.
+- Thread ownership rules.
+- Surface attach, resize, render, detach, and loss semantics.
 
-Rust does not remove the hardest MapLibre Native integration problems: renderer
-lifecycle, platform surfaces, backend context validity, resource loading,
-callbacks, and native build/distribution. Those remain native integration
-problems and must be solved faithfully against the C++ API.
+## Why C First
 
-Alternatives are viable depending on the primary product:
+The primary product is a universal ABI for many ecosystems. C is the best common
+denominator for that goal.
 
-- A modern C++ wrapper is the closest fit to MapLibre Native internals and may be
-  the simplest path if the only goal is JNI/C++ integration.
-- A plain C API is the strongest long-term language-neutral ABI if the product is
-  a universal native substrate for many ecosystems.
-- Zig is attractive for C ABI smoke tests, cross-compilation, and build
-  orchestration around a C shim.
+- Kotlin/Native can consume C headers through `cinterop`.
+- Swift and ObjC can import C directly or through a small ObjC++ shim.
+- Zig can validate the ABI with `@cImport`.
+- JNI can call C functions directly.
+- Flutter, React Native, Python, C#/.NET, Rust, GTK, and Qt all have mature C FFI
+  paths.
 
-This design chooses Rust because the desired first-class artifact is a safe
-source-level wrapper that can later expose JNI and experimental C ABI surfaces.
-If the project goal changes to “stable universal ABI first,” the architecture
-should be revisited and a C-first or Zig/C-shim design may be more appropriate.
+Rust may still be useful later as an idiomatic binding over the C ABI. Zig is a
+good smoke-test consumer and may help with build orchestration. But neither Rust
+nor Zig should be mandatory transit layers between consumers and MapLibre Native
+if the product goal is a universal native ABI.
 
-## Proposed Workspace Structure
+## ABI Shape
+
+Use opaque handles:
+
+```c
+typedef struct mln_runtime mln_runtime;
+typedef struct mln_map mln_map;
+typedef struct mln_surface_session mln_surface_session;
+typedef struct mln_event_queue mln_event_queue;
+```
+
+Use versioned plain-data structs:
+
+```c
+typedef struct mln_camera_options {
+    uint32_t size;
+    uint32_t fields;
+    double latitude;
+    double longitude;
+    double zoom;
+    double bearing;
+    double pitch;
+} mln_camera_options;
+```
+
+Use status returns:
+
+```c
+typedef enum mln_status {
+    MLN_STATUS_OK = 0,
+    MLN_STATUS_ACCEPTED = 1,
+    MLN_STATUS_INVALID_ARGUMENT = -1,
+    MLN_STATUS_INVALID_STATE = -2,
+    MLN_STATUS_WRONG_THREAD = -3,
+    MLN_STATUS_UNSUPPORTED = -4,
+    MLN_STATUS_NATIVE_ERROR = -5,
+} mln_status;
+```
+
+Representative API:
+
+```c
+mln_status mln_runtime_create(const mln_runtime_options* options,
+                              mln_runtime** out_runtime);
+mln_status mln_runtime_destroy(mln_runtime* runtime);
+mln_status mln_runtime_poll_event(mln_runtime* runtime, mln_event* out_event);
+
+mln_status mln_map_create(mln_runtime* runtime,
+                          const mln_map_options* options,
+                          mln_map** out_map);
+mln_status mln_map_destroy(mln_map* map);
+
+mln_status mln_map_set_style_url(mln_map* map, const char* url);
+mln_status mln_map_set_style_json(mln_map* map, const char* json);
+mln_status mln_map_get_camera(mln_map* map, mln_camera_options* out_camera);
+mln_status mln_map_jump_to(mln_map* map, const mln_camera_options* camera);
+mln_status mln_map_ease_to(mln_map* map,
+                           const mln_camera_options* camera,
+                           const mln_animation_options* animation);
+mln_status mln_map_fly_to(mln_map* map,
+                          const mln_camera_options* camera,
+                          const mln_animation_options* animation);
+mln_status mln_map_move_by(mln_map* map,
+                           double dx,
+                           double dy,
+                           const mln_animation_options* animation);
+mln_status mln_map_scale_by(mln_map* map,
+                            double scale,
+                            const mln_screen_point* anchor,
+                            const mln_animation_options* animation);
+mln_status mln_map_rotate_by(mln_map* map,
+                             mln_screen_point first,
+                             mln_screen_point second,
+                             const mln_animation_options* animation);
+mln_status mln_map_cancel_transitions(mln_map* map);
+```
+
+Do not expose C++ types, STL types, exceptions, callbacks, references, templates,
+or C++ object ownership through the ABI.
+
+## Map and Surface Are Separate
+
+Native surfaces are the primary goal. A single “map view” handle is too vague.
+The ABI should separate map/control state from surface/render attachment.
 
 ```text
-crates/
-  maplibre-native-core/
-  maplibre-native-runtime/
-  maplibre-native-jni/
-examples/
-  desktop-minimal/
-  headless-smoke/
-  jni-smoke/
-xtask/
+mln_map
+  owns map/control state: style, camera, resource options, observer events,
+  long-lived RendererFrontend, mbgl::Map
+
+mln_surface_session
+  owns render attachment: native surface handle, RendererBackend,
+  Renderable/surface resources, renderer resources, resize, render/present,
+  surface loss, teardown
 ```
 
-`maplibre-native-core` is the low-level C++ bridge and build/link layer. It may
-start by porting selected build and `cxx` bridge ideas from `maplibre-native-rs`.
+Representative surface API:
 
-`maplibre-native-runtime` is the thin safe Rust wrapper over MapLibre Native UI
-rendering concepts. This is the main product API for Rust users and downstream
-adapters.
-
-`maplibre-native-jni` is an optional adapter/demo crate. It should prove that the
-runtime can be consumed from JVM and Android, but MapLibre Compose may still own
-its final Kotlin-specific JNI bridge in its own repository.
-
-## API Layers
-
-The project should keep these API layers separate:
-
-- Rust API: thin, safe, faithful wrapper over MapLibre Native concepts.
-- Experimental C ABI smoke: minimal non-Rust validation surface, preferably
-  exercised by a tiny Zig program using `@cImport`.
-- JNI adapter: narrow JVM bridge needed by MapLibre Compose desktop, implemented
-  as a peer adapter over the Rust runtime rather than through the C ABI unless a
-  later stable ABI justifies that layering.
-- Toolkit adapters: Compose first; other adapters only when there is a concrete
-  consumer or a proven need to generalize.
-
-A stable C ABI is not part of the initial design. A minimal experimental C ABI
-smoke is useful early to verify that the Rust runtime can be exposed without
-Rust-specific assumptions. JNI and the C ABI should initially be peer adapters
-over the Rust runtime, not stacked layers.
-
-## API Boundaries
-
-### C++ Boundary
-
-The C++ boundary should be narrow and explicit. It should expose only the pieces
-needed to drive an interactive map runtime:
-
-- Construct and destroy native map/runtime objects.
-- Create or attach renderer frontend/backend objects.
-- Load styles.
-- Mutate camera.
-- Resize render targets.
-- Process input events when the runtime owns gesture translation.
-- Query rendered features and projection data.
-- Add/remove images, sources, and layers.
-- Receive observer callbacks.
-- Render, present, pause, resume, and handle surface loss.
-
-Use `cxx` for Rust/C++ interop where possible. Avoid broad generated bindings
-over arbitrary MapLibre Native headers. The Rust crate should own the public API
-shape rather than mirroring C++ classes wholesale.
-
-C++ shim policy:
-
-- No C++ exception may cross the FFI boundary.
-- C++ subclasses for MapLibre Native virtual interfaces should live in the shim.
-- Rust callbacks must not be invoked directly from arbitrary native threads.
-- Observer/frontend events should be queued as plain-data events and delivered
-  through the runtime dispatcher.
-- Each opaque C++ object must have an explicit owner and destruction thread.
-- Objects requiring an active backend/context for teardown must expose explicit
-  shutdown rather than relying on Rust `Drop` alone.
-
-### Rust Runtime Boundary
-
-The runtime should expose framework-neutral concepts:
-
-```rust
-NativeRuntime
-NativeMap
-RenderSurface
-SurfaceDescriptor
-RenderBackend
-MapCamera
-RuntimeEvent
-MapEvent
-ResourceEvent
-RenderEvent
+```c
+mln_status mln_surface_attach(mln_map* map,
+                              const mln_surface_descriptor* descriptor,
+                              mln_surface_session** out_surface);
+mln_status mln_surface_resize(mln_surface_session* surface,
+                              uint32_t width,
+                              uint32_t height,
+                              double scale_factor);
+mln_status mln_surface_render(mln_surface_session* surface);
+mln_status mln_surface_detach(mln_surface_session* surface);
 ```
 
-Broad style object types such as `Style`, `Source`, and `Layer` should not be
-stabilized early. Prefer narrow commands that map to concrete MapLibre Native
-APIs until a typed style model proves its value.
+Each surface integration must document:
 
-Representative API shape:
+- Native handle type.
+- Handle ownership.
+- Valid creation thread.
+- Valid render thread.
+- Resize semantics.
+- Present/swap ownership.
+- Context or surface loss behavior.
+- Teardown requirements.
 
-```rust
-let runtime = Runtime::new(RuntimeOptions::default())?;
-let map = runtime.create_map(MapOptions::default())?;
-let session = map.attach_surface(surface_descriptor)?;
+Start with one concrete descriptor. Generalize only after a second surface path
+proves which fields are shared.
 
-session.resize(Size::new(width, height), scale_factor)?;
-map.set_style_url("https://demotiles.maplibre.org/style.json")?;
-map.set_camera(Camera::new(lat, lon, zoom))?;
+`mln_map` may live without an attached `mln_surface_session`. Surface detach does
+not destroy map state. This is important for declarative UI frameworks where map
+state can outlive native view/surface lifetime.
 
-while let Some(event) = runtime.poll_event()? {
-    match event {
-        RuntimeEvent::Map { map_id, event: MapEvent::StyleLoaded { generation } }
-            if map_id == map.id() && generation == map.style_generation() => {}
-        RuntimeEvent::Map { map_id, event: MapEvent::Idle } if map_id == map.id() => break,
-        RuntimeEvent::Error(error) => return Err(error.into()),
-        _ => {}
-    }
-}
+Detached maps should support:
 
-session.shutdown()?;
-```
+- style URL/JSON commands;
+- camera commands and camera snapshots;
+- bounds/options/debug settings;
+- event queue ownership;
+- pending map state that applies to the next attached surface.
 
-This sketch is not a final API. It illustrates the intended direction:
-frameworks provide surfaces and events; the runtime owns map/render lifecycle;
-style and resource loading are asynchronous runtime activity rather than
-synchronous success from `set_style_url`.
+Operations that require render state may return `MLN_STATUS_NO_SURFACE` or
+`MLN_STATUS_NOT_READY` while detached, including frame rendering, snapshots,
+rendered-feature queries, and projection APIs that require current surface size
+or placement state.
 
-Initial handle contracts:
+## Thread Ownership
 
-| Handle | Thread model | `Send` / `Sync` intent | Notes |
-| --- | --- | --- | --- |
-| `RuntimeOwner` | Owns or is bound to the runtime thread | intentionally `!Send` and `!Sync` unless actor-owned | Pumps `RunLoop` and dispatches events. |
-| `RuntimeHandle` | Command sender to runtime | `Send + Clone` if actor-backed | For host threads that cannot touch runtime-owned state directly. |
-| `NativeMap` | Bound to one runtime owner or represented by a handle | initially `!Send` and `!Sync` unless actor-backed | State-changing calls must run on the owner or be marshalled. |
-| `RenderSurface` | Bound to platform creation/render constraints | platform-specific | Must model resize, loss, recreation, and destruction. |
-| `EventReceiver` | Adapter-owned dispatch target | adapter-specific | Receives plain-data events, never raw C++ references. |
+Native surface rendering requires split ownership.
 
-Initial lifecycle states:
+The wrapper should not assume one internal thread can own everything.
 
 ```text
-Uninitialized -> SurfaceAttached -> Running -> SurfaceLost -> Running
-       |                |              |             |
-       +----------------+--------------+-------------+-> Destroyed
+Map/control owner
+  owns mbgl::Map, RunLoop, style/camera commands, observer queue
+
+Surface/render owner
+  owns graphics context, renderable, drawable acquisition, render/present
+
+Host/application owner
+  owns UI state, gestures, toolkit view lifecycle, event draining
 ```
 
-Only a subset of methods is valid in each state. Invalid calls should return an
-immediate API error. Asynchronous fatal failures should transition the map to a
-degraded or destroyed state and emit an event.
+Some functions are command functions and may be thread-safe by enqueueing work.
+Other functions are thread-bound and must return `MLN_STATUS_WRONG_THREAD` when
+called from the wrong thread. The ABI should not silently switch behavior based
+on caller thread.
 
-Before any public API stabilization, lifecycle states must be represented either
-by split/typestate handles such as `NativeMap` and `SurfaceSession`, or by a
-documented `state()` query plus non-exhaustive lifecycle errors.
+Thread-affine handles should store their owner thread or executor identity. Every
+public function should validate:
 
-### Future FFI Boundary
+- handle is non-null;
+- handle is alive;
+- call is valid in current lifecycle state;
+- call is on an allowed thread, or the function is explicitly documented as an
+  enqueueing command.
 
-A stable shared C ABI is not part of the initial wrapper. However, a tiny
-experimental C ABI smoke should be added early to validate opaque handles,
-plain-data structs, explicit destroy functions, status codes, and queued events.
-The preferred smoke consumer is a small Zig program using `@cImport`, because it
-exercises the C header directly without a binding generator or large UI
-framework.
+## RendererFrontend Model
 
-The C ABI smoke is not a product adapter. It should stay narrow: create/destroy
-runtime, create/destroy map, set size/style/camera, poll events, and optionally
-render/read back a frame. If multiple non-Rust adapters later need the same
-boundary, this smoke can evolve into a stable shared ABI.
+`mbgl::Map` requires a `RendererFrontend`. The wrapper's frontend is the bridge
+between map/control state and surface rendering.
 
-Even before a shared C ABI exists, FFI shims must obey the basic invariants: no
-Rust panics or C++ exceptions unwind across FFI, no borrowed Rust references are
-held by host languages, and host callbacks are queued as owned data rather than
-called directly from arbitrary native threads.
+The frontend should:
 
-### Public API Stabilization Rules
+- receive `UpdateParameters` from `mbgl::Map`;
+- coalesce the latest update where appropriate;
+- signal render invalidation to the surface session or host adapter;
+- preserve MapLibre Native's callback-thread expectations;
+- implement synchronous renderer cleanup in `reset()`;
+- avoid direct host-language callbacks from native threads.
 
-- Do not publish stable crates before the native surface contract is accepted.
-- If crates are published during exploration, document that `0.x` minor releases
-  may break APIs and keep unstable modules clearly marked.
-- Public Rust event and error enums should be `#[non_exhaustive]`.
-- Public handles must deliberately opt into or out of `Send` and `Sync`.
-- CPU-readback-only APIs must stay experimental or example-local until the
-  native surface path proves whether they belong in the core API.
-- Backend feature names and platform descriptors are public API and should be
-  treated as semver-sensitive once published.
-- The core runtime API should avoid `async fn` as a semantic foundation.
-  Optional convenience crates may wrap queued events into futures later, but the
-  core runtime and FFI shims should remain command/event based.
+The frontend should be long-lived with `mln_map`. It should not own platform GPU
+resources directly. Instead, it connects to the currently attached
+`mln_surface_session`.
 
-### Adapter Boundary
+When no surface is attached, frontend `update(UpdateParameters)` should store or
+coalesce the latest update and mark rendering pending without touching backend or
+renderable resources. When a new surface attaches, the surface session consumes
+the latest update and requests a render.
 
-Adapters translate toolkit and language concepts into the Rust runtime.
+`RendererBackend`, `Renderable`, and renderer resources are owned by
+`mln_surface_session`, not by `mln_map`. They are created on surface attach and
+destroyed on surface detach or surface loss. This keeps backend/context lifetime
+coupled to the native surface that makes those resources valid.
 
-Examples:
-
-- JVM desktop adapter translates AWT/Swing/Compose lifecycle and native canvas
-  handles into a runtime surface descriptor.
-- Android adapter translates `Surface`, `SurfaceView`, `TextureView`, or
-  `ANativeWindow` lifecycle into runtime surface callbacks.
-- iOS adapter translates `UIView`, `CAMetalLayer`, `MTKView`, display link, app
-  lifecycle, and memory warnings into runtime hooks.
-- Rust UI adapters translate toolkit windows, frame clocks, resize events, and
-  pointer events into runtime calls.
-
-Adapters may be handwritten. The initial interactive rendering path should not
-depend on UniFFI. UniFFI or Gobley may be useful later for simple data/control
-surfaces, but rendering, native handles, thread affinity, and callbacks are
-likely better served by explicit JNI or platform-specific shims.
-
-Application SDK layers own gesture recognition. For MapLibre Compose, that means
-Compose Multiplatform should translate pointer, touch, wheel, keyboard, and
-platform gesture input into map movement commands. The runtime exposes the common
-movements that gestures produce, plus direct camera mutation, projection, hit
-testing, and feature query primitives.
-
-Movement primitives should include:
-
-- Pan by screen delta.
-- Zoom or scale around a screen focus point.
-- Rotate around a screen focus point.
-- Pitch around a focus point or anchor.
-- Move to, ease to, fly to, and jump to camera options where supported.
-- Cancel in-progress transitions or animations.
-- Convert between screen coordinates and geographic coordinates.
-
-Camera ownership is split deliberately:
-
-- The runtime owns the authoritative native camera used for rendering, tile
-  selection, placement, projection, and feature queries.
-- Application SDK adapters may own declarative camera state separately from
-  presentation and reconcile that state into runtime camera commands.
-- The Rust runtime should not impose a Compose, React, SwiftUI, or Qt-style state
-  model.
-- The runtime should expose faithful MapLibre Native camera primitives and camera
-  observer events so adapters can build idiomatic controlled, uncontrolled,
-  binding, or imperative APIs on top.
-
-To make adapter reconciliation practical, camera events should include source or
-reason metadata where MapLibre Native can provide it. The core runtime should not
-invent precise request correlation for camera transitions unless MapLibre Native
-provides it. Adapters that need operation IDs for coroutines, promises, or state
-machines can layer them above the native event stream.
-
-Camera observers are notification, not veto. The runtime should not call into an
-adapter to ask whether each native camera movement is allowed. MapLibre Native
-may mutate the camera internally during gestures, inertia, easing, or `fly_to`
-animations. Adapters that want to reject or override movement should issue a new
-command such as `cancel_transitions`, `set_camera`, `ease_to`, or `fly_to`.
-
-Declarative adapters should model at least two camera concepts:
-
-- Desired camera: what the application requested.
-- Observed camera: what the native map is currently rendering.
-
-During an animation these intentionally differ: the desired target may be fixed
-while the observed camera changes every frame. The runtime should expose events
-such as camera changed, transition started, transition finished, and transition
-cancelled where those events can be faithfully derived from MapLibre Native
-observer callbacks.
-
-Adapters may build either controlled or uncontrolled APIs:
-
-- Uncontrolled: the app provides initial camera state, the native map mutates it,
-  and the adapter updates observed state from runtime events.
-- Controlled: the app owns desired camera state, the adapter applies it to the
-  runtime, and native camera changes are reported back so the app can accept,
-  ignore, or override them with a later command.
-
-Input should support two adapter modes over time, with the first mode preferred
-for SDKs such as Compose Multiplatform:
-
-- Adapter-recognized gestures: the adapter translates host gestures into camera
-  mutations and query calls.
-- Runtime-recognized pointer input: optional future helper mode where the adapter
-  forwards normalized pointer, wheel, keyboard, touch, modifier, timestamp, and
-  device-kind events.
-
-The MVP should use adapter-recognized gestures. Runtime-recognized input should
-not be part of the initial stable API and must not assume Compose, Android, iOS,
-or browser gesture semantics.
-
-### Kotlin Boundary
-
-MapLibre Compose should keep its public `commonMain` API stable and continue to
-hide platform details behind internal abstractions.
-
-The Rust runtime should sit below Compose's platform `actual` implementation:
+Representative lifecycle:
 
 ```text
-MaplibreMap composable
-        |
-internal MapAdapter / ComposableMapView actual
-        |
-Kotlin JVM or Native bridge
-        |
-Rust runtime
-        |
-MapLibre Native Core
+mln_map_create
+  create RunLoop
+  create MapObserver shim
+  create long-lived RendererFrontend shim
+  create mbgl::Map(frontend, observer, options, resources)
+
+mln_surface_attach
+  create platform RendererBackend
+  create Renderable / surface resources
+  create renderer resources
+  connect frontend to surface session
+  consume latest UpdateParameters
+  request render
+
+mln_surface_detach
+  disconnect frontend from surface session
+  synchronously reset/destroy renderer resources
+  destroy Renderable / RendererBackend / context-bound resources
+  increment surface generation
+  keep mbgl::Map alive
+
+mln_map_destroy
+  detach active surface if needed
+  destroy mbgl::Map on owner thread
+  destroy frontend, observer, RunLoop resources
 ```
 
-Compose should not expose Rust handles or Rust-specific lifecycle concepts in
-its public API.
+Initial detach policy should be simple: `mln_surface_detach` must be called on
+the surface/render owner thread and returns `MLN_STATUS_WRONG_THREAD` otherwise.
+Async detach can be added later if a real adapter requires it.
 
-## Rendering Model
+For native surfaces, the host or framework often controls when rendering is
+allowed. The wrapper should support framework-driven rendering:
 
-The runtime should support two rendering models over time.
+```text
+Map state changes -> RendererFrontend update -> render invalidated event
+Host schedules frame -> mln_surface_render(surface)
+```
 
-### MVP: CPU Frame Readback
+## Events and Observers
 
-The first implementation may use the existing `maplibre-native-rs` style of
-continuous/headless rendering, read pixels back to CPU memory, and upload or copy
-them into the UI toolkit.
+MapLibre Native observer callbacks should become queued C events. Host languages
+should poll or drain events; the C++ wrapper should not call directly into JVM,
+Swift, Kotlin/Native, JS, or other host runtimes from arbitrary native threads.
 
-Benefits:
+Initial event mapping:
 
-- Fastest path to proving Rust, build, style loading, camera updates, and
-  adapter ergonomics.
-- Useful for tests, screenshots, and some UI frameworks.
-- Based on existing prior art in `maplibre-native-rs` and Slint examples.
-
-Costs:
-
-- Extra GPU to CPU to UI copy.
-- Higher latency and CPU overhead.
-- Not acceptable as the final high-performance path for all UI frameworks.
-
-### Target: Native Surface Rendering
-
-The target architecture should render directly into a native surface or
-framework-provided render target where MapLibre Native has a valid backend
-context.
-
-This requires explicit modeling of:
-
-- Surface creation and destruction.
-- Surface resize and scale factor.
-- Backend context activation/deactivation.
-- Present/swap behavior.
-- Render loop wakeups.
-- Context loss and recreation.
-- Teardown on the correct thread.
-
-The design should follow MapLibre Native platform patterns: GLFW for neutral
-desktop rendering, Android for surface loss and render-thread scheduling, and
-iOS Metal for display-link and native layer integration.
-
-The native surface contract is a gating design artifact, not a late
-optimization. JNI and Compose APIs should not stabilize until one concrete
-native surface path is proven.
-
-The first native surface descriptor should be platform-specific and concrete,
-probably matching the current Compose desktop/AWT path or a small GLFW-style
-desktop spike. Generalize only after a second backend proves which fields are
-shared.
-
-Each surface integration must document ownership, valid threads, resize behavior,
-present ownership, context/surface loss behavior, and teardown requirements.
-
-Custom style layers are out of scope until the runtime has a safe
-render-callback contract for backend context ownership, thread affinity, resource
-lifetime, and adapter language callbacks.
-
-## Native Lifecycle Requirements
-
-MapLibre Native has strict scheduling expectations around `RunLoop`, renderer
-frontends, backend activation, and object destruction. The Rust API should expose
-those constraints without inventing a broad framework runtime.
-
-Required invariants:
-
-- A runtime-owned `mbgl::Map`/`NativeMap` handle is bound to one documented owner
-  thread or executor.
-- Calls crossing that boundary are marshalled.
-- Rendering happens only while the backend context and surface are valid.
-- Teardown happens on the required native thread/context.
-- Host callbacks are queued as owned data, not invoked directly from arbitrary
-  native threads.
-- Adapters can forward memory-pressure signals such as low-memory warnings,
-  backgrounding, or host cache pressure to the wrapper.
-
-Style/resource operations are asynchronous. Methods such as `set_style_url`
-validate input and enqueue or apply work; completion or failure is reported
-through native observer-derived events. Initial events should mirror
-`MapObserver` where possible, including `onDidFinishLoadingStyle`,
-`onDidFinishLoadingMap`, `onDidFailLoadingMap`, `onDidBecomeIdle`, and
-`onDidFinishRenderingFrame`.
-
-The runtime may maintain generation counters such as `style_generation`,
-`camera_generation`, and `surface_generation`. Generations are for stale-event
-filtering and lifecycle reasoning. They are not exact native request IDs and
-should not imply precise causality unless the underlying native API provides it.
-
-Memory pressure should be represented as a wrapper signal, not an iOS-only
-concern. The wrapper should support cache trimming, maximum in-flight frame
-limits, CPU readback buffer reuse limits, and resource-cache size configuration
-where native APIs support them.
-
-### Renderer Lifecycle Contract
-
-The runtime must map its public lifecycle to MapLibre Native internals rather
-than treating render as a generic callback.
-
-The contract should define:
-
-- Which layer owns `RendererFrontend`, `RendererBackend`, `Renderable`, `Map`,
-  and surface/context objects.
-- Creation order for surface, backend, renderer, frontend, map, and observers.
-- How the chosen frontend implementation coalesces `update(UpdateParameters)`,
-  wakes the frame loop, preserves the reply-on-original-thread contract, and
-  implements synchronous `reset()`.
-- When backend/context activation begins and ends.
-- Resize order across surface, backend renderable, map size, and frame invalidation.
-- Pause/resume and memory-pressure behavior.
-- Destruction order on the correct runtime/render thread.
-
-### Run Loop and Scheduler
-
-The runtime should support both owned and embedded scheduling:
-
-- Owned mode: the runtime creates its own control/render threads and exposes a
-  command/event API to adapters.
-- Embedded mode: an adapter pumps the runtime from a host event loop or frame
-  callback.
-
-The design must specify how MapLibre `RunLoop` work is pumped, how timers and
-native callbacks wake the loop, whether public calls are blocking or async, and
-how shutdown drains queued commands, resource callbacks, and observer events.
-
-Any thread that calls `FileSource::request` must own an active
-`mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
-by dropping the returned `AsyncRequest`.
-
-### Frame Scheduling Contract
-
-Supported frame scheduling modes should be explicit:
-
-- Runtime-driven continuous render loop.
-- Framework-driven render callback.
-- On-demand invalidation with adapter-provided frame clock.
-- Headless/manual render step.
-
-For each mode, the contract must define who requests the next frame, who owns
-present, which thread renders, and how frame completion is reported.
-
-## Resource Loading, Storage, and Cache Model
-
-MapLibre Native resource behavior should be a first-class part of runtime
-configuration, not only a mobile parity concern.
-
-The wrapper should expose the native-backed resource options first:
-
-- API key and tile server options.
-- Cache path and maximum cache size.
-- Asset path.
-- Platform context where required by MapLibre Native.
-- Resource transform hook through the native `FileSource` model.
-
-Later wrapper or adapter policy may add online/offline mode, timeout/retry
-configuration, explicit cache eviction hooks, richer request metadata, and
-offline-region management, but those should be tied to specific MapLibre Native
-APIs before being promised as core wrapper features.
-
-Request transformation and resource callbacks must be queued through the runtime
-dispatcher. They must not call directly into host languages from native worker
-threads.
-
-Offline packs and full offline-region management are not required for the first
-desktop prototype, but constructor options should not preclude cache/database and
-offline behavior later.
-
-## Glyph, Sprite, and Image Loading
-
-The runtime should distinguish:
-
-- Glyph range resources.
-- Sprite JSON and sprite image resources.
-- Runtime style images.
-- Missing style-image callbacks.
-
-Style-image-missing fulfillment should have a clear protocol: immediate response,
-deferred response tied to the missing image ID and style generation, or
-next-frame update. Image metadata must include pixel ratio, SDF flag, optional
-stretch/content metadata where supported, pixel format, stride, and ownership.
-
-## Initial Build Policy
-
-MapLibre Native validates exactly one graphics backend per build. The initial
-build should focus on one host/backend first and avoid designing the whole
-distribution matrix before the wrapper works.
-
-Initial backend priority:
-
-- macOS arm64: Metal.
-- Linux amd64 OpenGL is the likely second target if macOS is not the best first
-  development host.
-
-The build system should support:
-
-- Pinning a MapLibre Native Core release.
-- Using local prebuilt headers/libraries for debugging.
-- Keeping backend selection explicit.
-- Not downloading native dependencies implicitly from `build.rs`.
-- Building full MapLibre Native from source through explicit `xtask` or CI
-  workflows unless direct `cargo build` source builds are intentionally supported.
-
-Native dependency fetching must be explicit and reproducible. If downloads are
-supported, they should be opt-in and pinned by version and checksum. Local
-headers/libraries should be validated against the expected MapLibre Native
-revision and backend where possible.
-
-The `cxx` shim build must pin C++ standard, exception policy, RTTI policy, symbol
-visibility, and include path layout. Generated `cxx` headers are internal
-implementation details.
-
-## Future Distribution
-
-Release artifact layout, support tiers, debug symbols, license bundles, Android
-AARs, iOS XCFrameworks, Windows DLL policy, Linux system dependencies, and Gradle
-capabilities are deferred until the desktop prototype proves useful.
-
-## Error Handling
-
-The Rust API should distinguish immediate API errors from asynchronous runtime
-failures.
-
-Immediate `ApiError` categories should include:
-
-- Build/backend unsupported.
-- Native library loading or linking failure.
-- Surface creation or invalid surface state.
-- Renderer/backend/context failure.
-- Invalid API call for current lifecycle state.
-- Native exception or unknown C++ failure.
-- Unsupported target, missing artifact, architecture mismatch, backend variant
-  mismatch, missing native dependency, duplicate native library load, wrong
-  thread, and surface owner violation.
-- Invalid style-spec JSON, expression, filter, source, layer, or image
-  definition.
-- Duplicate or missing source, layer, or image IDs.
-- Unsupported style source, layer, or property for the pinned native-core
-  version.
-- Style mutation invalid for the current style lifecycle state.
-
-Asynchronous `RuntimeEvent::Error` categories should include:
-
-- Style load failure.
-- Resource/network failure.
-- Tile parse or tile resource failure.
-- Storage/cache failure.
-- Render failure.
-- Context loss.
-- Callback dispatch failure.
-
-Fatal runtime errors should move the affected map into a degraded or destroyed
-state. Style events should carry style generation information where useful so
-adapters can ignore stale completions and failures after style replacement.
-
-Language adapters should translate these errors into idiomatic errors for their
-host language without losing diagnostic detail.
-
-## Event and Observer Model
-
-The runtime should expose observer events that mirror native callbacks first:
-
-| Runtime event | Native grounding |
+| C event | Native grounding |
 | --- | --- |
-| Camera will/is/did change | `MapObserver::onCameraWillChange`, `onCameraIsChanging`, `onCameraDidChange` with `CameraChangeMode::Immediate` or `Animated` |
+| Camera will/is/did change | `MapObserver::onCameraWillChange`, `onCameraIsChanging`, `onCameraDidChange` |
 | Style loaded | `MapObserver::onDidFinishLoadingStyle` |
 | Map loading started/finished/failed | `onWillStartLoadingMap`, `onDidFinishLoadingMap`, `onDidFailLoadingMap` |
 | Map idle | `onDidBecomeIdle` |
@@ -715,137 +362,91 @@ The runtime should expose observer events that mirror native callbacks first:
 | Style image missing | `onStyleImageMissing` |
 | Glyph/sprite/tile events | glyph callbacks, sprite callbacks, `onTileAction` |
 | Render error | `onRenderError` |
+| Surface invalidated/lost/destroyed | wrapper/frontend/surface-session derived |
 
-Aggregated errors such as `ResourceError` are wrapper-derived categories, not a
-single core `MapObserver` callback.
+Event payloads should be plain data. Events should include map identity and, when
+useful, generation counters such as style generation or surface generation.
+Generations are for stale-event filtering; they are not exact request IDs unless
+the underlying native API provides such a request identity.
 
-Callbacks must be marshalled to adapter-owned dispatchers where necessary. The
-runtime should avoid calling directly into JVM, Swift, Kotlin/Native, or JS from
-arbitrary MapLibre Native threads.
+## Async Semantics Without Futures
 
-The runtime should expose events through an explicit queue as the primary
-semantic model. The event contract must define:
+The ABI should preserve MapLibre Native's imperative and observer-driven model.
+Do not expose Rust futures, C++ futures, Kotlin coroutines, Swift async, or JS
+promises at the C layer.
 
-- Which thread may enqueue events and which thread may drain events.
-- Ordering per map, per generation, and per runtime.
-- Which events may be coalesced, such as camera changes and frame rendered.
-- Which events must not be coalesced, such as errors, style-image-missing,
-  surface lost, and destruction acknowledgements.
-- Whether adapter calls made while draining events are allowed or rejected.
-- What happens to pending events after style replacement, cancellation,
-  surface loss, map destruction, or runtime shutdown.
-- How backpressure is handled if a host language stops draining events.
-
-Event payloads should include `MapId` and generation counters where relevant.
-Request IDs should appear only for operations the wrapper explicitly models as
-requests, such as snapshot/render callbacks or adapter-level async APIs.
-
-## Async Semantics Without Async Rust
-
-The core Rust runtime should faithfully expose MapLibre Native's imperative and
-observer-driven pattern. It should not convert the model into `async fn` or a
-specific executor-based abstraction.
-
-Rules:
-
-- Synchronous method return means the command was validated, applied, or enqueued
-  according to that method's contract. It does not imply that rendering,
-  loading, animation, or resource work has completed unless explicitly stated.
-- Animation-starting commands such as `ease_to`, `fly_to`, animated movement,
-  and transition cancellation are observed through camera/render events.
-- Style, resource, glyph, sprite, tile, and render lifecycle progress is observed
-  through queued runtime events.
-- Blocking query operations may exist where they faithfully match native APIs,
-  but names should make the blocking behavior explicit and cross-language
-  adapters should avoid blocking UI threads.
-- Language adapters may convert the event model into coroutines, flows, promises,
-  callbacks, bindings, or futures appropriate to their ecosystem.
-
-Each public operation should be classified before stabilization:
+Classify each operation:
 
 | Category | Meaning |
 | --- | --- |
 | Immediate | Completes synchronously and the result is final. |
 | Command | Applies or enqueues a native command; later effects may produce events. |
-| Snapshot | Returns last-known runtime state and may be stale relative to pending work. |
+| Snapshot | Returns last-known state and may be stale relative to pending work. |
 | Blocking query | Explicit synchronous query that may cross to the render/orchestration thread and block. |
-| Request | Wrapper- or adapter-modeled async operation with explicit completion, failure, or cancellation events. Use only where this is intentionally modeled, not as a universal core concept. |
+| Request | Wrapper- or adapter-modeled async operation with completion/failure/cancellation events. Use only where intentionally modeled. |
 | Event stream | Produces many events over time, such as camera animation or resource loading. |
 
-## Query API Contract
+Language adapters may convert the event model into coroutines, flows, promises,
+callbacks, bindings, or futures appropriate to their ecosystem.
 
-Query and projection APIs must define lifecycle and coordinate semantics:
+## Camera and Gestures
 
-- Query rendered features by point, box, or geometry with optional layer IDs and
-  style-spec filter JSON.
-- Query source features by source ID and source-layer with optional filter JSON.
-- Define behavior before style load, during style reload, while tiles are
-  pending, and after surface loss.
-- Define screen coordinate space, physical pixels vs logical points, and scale
-  factor.
-- Return stable, serializable feature data suitable for JNI/Kotlin boundaries.
-- Decide whether queries are explicit blocking queries, adapter-modeled async
-  requests, or both.
+The C ABI exposes MapLibre Native camera operations. Application SDKs own gesture
+recognition and declarative state.
 
-## Cancellation and Shutdown
+The ABI should expose movement primitives that gestures produce:
 
-Cancellation is part of the API contract. Style loads, resource requests,
-queries, snapshots, and surface sessions should have clear generation, callback,
-or session semantics where needed.
+- `jump_to`, `ease_to`, `fly_to`;
+- `move_by`;
+- `scale_by` around a screen anchor;
+- `rotate_by` around screen points;
+- `pitch_by` where supported;
+- `cancel_transitions`;
+- screen/geographic projection helpers.
 
-Rules:
+Camera observers are notification, not veto. If an adapter wants to reject or
+override native movement, it should issue a later command such as
+`cancel_transitions` or `jump_to`.
 
-- Destroying a map cancels outstanding map-owned work.
-- Replacing a style cancels or supersedes old style-scoped requests.
-- Events after cancellation or destruction are either dropped or converted into
-  documented terminal events.
-- Shutdown waits for native teardown on the owning thread and drains or discards
-  queued callbacks according to documented policy.
+Declarative SDKs should model desired camera separately from observed native
+camera. During `fly_to` or `ease_to`, the desired target and observed camera
+intentionally differ.
 
-## Logging and Diagnostics
+## Resource Loading and Cache
 
-Native logging should bridge into Rust without calling host runtimes directly
-from native threads. Diagnostics should include structured log level, subsystem,
-map ID, generation, resource kind, backend, and native error detail where safe.
+Expose native-backed resource options first:
 
-Resource tracing must redact URLs, headers, access tokens, and credentials by
-default. Host adapters may opt into forwarding logs to platform logging systems.
+- API key and tile server options.
+- Cache path and maximum cache size.
+- Asset path.
+- Platform context where required.
+- Resource transform hook through the native `FileSource` model.
+
+Do not promise wrapper-owned online/offline mode, retry policy, eviction hooks,
+or offline-region management until they are tied to specific MapLibre Native
+APIs.
+
+Any thread that calls `FileSource::request` must own an active
+`mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
+by dropping the returned `AsyncRequest`.
 
 ## Style and Data APIs
 
-The first API should cover a small set of features needed to prove MapLibre
-Compose desktop integration:
+Start small and faithful.
+
+Initial API:
 
 - Load style by URL and JSON.
-- Set camera and bounds.
-- Query projection and visible region.
-- Query rendered features.
-- Add/remove runtime style images if needed by the prototype.
-- Pass style-spec JSON through where MapLibre Native already supports it.
-
-Do not attempt to bind all MapLibre style types at once. Add focused coverage as
-adapter requirements demand it.
-
-### Runtime Style API Contract
-
-The compatibility target is the MapLibre style-spec JSON model, but MapLibre
-Native does not expose one public C++ API for arbitrary JSON source/layer
-mutation. The wrapper should stay faithful to the native APIs it actually uses.
-
-Initial style/data API:
-
-- Load style by URL and JSON.
-- Get current style JSON where supported by `mbgl::style::Style`.
+- Get current style JSON where supported.
 - Add/remove/update runtime style images where needed.
 - Query rendered features.
-- Use focused typed construction or explicit native conversion paths for sources,
-  layers, filters, expressions, and properties as each feature is added.
+- Projection helpers.
 
-Do not promise arbitrary style-spec JSON source/layer insertion until an
+Do not promise arbitrary style-spec JSON source/layer insertion until the
 implementation deliberately uses and tests the relevant MapLibre Native style
 conversion/parser internals or public APIs.
 
-Compose parity candidates, not initial wrapper commitments:
+Compose parity candidates, not initial ABI commitments:
 
 - GeoJSON source mutation without full style reload.
 - Ordered layer insertion and movement.
@@ -853,60 +454,102 @@ Compose parity candidates, not initial wrapper commitments:
 - Expression and filter JSON conversion.
 - Feature state.
 - Style serialization tests for runtime mutations.
-- Global and per-property transitions.
 - Light, terrain, sky, fog, projection, and DEM/raster-dem dependencies.
 - Custom layers.
 - Native annotation subsystem.
 
-Annotation APIs should not be part of the initial Rust runtime. Compose or
-platform adapters can implement annotations as higher-level conveniences over
-GeoJSON sources, images, layers, feature queries, and feature state.
+Annotations should initially be adapter conveniences over sources, layers,
+images, queries, and feature state unless a native annotation API is deliberately
+exposed.
 
-Prefer the narrowest API that faithfully maps to MapLibre Native. Add typed Rust
-APIs when they improve safety for high-frequency operations or hide native
-lifetime/threading hazards. Add JSON pass-through only where the native API path
-is explicit and tested.
+## Error Handling
 
-Initial Compose parity inventory:
+All ABI calls return `mln_status`. Detailed diagnostics should be retrievable
+through an explicit last-error or diagnostic API with owned strings/buffers.
 
-| Compose need | Runtime primitive | Priority |
-| --- | --- | --- |
-| Style URL/JSON | set style, style generation, style loaded/error events | High |
-| Camera state | set/get camera, camera changed events | High |
-| Resize/layout | surface resize, scale factor, render invalidation | High |
-| Visible region | projection/query visible bounds | Medium |
-| Click handling | adapter gesture, projection, feature query | Medium |
-| Query rendered features | feature query on runtime/render owner | Medium |
-| Style images | add/remove image, image missing event | Medium |
-| GeoJSON overlays | add/remove source and common layers | Medium |
-| Declarative style reconciliation | exists/get/add/update/remove/move primitives with stable IDs | High |
-| Layer ordering | add before, move before/above/below | High |
-| Runtime property mutation | set paint/layout/filter/source data without style reload | High |
-| Feature state | set/get/remove feature state for source/source-layer/id | Medium |
-| Snapshots | CPU readback or explicit snapshot API | Low |
+Important error categories:
 
-## Safety Principles
+- Invalid argument.
+- Invalid lifecycle state.
+- Wrong thread.
+- Unsupported backend/platform/feature.
+- Native exception converted to error.
+- Surface/context failure.
+- Style load/parse failure.
+- Resource/glyph/sprite/tile failure.
+- Render failure.
 
-- Prefer opaque Rust-owned handles over exposed raw pointers.
-- Keep unsafe code concentrated in bridge modules.
-- Make lifecycle states explicit where possible.
-- Do not rely on Rust `Drop` alone for operations that must run on a specific
-  thread or inside an active graphics context.
-- Avoid long-lived borrowed references across FFI boundaries.
-- Use copyable plain data types at language boundaries.
-- Validate size, scale, and surface state before rendering.
-- Treat callbacks as asynchronous messages.
+Error strings are diagnostic only and must not be parsed by adapters.
+
+## Memory Ownership
+
+- Host-provided strings and buffers are borrowed for the duration of the call
+  unless a function explicitly retains/copies them.
+- Runtime-returned strings and buffers must be released through explicit ABI
+  functions.
+- No pointer returned from the ABI remains valid after a mutating call unless
+  documented.
+- Image buffers must document pixel format, stride, premultiplication, color
+  space, scale, and ownership.
+
+## Safety Invariants
+
+- No C++ exceptions cross the C ABI.
+- No host-language callback is invoked directly from arbitrary native threads.
+- Opaque handles have explicit owners and destruction rules.
+- Thread-affine calls validate their owner thread.
+- Rendering and teardown happen only with valid backend/context state where
+  required.
+- Events are copied into queues as owned data.
+- Public APIs preserve MapLibre Native behavior instead of inventing replacement
+  semantics.
+
+## Smoke Tests
+
+Use Zig as the first non-C++ ABI consumer.
+
+The initial Zig smoke should use `@cImport` against the public C header and:
+
+- create and destroy a runtime;
+- create and destroy a map;
+- attach a simple headless or native surface when available;
+- set size, style, and camera;
+- poll native events;
+- optionally render/read back a frame.
+
+## Build Policy
+
+Start with one platform/backend. MapLibre Native validates exactly one graphics
+backend per build.
+
+Initial candidates:
+
+- macOS arm64 Metal.
+- Linux amd64/arm64 Vulkan.
+- Windows amd64/arm64 Vulkan.
+- iOS arm64 Metal.
+- Android arm64 Vulkan.
+
+Build rules:
+
+- Pin the MapLibre Native revision or core release.
+- Keep backend selection explicit.
+- Do not download native dependencies implicitly from normal builds.
+- Support local prebuilt headers/libraries for debugging.
+- Keep the wrapper C++ build small and focused.
+- Defer full artifact publishing, support tiers, symbols, license bundles,
+  Android AARs, iOS XCFrameworks, and Gradle capabilities until the native
+  surface design is proven.
 
 ## Open Questions
 
-- Phase 1 must decide whether the first crate directly depends on
-  `maplibre_native`, forks selected code from it, or ports only its build/bridge
-  ideas.
-- Phase 4 must prove the minimal native surface abstraction before Compose uses
-  the JNI adapter.
-- Phase 7 and Phase 8 must turn the Compose parity inventory into tracked issues
-  or tests.
-- Future Android and iOS work must inventory SDK replacement risks before
-  proposing production migration.
-- Future distribution work must define artifact versioning relative to MapLibre
-  Native Core and MapLibre Compose releases.
+- Should the implementation live in a new repository, inside `maplibre-native`,
+  or adjacent to `maplibre-native-rs`?
+- Which first native surface path is lowest risk: GLFW, AWT desktop, or another
+  desktop backend?
+- Should map/control ownership be wrapper-thread-owned, host-pumped, or support
+  both from the beginning?
+- How much of MapLibre Native style mutation can be exposed through public APIs
+  without relying on internal parser/conversion details?
+- What is the minimum ABI needed for MapLibre Compose Desktop to replace its
+  current JNI/C++ experiment?

@@ -1,5 +1,15 @@
 [tools]
+java = "25.0.2"
+node = "24.11.0"
+python = "3.14.4"
 rust = "1.95.0"
+zig = "0.16.0"
+uv = "0.11.7"
+pnpm = "10.33.2"
+hk = "1.40.0"
+pkl = "0.30.2"
+dprint = "0.53.2"
+"github:sargunv/jvl" = "2026.04.03"
 
 [settings]
 pin = true
