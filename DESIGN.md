@@ -179,6 +179,14 @@ typedef struct mln_texture_session mln_texture_session;
 typedef struct mln_surface_session mln_surface_session;
 ```
 
+`mln_runtime` is the shared native environment for one or more maps. It owns
+runtime-level infrastructure such as resource loading, cache configuration,
+backend capability checks, and owner-thread/run-loop policy. `mln_map` owns one
+map instance inside a runtime: style, camera, observer events, render
+invalidation state, and the currently attached texture or surface session.
+Multiple maps may share one runtime while using different styles, cameras, and
+render targets.
+
 Use versioned plain-data structs:
 
 ```c
@@ -521,9 +529,13 @@ Classify each operation:
 | Immediate | Completes synchronously and the result is final. |
 | Command | Applies or enqueues a native command; later effects may produce events. |
 | Snapshot | Returns last-known state and may be stale relative to pending work. |
-| Blocking query | Explicit synchronous query that may cross to the render/orchestration thread and block. |
+| Blocking query | Explicit synchronous query that may cross to the render/orchestration thread and block. Use sparingly and document deadlock risks. |
 | Request | Wrapper- or adapter-modeled async operation with completion/failure/cancellation events. Use only where intentionally modeled. |
 | Event stream | Produces many events over time, such as camera animation or resource loading. |
+
+Each ABI function should document its async category, valid calling thread, and
+whether completion is represented by the return status, later map events, or
+both.
 
 Language adapters may convert the event model into coroutines, flows, promises,
 callbacks, bindings, or futures appropriate to their ecosystem.
@@ -533,13 +545,15 @@ callbacks, bindings, or futures appropriate to their ecosystem.
 The C ABI exposes MapLibre Native camera operations. Application SDKs own gesture
 recognition and declarative state.
 
-The ABI should expose movement primitives that gestures produce:
+These operations should be grounded in `mbgl::Map` camera and projection APIs,
+not invented as adapter-specific gesture concepts. The ABI should expose camera
+movement primitives that application SDK gesture recognizers can translate into:
 
 - `jump_to`, `ease_to`, `fly_to`;
 - `move_by`;
 - `scale_by` around a screen anchor;
 - `rotate_by` around screen points;
-- `pitch_by` where supported;
+- `pitch_by`;
 - `cancel_transitions`;
 - screen/geographic projection helpers.
 
@@ -561,7 +575,7 @@ or declarative UI systems.
 The ABI should make texture rendering explicit instead of treating it as a
 special case of native surfaces.
 
-## Metal Texture Rendering Decision
+## Metal Texture Rendering
 
 MapLibre Native already has a Metal offscreen rendering path through
 `mbgl::mtl::HeadlessBackend` and `mbgl::gfx::OffscreenTexture`. The Metal
@@ -598,17 +612,32 @@ the common ABI shape and which parts must remain backend-specific.
 
 ## Resource Loading and Cache
 
-Expose native-backed resource options first:
+Resource configuration should be runtime-level by default so multiple maps can
+share file sources, cache policy, and tile-server URL behavior.
 
-- API key and tile server options.
-- Cache path and maximum cache size.
-- Asset path.
+Expose native-backed `ResourceOptions` and `TileServerOptions` concepts first:
+
+- Tile-server URL normalization options, including base URL, URI scheme alias,
+  URL templates, default styles, and optional API-key query parameter behavior
+  for providers that require it.
+- Cache path and maximum ambient cache size.
+- Asset path for `asset://` resolution.
 - Platform context where required.
 - Resource transform hook through the native `FileSource` model.
 
-Do not promise wrapper-owned online/offline mode, retry policy, eviction hooks,
-or offline-region management until they are tied to specific MapLibre Native
-APIs.
+Cache and offline operations should be modeled explicitly where they correspond
+to MapLibre Native APIs, not as wrapper-invented policy:
+
+- ambient cache maintenance: reset database, invalidate ambient cache, clear
+  ambient cache, pack database, and maximum ambient cache size;
+- offline regions: list, get, create, update metadata, set observer, set download
+  state, get status, merge, delete, and invalidate;
+- process-level network status: expose only if wrapping `mbgl::NetworkStatus` is
+  intentional for the target platform.
+
+Retry policy, custom eviction hooks, and higher-level online/offline product
+modes should stay out of the core ABI unless they are direct wrappers over a
+specific MapLibre Native API.
 
 Any thread that calls `FileSource::request` must own an active
 `mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
@@ -616,40 +645,50 @@ by dropping the returned `AsyncRequest`.
 
 ## Style and Data APIs
 
-Start small and faithful.
+MapLibre Native exposes style mutation through `mbgl::style::Style`, reached from
+`mbgl::Map::getStyle()`. The C ABI should wrap that model instead of inventing a
+separate declarative style system.
 
-Initial API:
+Initial style API:
 
-- Load style by URL and JSON.
-- Get current style JSON where supported.
-- Add/remove/update runtime style images where needed.
-- Query rendered features.
-- Projection helpers.
+- load style by URL or JSON through `Style::loadURL` and `Style::loadJSON`;
+- read current style URL/JSON through `Style::getURL` and `Style::getJSON`;
+- read style name and default camera;
+- configure transition options;
+- add, get, and remove runtime style images;
+- query style/source/layer existence by ID;
+- remove sources and layers by ID.
 
-Do not promise arbitrary style-spec JSON source/layer insertion until the
-implementation deliberately uses and tests the relevant MapLibre Native style
-conversion/parser internals or public APIs.
+Source and layer mutation should be added in stages:
 
-Compose parity candidates, not initial ABI commitments:
+1. JSON-first source/layer insertion: accept style-spec JSON fragments, construct
+   the corresponding native `Source` or `Layer`, and add them through
+   `Style::addSource` and `Style::addLayer`.
+2. Common typed source helpers: GeoJSON source with URL or inline GeoJSON first,
+   then vector, raster, raster-dem, image, and so on.
+3. Generic layer property get/set using style-spec property names and typed
+   `mln_value` payloads. JSON property values may be useful for smoke tests and
+   tooling, but typed values should be the primary non-JSON C ABI path.
 
-- GeoJSON source mutation without full style reload.
-- Ordered layer insertion and movement.
-- Layer paint/layout/filter mutation.
-- Expression and filter JSON conversion.
-- Feature state.
-- Style serialization tests for runtime mutations.
-- Light, terrain, sky, fog, projection, and DEM/raster-dem dependencies.
-- Custom layers.
-- Native annotation subsystem.
+Layer mutation should use `Layer::setProperty(name, value)` and
+`Layer::getProperty(name)` as the generic C ABI path for paint/layout/filter and
+common layer fields such as source, source layer, visibility, and zoom range.
+Typed per-property setters are better generated in higher-level SDKs such as
+Compose or Swift. Add typed C helpers only for common cross-layer fields or
+proven performance-sensitive paths; they should not be required for style-spec
+coverage.
 
-Annotations should initially be adapter conveniences over sources, layers,
-images, queries, and feature state unless a native annotation API is deliberately
-exposed.
+Rendered-feature queries and screen/geographic projection helpers are map/render
+queries, not style construction APIs. They belong near the map or render target
+query surface and should document whether they require an attached render target.
 
 ## Error Handling
 
 All ABI calls return `mln_status`. Detailed diagnostics should be retrievable
-through an explicit last-error or diagnostic API with owned strings/buffers.
+through explicit diagnostic APIs with owned strings/buffers. Each function must
+document where diagnostics are stored on failure. The default rule is: if the
+function receives a valid handle, diagnostics are stored on that handle; if no
+valid handle exists, diagnostics are stored in thread-local diagnostics.
 
 Important error categories:
 
@@ -684,72 +723,53 @@ Error strings are diagnostic only and must not be parsed by adapters.
 - Thread-affine calls validate their owner thread.
 - Rendering and teardown happen only with valid backend/context state where
   required.
-- Events are copied into queues as owned data.
+- Events are copied into map-owned queues as owned data.
 - Public APIs preserve MapLibre Native behavior instead of inventing replacement
   semantics.
 
 ## Smoke Tests
 
-Use Zig as the first non-C++ ABI consumer.
+Use Zig as the first non-C++ ABI consumer because `@cImport` quickly exposes
+whether the public header is actually C-shaped.
 
-The initial Zig smoke should use `@cImport` against the public C header and:
+The representative Zig example should be a small interactive map, not a product
+adapter. It should exercise the core ABI surface:
 
 - create and destroy a runtime;
 - create and destroy a map;
-- attach a texture target when available;
+- attach a texture target;
 - set size, style, and camera;
-- poll native events;
-- render and acquire/release a GPU texture frame when available.
+- translate basic pointer/scroll/keyboard input into camera commands;
+- drain map events;
+- render and acquire/release GPU texture frames;
+- sample the map texture in a minimal host renderer.
 
-The Zig smoke is not a product adapter. It validates that the ABI is actually C,
-not accidentally C++, Rust, or JNI shaped.
+The example should validate ABI shape, lifecycle, events, texture ownership, and
+interactive camera control without introducing a full UI toolkit.
 
-For the first texture smoke, prefer a minimal host renderer over a full UI
-toolkit. On macOS, render MapLibre into an offscreen `MTLTexture`, then sample it
-from a tiny Metal host. On Linux/Windows, do the equivalent with Vulkan once the
-Metal spike proves the texture-session shape.
+Backend choice remains explicit: Metal on Apple platforms and Vulkan elsewhere.
+OpenGL is not a primary target. WebGPU is a future research target after Metal
+and Vulkan texture sessions are proven.
 
-SDL3 may still be useful as a small cross-platform window/event host for the
-sampling app, but the important test is offscreen texture rendering and sampling,
-not rendering directly to an SDL window surface.
+SDL3 or a tiny native shell may be used to provide a window and input, but the
+example should render through the texture-session path rather than treating a
+window surface as the primary integration model.
 
-Keep the graphics backend constraint explicit: Metal on Apple platforms and
-Vulkan elsewhere. Do not choose an OpenGL-first path.
-
-For a real small Zig application UI, DVUI is the most relevant Zig-native toolkit
-to track. It should be considered only after the ABI and texture-session contract
-are proven with backend-appropriate Metal/Vulkan smoke tests, and only if it
-teaches us something about sampling the map texture inside a real Zig application
-UI.
-
-MapLibre Native has an experimental WebGPU backend, but the initial ABI and
-texture contract should not be based on WebGPU or `wgpu`. Revisit WebGPU after
-Metal and Vulkan texture sessions are proven.
+DVUI is the relevant Zig-native UI toolkit for a later architecture check against
+a non-Compose toolkit. Use it after the minimal Zig texture example proves the C
+ABI and texture-session contract.
 
 ## Build Policy
 
-Start with one platform/backend. MapLibre Native validates exactly one graphics
-backend per build.
+The wrapper should build against a known MapLibre Native source revision. During
+development, that source is `third_party/maplibre-native`, a pinned git
+submodule. A local `MLN_SOURCE_DIR` override may point at a sibling checkout for
+MapLibre Native development.
 
-Initial candidates:
+Backend selection is explicit per build. Initial targets follow the rendering
+design: Metal on Apple platforms and Vulkan elsewhere. OpenGL is not a primary
+target.
 
-- macOS arm64 Metal.
-- Linux amd64/arm64 Vulkan.
-- Windows amd64/arm64 Vulkan.
-- iOS arm64 Metal.
-- Android arm64 Vulkan.
-
-Build rules:
-
-- Pin the MapLibre Native revision or core release.
-- During development, build against `third_party/maplibre-native`, a pinned git
-  submodule.
-- Allow a local `MLN_SOURCE_DIR` override for working against a sibling MapLibre
-  Native checkout.
-- Keep backend selection explicit.
-- Do not download native dependencies implicitly from normal builds.
-- Support local prebuilt headers/libraries for debugging.
-- Keep the wrapper C++ build small and focused.
-- Defer full artifact publishing, support tiers, symbols, license bundles,
-  Android AARs, iOS XCFrameworks, and Gradle capabilities until the native
-  texture design is proven.
+Normal builds should not implicitly download native dependencies. Packaging
+formats such as Android AARs, iOS XCFrameworks, and published binary artifacts
+are distribution concerns, not part of the core ABI design.
