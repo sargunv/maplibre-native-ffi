@@ -19,7 +19,7 @@ the lower-level native API.
 
 - Provide a safe and simple C ABI over MapLibre Native for interactive maps.
 - Keep the API faithful to MapLibre Native's real C++ model.
-- Make native surface rendering the primary path, not an afterthought.
+- Make offscreen GPU texture rendering the primary path for UI integration.
 - Keep language and UI framework adapters thin.
 - Make ownership, thread affinity, lifecycle, and async observer behavior
   explicit at the ABI boundary.
@@ -82,7 +82,10 @@ The C ABI owns cross-language concerns:
 - Status codes and diagnostics.
 - Event polling or draining.
 - Thread ownership rules.
-- Surface attach, resize, render, detach, and loss semantics.
+- Texture target attach, resize, render, frame acquire/release, and loss
+  semantics.
+- Native surface attach, resize, render, detach, and loss semantics as a fallback
+  or comparison path.
 
 ## Why C First
 
@@ -108,6 +111,7 @@ Use opaque handles:
 ```c
 typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
+typedef struct mln_texture_session mln_texture_session;
 typedef struct mln_surface_session mln_surface_session;
 typedef struct mln_event_queue mln_event_queue;
 ```
@@ -181,23 +185,49 @@ mln_status mln_map_cancel_transitions(mln_map* map);
 Do not expose C++ types, STL types, exceptions, callbacks, references, templates,
 or C++ object ownership through the ABI.
 
-## Map and Surface Are Separate
+## Map and Render Targets Are Separate
 
-Native surfaces are the primary goal. A single “map view” handle is too vague.
-The ABI should separate map/control state from surface/render attachment.
+Offscreen GPU textures are the primary render target for high-quality UI
+integration. Native surfaces are still useful as a fallback or comparison path,
+but they should not be the center of the design.
+
+A single “map view” handle is too vague. The ABI should separate map/control
+state from render attachment.
 
 ```text
 mln_map
   owns map/control state: style, camera, resource options, observer events,
   long-lived RendererFrontend, mbgl::Map
 
+mln_texture_session
+  owns offscreen render attachment: backend texture/render target, renderer
+  resources, resize, render, frame acquire/release, synchronization, teardown
+
 mln_surface_session
-  owns render attachment: native surface handle, RendererBackend,
+  owns native-surface render attachment: native surface handle, RendererBackend,
   Renderable/surface resources, renderer resources, resize, render/present,
   surface loss, teardown
 ```
 
-Representative surface API:
+Representative texture API:
+
+```c
+mln_status mln_texture_attach(mln_map* map,
+                              const mln_texture_descriptor* descriptor,
+                              mln_texture_session** out_texture);
+mln_status mln_texture_resize(mln_texture_session* texture,
+                              uint32_t width,
+                              uint32_t height,
+                              double scale_factor);
+mln_status mln_texture_render(mln_texture_session* texture);
+mln_status mln_texture_acquire_frame(mln_texture_session* texture,
+                                     mln_texture_frame* out_frame);
+mln_status mln_texture_release_frame(mln_texture_session* texture,
+                                     const mln_texture_frame* frame);
+mln_status mln_texture_detach(mln_texture_session* texture);
+```
+
+Representative native-surface API:
 
 ```c
 mln_status mln_surface_attach(mln_map* map,
@@ -222,12 +252,25 @@ Each surface integration must document:
 - Context or surface loss behavior.
 - Teardown requirements.
 
-Start with one concrete descriptor. Generalize only after a second surface path
-proves which fields are shared.
+Each texture integration must document:
 
-`mln_map` may live without an attached `mln_surface_session`. Surface detach does
-not destroy map state. This is important for declarative UI frameworks where map
-state can outlive native view/surface lifetime.
+- Backend type: Metal, Vulkan, Direct3D, or future WebGPU.
+- Whether the host or wrapper owns the GPU device/queue.
+- Whether the host or wrapper owns the texture/image.
+- Texture format, dimensions, scale factor, color space, and alpha behavior.
+- Synchronization: command buffer completion, fences, semaphores, image layouts,
+  acquire/release rules, and number of in-flight frames.
+- Import/sampling requirements for the host UI toolkit.
+- Resize and invalidation behavior.
+- Teardown requirements.
+
+Start with one concrete texture descriptor. Generalize only after a second
+backend proves which fields are shared.
+
+`mln_map` may live without an attached `mln_texture_session` or
+`mln_surface_session`. Detaching a render target does not destroy map state. This
+is important for declarative UI frameworks where map state can outlive native
+view/surface/texture lifetime.
 
 Detached maps should support:
 
@@ -235,16 +278,16 @@ Detached maps should support:
 - camera commands and camera snapshots;
 - bounds/options/debug settings;
 - event queue ownership;
-- pending map state that applies to the next attached surface.
+- pending map state that applies to the next attached render target.
 
-Operations that require render state may return `MLN_STATUS_NO_SURFACE` or
+Operations that require render state may return `MLN_STATUS_NO_RENDER_TARGET` or
 `MLN_STATUS_NOT_READY` while detached, including frame rendering, snapshots,
-rendered-feature queries, and projection APIs that require current surface size
-or placement state.
+rendered-feature queries, and projection APIs that require current render target
+size or placement state.
 
 ## Thread Ownership
 
-Native surface rendering requires split ownership.
+GPU texture and native surface rendering require split ownership.
 
 The wrapper should not assume one internal thread can own everything.
 
@@ -252,8 +295,9 @@ The wrapper should not assume one internal thread can own everything.
 Map/control owner
   owns mbgl::Map, RunLoop, style/camera commands, observer queue
 
-Surface/render owner
-  owns graphics context, renderable, drawable acquisition, render/present
+Render target owner
+  owns graphics context, renderable, texture or drawable acquisition,
+  render/present or render/acquire/release
 
 Host/application owner
   owns UI state, gestures, toolkit view lifecycle, event draining
@@ -276,30 +320,32 @@ public function should validate:
 ## RendererFrontend Model
 
 `mbgl::Map` requires a `RendererFrontend`. The wrapper's frontend is the bridge
-between map/control state and surface rendering.
+between map/control state and the current render target.
 
 The frontend should:
 
 - receive `UpdateParameters` from `mbgl::Map`;
 - coalesce the latest update where appropriate;
-- signal render invalidation to the surface session or host adapter;
+- signal render invalidation to the texture session, surface session, or host
+  adapter;
 - preserve MapLibre Native's callback-thread expectations;
 - implement synchronous renderer cleanup in `reset()`;
 - avoid direct host-language callbacks from native threads.
 
 The frontend should be long-lived with `mln_map`. It should not own platform GPU
 resources directly. Instead, it connects to the currently attached
-`mln_surface_session`.
+`mln_texture_session` or `mln_surface_session`.
 
-When no surface is attached, frontend `update(UpdateParameters)` should store or
-coalesce the latest update and mark rendering pending without touching backend or
-renderable resources. When a new surface attaches, the surface session consumes
-the latest update and requests a render.
+When no render target is attached, frontend `update(UpdateParameters)` should
+store or coalesce the latest update and mark rendering pending without touching
+backend or renderable resources. When a new texture or surface target attaches,
+the render target consumes the latest update and requests a render.
 
-`RendererBackend`, `Renderable`, and renderer resources are owned by
-`mln_surface_session`, not by `mln_map`. They are created on surface attach and
-destroyed on surface detach or surface loss. This keeps backend/context lifetime
-coupled to the native surface that makes those resources valid.
+`RendererBackend`, `Renderable`, and renderer resources are owned by the active
+render target session, not by `mln_map`. For texture targets they are coupled to
+the offscreen texture/render target and synchronization objects. For native
+surface targets they are coupled to the surface/window/layer that makes those
+resources valid.
 
 Representative lifecycle:
 
@@ -310,37 +356,37 @@ mln_map_create
   create long-lived RendererFrontend shim
   create mbgl::Map(frontend, observer, options, resources)
 
-mln_surface_attach
+mln_texture_attach or mln_surface_attach
   create platform RendererBackend
-  create Renderable / surface resources
+  create Renderable / texture or surface resources
   create renderer resources
-  connect frontend to surface session
+  connect frontend to render target session
   consume latest UpdateParameters
   request render
 
-mln_surface_detach
-  disconnect frontend from surface session
+mln_texture_detach or mln_surface_detach
+  disconnect frontend from render target session
   synchronously reset/destroy renderer resources
   destroy Renderable / RendererBackend / context-bound resources
-  increment surface generation
+  increment render target generation
   keep mbgl::Map alive
 
 mln_map_destroy
-  detach active surface if needed
+  detach active render target if needed
   destroy mbgl::Map on owner thread
   destroy frontend, observer, RunLoop resources
 ```
 
-Initial detach policy should be simple: `mln_surface_detach` must be called on
-the surface/render owner thread and returns `MLN_STATUS_WRONG_THREAD` otherwise.
-Async detach can be added later if a real adapter requires it.
+Initial detach policy should be simple: detach must be called on the render
+target owner thread and returns `MLN_STATUS_WRONG_THREAD` otherwise. Async detach
+can be added later if a real adapter requires it.
 
-For native surfaces, the host or framework often controls when rendering is
-allowed. The wrapper should support framework-driven rendering:
+For texture and native surface targets, the host or framework often controls when
+rendering is allowed. The wrapper should support framework-driven rendering:
 
 ```text
 Map state changes -> RendererFrontend update -> render invalidated event
-Host schedules frame -> mln_surface_render(surface)
+Host schedules frame -> mln_texture_render(texture) or mln_surface_render(surface)
 ```
 
 ## Events and Observers
@@ -362,10 +408,10 @@ Initial event mapping:
 | Style image missing | `onStyleImageMissing` |
 | Glyph/sprite/tile events | glyph callbacks, sprite callbacks, `onTileAction` |
 | Render error | `onRenderError` |
-| Surface invalidated/lost/destroyed | wrapper/frontend/surface-session derived |
+| Render target invalidated/lost/destroyed | wrapper/frontend/session derived |
 
 Event payloads should be plain data. Events should include map identity and, when
-useful, generation counters such as style generation or surface generation.
+useful, generation counters such as style generation or render target generation.
 Generations are for stale-event filtering; they are not exact request IDs unless
 the underlying native API provides such a request identity.
 
@@ -411,6 +457,51 @@ override native movement, it should issue a later command such as
 Declarative SDKs should model desired camera separately from observed native
 camera. During `fly_to` or `ease_to`, the desired target and observed camera
 intentionally differ.
+
+## Texture Rendering
+
+Texture rendering is the strategic target because it lets UI toolkits composite
+the map inside their own scene graph. This is the path that can avoid native view
+interop problems in Compose, Flutter, React Native, DVUI, and other GPU-rendered
+or declarative UI systems.
+
+The ABI should make texture rendering explicit instead of treating it as a
+special case of native surfaces.
+
+## Metal Texture Rendering Decision
+
+MapLibre Native already has a Metal offscreen rendering path through
+`mbgl::mtl::HeadlessBackend` and `mbgl::gfx::OffscreenTexture`. The Metal
+offscreen texture is backed by an internal `MTL::Texture` and is configured for
+render-target and shader-read usage. The initial Metal texture-session design
+should build on this existing headless/offscreen path rather than modifying the
+view-oriented `MLNMapView+Metal` path.
+
+The ABI should expose acquired texture frames from this offscreen render target,
+with explicit lifetime and synchronization rules. CPU readback remains a debug
+and test tool only.
+
+Design assumptions:
+
+- The offscreen Metal texture can be exposed as a sampleable `MTLTexture` or
+  equivalent Objective-C Metal object.
+- Texture lifetime can be modeled with acquire/release semantics.
+- Resize creates a new texture generation.
+- Initial synchronization can be conservative; optimized synchronization can
+  evolve without changing the high-level texture-session model.
+- The same texture-session concept can later be evaluated for Vulkan, even if
+  Vulkan requires different ownership or synchronization details.
+
+Risks:
+
+- MapLibre Native may need a small public or wrapper-private accessor for the
+  internal offscreen Metal texture.
+- Host UI frameworks may not accept externally produced GPU textures directly.
+- Synchronization may require backend-specific frame metadata.
+- Vulkan may require a different ownership model than Metal.
+
+Vulkan texture support should be designed after the Metal texture path clarifies
+the common ABI shape and which parts must remain backend-specific.
 
 ## Resource Loading and Cache
 
@@ -474,7 +565,7 @@ Important error categories:
 - Wrong thread.
 - Unsupported backend/platform/feature.
 - Native exception converted to error.
-- Surface/context failure.
+- Texture/surface/context failure.
 - Style load/parse failure.
 - Resource/glyph/sprite/tile failure.
 - Render failure.
@@ -512,34 +603,35 @@ The initial Zig smoke should use `@cImport` against the public C header and:
 
 - create and destroy a runtime;
 - create and destroy a map;
-- attach a simple headless or native surface when available;
+- attach a texture target when available;
 - set size, style, and camera;
 - poll native events;
-- optionally render/read back a frame.
+- render and acquire/release a GPU texture frame when available.
 
 The Zig smoke is not a product adapter. It validates that the ABI is actually C,
 not accidentally C++, Rust, or JNI shaped.
 
-For the first native-surface smoke, prefer SDL3 as the small cross-platform host.
-It can teach the right surface-level lessons without starting from a full UI
-toolkit:
+For the first texture smoke, prefer a minimal host renderer over a full UI
+toolkit. On macOS, render MapLibre into an offscreen `MTLTexture`, then sample it
+from a tiny Metal host. On Linux/Windows, do the equivalent with Vulkan once the
+Metal spike proves the texture-session shape.
 
-- macOS: create a Metal view and obtain the backing `CAMetalLayer`.
-- Linux/Windows: create Vulkan-capable windows/surfaces.
-- All platforms: exercise resize, DPI, event loop, render scheduling, and teardown
-  through a C/Zig-friendly API.
+SDL3 may still be useful as a small cross-platform window/event host for the
+sampling app, but the important test is offscreen texture rendering and sampling,
+not rendering directly to an SDL window surface.
 
 Keep the graphics backend constraint explicit: Metal on Apple platforms and
-Vulkan elsewhere. Do not choose an OpenGL-first smoke path.
+Vulkan elsewhere. Do not choose an OpenGL-first path.
 
 For a real small Zig application UI, DVUI is the most relevant Zig-native toolkit
-to track. It should be considered only after the ABI and native-surface contract
-are proven with SDL3-based Metal/Vulkan smoke tests, and only if it teaches us
-something about embedding in a real Zig application UI.
+to track. It should be considered only after the ABI and texture-session contract
+are proven with backend-appropriate Metal/Vulkan smoke tests, and only if it
+teaches us something about sampling the map texture inside a real Zig application
+UI.
 
 MapLibre Native has an experimental WebGPU backend, but the initial ABI and
-surface contract should not be based on WebGPU or `wgpu`. Revisit WebGPU after
-Metal and Vulkan native-surface sessions are proven.
+texture contract should not be based on WebGPU or `wgpu`. Revisit WebGPU after
+Metal and Vulkan texture sessions are proven.
 
 ## Build Policy
 
@@ -563,19 +655,11 @@ Build rules:
 - Keep the wrapper C++ build small and focused.
 - Defer full artifact publishing, support tiers, symbols, license bundles,
   Android AARs, iOS XCFrameworks, and Gradle capabilities until the native
-  surface design is proven.
+  texture design is proven.
 
 ## Open Questions
 
-- Which first native surface path is lowest risk: GLFW, AWT desktop, or another
-  desktop backend?
+- Which exact Metal texture target API can MapLibre Native support with the least
+  invasive backend work?
 - Should map/control ownership be wrapper-thread-owned, host-pumped, or support
   both from the beginning?
-- How much of MapLibre Native style mutation can be exposed through public APIs
-  without relying on internal parser/conversion details?
-- What is the minimum ABI needed for MapLibre Compose Desktop to replace its
-  current JNI/C++ experiment?
-
-Resolved decisions:
-
-- The implementation starts in this repository.
