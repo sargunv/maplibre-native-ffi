@@ -13,6 +13,14 @@
         "command": "clang-format --assume-filename={{file_path}}",
         "exts": ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm"]
       },
+      {
+        "command": "gersemi --line-length {{line_width}} --indent {{indent_width}} -",
+        "exts": ["cmake"]
+      },
+      {
+        "command": "gersemi --line-length {{line_width}} --indent {{indent_width}} -",
+        "fileNames": ["cmakelists.txt", "cmakelists.txt.in"]
+      },
       { "command": "zig fmt --stdin", "exts": ["zig"] },
       { "command": "zig fmt --stdin --zon", "exts": ["zon"] }
     ]
