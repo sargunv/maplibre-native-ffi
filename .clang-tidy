@@ -15,6 +15,6 @@ CheckOptions:
     value: 2
   - key: readability-identifier-length.IgnoredVariableNames
     value: i|j|k|n|x|y|z
-WarningsAsErrors: ""
+WarningsAsErrors: "*"
 FormatStyle: file
 SystemHeaders: false

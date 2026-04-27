@@ -9,11 +9,13 @@ dprint = "0.53.2"
 "github:sargunv/jvl" = "2026.04.03"
 cmake = "3.31.6"
 "github:blankspruce/gersemi" = "0.27.2"
-"conda:clang-format" = "21.1.8"
-"conda:clang-tools" = "21.1.8"
-"conda:clang" = "21.1.8"
-"conda:clangxx" = "21.1.8"
 zig = "0.16.0"
+
+[tools."github:llvm/llvm-project"]
+version = "22.1.4"
+version_prefix = "llvmorg-"
+bin_path = "bin"
+strip_components = 1
 
 [hooks]
 postinstall = [

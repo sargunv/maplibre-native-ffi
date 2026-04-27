@@ -11,7 +11,7 @@ local allSteps = new Mapping<String, Step> {
   ["clang-tidy"] {
     glob = List("src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx")
     depends = List("cmake-configure")
-    check = "clang-tidy -p build {{files}} --extra-arg=-resource-dir=\"$(clang -print-resource-dir)\""
+    check = "clang-tidy --quiet -p build {{files}}"
   }
   ["jvl"] {
     glob = List("**/*.json", "**/*.jsonc")
