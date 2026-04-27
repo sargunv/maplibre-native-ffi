@@ -35,6 +35,12 @@ auto validate_runtime_options(const mln_runtime_options* options)
     mln::core::set_thread_error("mln_runtime_options.size is too small");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  if (options->flags != 0) {
+    mln::core::set_thread_error(
+      "mln_runtime_options.flags contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
 
   return MLN_STATUS_OK;
 }
