@@ -172,14 +172,14 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
           mbgl::Scheduler::GetBackground(), mbgl::util::SimpleIdentity::Empty
         ) {}
 
-  void reset() override { latest_update_.reset(); }
+  void reset() override {}
 
   void setObserver(mbgl::RendererObserver& unused_observer) override {
     static_cast<void>(unused_observer);
   }
 
   void update(std::shared_ptr<mbgl::UpdateParameters> update) override {
-    latest_update_ = std::move(update);
+    static_cast<void>(update);
     events_->push(MLN_MAP_EVENT_RENDER_INVALIDATED);
   }
 
@@ -191,7 +191,6 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
  private:
   EventQueue* events_;
   mbgl::TaggedScheduler thread_pool_;
-  std::shared_ptr<mbgl::UpdateParameters> latest_update_;
 };
 
 auto validate_map_options(const mln_map_options* options) -> mln_status {
