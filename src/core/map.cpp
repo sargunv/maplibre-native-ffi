@@ -24,7 +24,6 @@
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/util/geo.hpp>
-#include <mbgl/util/run_loop.hpp>
 #include <mbgl/util/size.hpp>
 
 #include "core/map.hpp"
@@ -279,7 +278,6 @@ auto screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate {
 struct mln_map {
   mln_runtime* runtime = nullptr;
   std::thread::id owner_thread;
-  std::unique_ptr<mbgl::util::RunLoop> run_loop;
   EventQueue events;
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
@@ -378,8 +376,6 @@ auto create_map(
   auto owned_map = std::make_unique<mln_map>();
   owned_map->runtime = runtime;
   owned_map->owner_thread = std::this_thread::get_id();
-  owned_map->run_loop =
-    std::make_unique<mbgl::util::RunLoop>(mbgl::util::RunLoop::Type::Default);
   owned_map->observer = std::make_unique<HeadlessObserver>(owned_map->events);
   owned_map->frontend = std::make_unique<HeadlessFrontend>(owned_map->events);
 

@@ -153,9 +153,9 @@ calls into implementation objects. Files in this directory should stay thin:
 they are the no-exception C boundary, not the owner of MapLibre Native concepts.
 
 `src/core` owns C++ state that is independent of a concrete render backend:
-runtime and map handles, handle registries, diagnostics, event queues,
-`mbgl::Map`, `RunLoop`, observer subclasses, the long-lived renderer frontend,
-and conversions between ABI structs and C++ types.
+runtime and map handles, handle registries, diagnostics, event queues, the
+runtime-owned `RunLoop`, `mbgl::Map`, observer subclasses, the long-lived
+renderer frontend, and conversions between ABI structs and C++ types.
 
 `src/render` owns render target sessions and backend-bound renderer resources.
 Common texture/surface lifecycle code lives directly under `src/render`;
@@ -209,11 +209,11 @@ typedef struct mln_surface_session mln_surface_session;
 
 `mln_runtime` is the shared native environment for one or more maps. It owns
 runtime-level infrastructure such as resource loading, cache configuration,
-backend capability checks, and owner-thread/run-loop policy. `mln_map` owns one
-map instance inside a runtime: style, camera, observer events, render
-invalidation state, and the currently attached texture or surface session.
-Multiple maps may share one runtime while using different styles, cameras, and
-render targets.
+backend capability checks, and the owner-thread `RunLoop` used by every map in
+the runtime. `mln_map` owns one map instance inside a runtime: style, camera,
+observer events, render invalidation state, and the currently attached texture
+or surface session. Multiple maps may share one runtime while using different
+styles, cameras, and render targets.
 
 Use versioned plain-data structs:
 
@@ -406,7 +406,8 @@ graphics API or UI toolkit requires it.
 
 ```text
 Map/control owner
-  owns mbgl::Map, RunLoop, style/camera commands, observer delivery
+  owns runtime RunLoop, mbgl::Map instances, style/camera commands,
+  observer delivery
 
 Render target owner
   owns graphics context, renderable, texture or drawable acquisition,
@@ -439,6 +440,11 @@ on an owner thread and must call map/control APIs and runtime pumping APIs from
 that thread. The ABI should not create a hidden map/control thread in the
 initial design. Adapters that want a threaded model can build one above the C
 ABI.
+
+MapLibre's `RunLoop` is the current scheduler for its owner thread, so the
+initial ABI permits only one live runtime per owner thread. Multiple maps share
+that runtime-owned scheduler. `mln_runtime_run_once` pumps the runtime's own
+`RunLoop`; it does not discover or borrow an ambient scheduler from the thread.
 
 Process-global native callbacks, such as the low-level log callback, are an
 explicit exception to the host-pumped model. They may run on MapLibre logging or
@@ -481,8 +487,10 @@ surface/window/layer that makes those resources valid.
 Representative ownership lifecycle, not exact exported function names:
 
 ```text
-mln_map_create
+mln_runtime_create
   create RunLoop
+
+mln_map_create
   create MapObserver shim
   create long-lived RendererFrontend shim
   create mbgl::Map(frontend, observer, options, resources)
@@ -505,7 +513,10 @@ mln_texture_detach or mln_surface_detach
 mln_map_destroy
   detach active render target if needed
   destroy mbgl::Map on owner thread
-  destroy frontend, observer, RunLoop resources
+  destroy frontend and observer resources
+
+mln_runtime_destroy
+  destroy RunLoop resources
 ```
 
 Initial detach policy should be simple: `detach` releases backend-bound render
@@ -679,7 +690,9 @@ specific MapLibre Native API.
 
 Any thread that calls `FileSource::request` must own an active
 `mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
-by dropping the returned `AsyncRequest`.
+by dropping the returned `AsyncRequest`. In this ABI, map/resource work should
+run through the runtime owner thread so these requests use the runtime-owned
+`RunLoop`.
 
 ## Style and Data APIs
 

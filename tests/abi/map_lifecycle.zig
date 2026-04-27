@@ -62,6 +62,19 @@ test "map lifecycle rejects invalid state and stale handles" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
 }
 
+test "runtime supports multiple maps" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const first = try support.createMap(runtime);
+    defer support.destroyMap(first);
+
+    const second = try support.createMap(runtime);
+    defer support.destroyMap(second);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+}
+
 test "map rejects wrong-thread calls" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);

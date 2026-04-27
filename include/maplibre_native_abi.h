@@ -191,7 +191,9 @@ MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when out_runtime is null, *out_runtime is not
- *   null, or options has an unsupported size.
+ *   null, or options has an unsupported size or flags.
+ * - MLN_STATUS_INVALID_STATE when the current thread already owns a live
+ *   runtime.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_runtime_create(
@@ -213,13 +215,12 @@ MLN_API mln_status mln_runtime_create(
 MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
 
 /**
- * Runs one pending owner-thread task for this runtime/map thread, if any.
+ * Runs one pending owner-thread task for this runtime, if any.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not a live runtime
  *   handle.
- * - MLN_STATUS_INVALID_STATE when no run loop is active for this runtime.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.

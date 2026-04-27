@@ -7,6 +7,17 @@ fn destroyRuntimeOnThread(runtime: *c.mln_runtime, out_status: *c.mln_status) vo
     out_status.* = c.mln_runtime_destroy(runtime);
 }
 
+fn createRuntimeOnThread(out_status: *c.mln_status) void {
+    var runtime: ?*c.mln_runtime = null;
+    var options = c.mln_runtime_options_default();
+    out_status.* = c.mln_runtime_create(&options, &runtime);
+    if (runtime) |handle| {
+        if (out_status.* == c.MLN_STATUS_OK) {
+            out_status.* = c.mln_runtime_destroy(handle);
+        }
+    }
+}
+
 test "runtime exposes ABI version and default options" {
     const options = c.mln_runtime_options_default();
     try testing.expectEqual(@as(u32, 0), c.mln_abi_version());
@@ -31,6 +42,15 @@ test "runtime rejects invalid arguments" {
     try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
 }
 
+test "runtime rejects unknown flags" {
+    var options = c.mln_runtime_options_default();
+    options.flags = 1;
+
+    var runtime: ?*c.mln_runtime = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_create(&options, &runtime));
+    try testing.expectEqual(@as(?*c.mln_runtime, null), runtime);
+}
+
 test "runtime rejects stale handles" {
     const runtime = try support.createRuntime();
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
@@ -46,4 +66,38 @@ test "runtime rejects wrong-thread destroy" {
     thread.join();
 
     try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);
+}
+
+test "runtime owns pump before and after maps" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+
+    const map = try support.createMap(runtime);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_destroy(map));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+}
+
+test "runtime rejects second runtime on same owner thread" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var second: ?*c.mln_runtime = null;
+    var options = c.mln_runtime_options_default();
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_runtime_create(&options, &second));
+    try testing.expectEqual(@as(?*c.mln_runtime, null), second);
+}
+
+test "runtime permits one runtime per distinct owner thread" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var status: c.mln_status = c.MLN_STATUS_INVALID_STATE;
+    const thread = try std.Thread.spawn(.{}, createRuntimeOnThread, .{&status});
+    thread.join();
+
+    try testing.expectEqual(c.MLN_STATUS_OK, status);
 }

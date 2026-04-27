@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -87,9 +88,31 @@ auto create_runtime(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  auto owned_runtime = std::make_unique<mln_runtime>(
-    mln_runtime{.owner_thread = std::this_thread::get_id()}
-  );
+  const auto owner_thread = std::this_thread::get_id();
+  {
+    const std::scoped_lock lock(runtime_registry_mutex());
+    if (
+      std::any_of(
+        runtime_registry().begin(), runtime_registry().end(),
+        [&](const auto& entry) -> bool {
+          return entry.second->owner_thread == owner_thread;
+        }
+      )
+    ) {
+      set_thread_error("owner thread already has a live runtime");
+      return MLN_STATUS_INVALID_STATE;
+    }
+  }
+  if (mbgl::Scheduler::GetCurrent(false) != nullptr) {
+    set_thread_error("owner thread already has an active MapLibre scheduler");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto owned_runtime = std::make_unique<mln_runtime>(mln_runtime{
+    .owner_thread = owner_thread,
+    .run_loop =
+      std::make_unique<mbgl::util::RunLoop>(mbgl::util::RunLoop::Type::New)
+  });
   auto* runtime = owned_runtime.get();
   {
     const std::scoped_lock lock(runtime_registry_mutex());
@@ -133,13 +156,7 @@ auto run_runtime_once(mln_runtime* runtime) -> mln_status {
     return status;
   }
 
-  auto* scheduler = mbgl::Scheduler::GetCurrent(false);
-  auto* run_loop = dynamic_cast<mbgl::util::RunLoop*>(scheduler);
-  if (run_loop == nullptr) {
-    set_thread_error("runtime has no active run loop");
-    return MLN_STATUS_INVALID_STATE;
-  }
-  run_loop->runOnce();
+  runtime->run_loop->runOnce();
   return MLN_STATUS_OK;
 }
 
