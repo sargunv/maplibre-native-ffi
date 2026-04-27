@@ -288,6 +288,29 @@ struct mln_map {
 
 namespace mln::core {
 
+namespace {
+
+class RuntimeMapRetainGuard final {
+ public:
+  explicit RuntimeMapRetainGuard(mln_runtime* runtime) noexcept
+      : runtime_(runtime) {}
+
+  ~RuntimeMapRetainGuard() { release_runtime_map(runtime_); }
+
+  RuntimeMapRetainGuard(const RuntimeMapRetainGuard&) = delete;
+  RuntimeMapRetainGuard(RuntimeMapRetainGuard&&) = delete;
+  auto operator=(const RuntimeMapRetainGuard&)
+    -> RuntimeMapRetainGuard& = delete;
+  auto operator=(RuntimeMapRetainGuard&&) -> RuntimeMapRetainGuard& = delete;
+
+  auto dismiss() noexcept -> void { runtime_ = nullptr; }
+
+ private:
+  mln_runtime* runtime_ = nullptr;
+};
+
+}  // namespace
+
 auto map_options_default() noexcept -> mln_map_options {
   return mln_map_options{
     .size = sizeof(mln_map_options),
@@ -349,6 +372,7 @@ auto create_map(
   if (retain_status != MLN_STATUS_OK) {
     return retain_status;
   }
+  auto retain_guard = RuntimeMapRetainGuard{runtime};
 
   const auto effective = options == nullptr ? map_options_default() : *options;
   auto owned_map = std::make_unique<mln_map>();
@@ -374,6 +398,7 @@ auto create_map(
     map_registry().emplace(handle, std::move(owned_map));
   }
   *out_map = handle;
+  retain_guard.dismiss();
   return MLN_STATUS_OK;
 }
 
