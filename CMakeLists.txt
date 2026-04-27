@@ -42,7 +42,39 @@ set(
 )
 add_subdirectory("${MLN_SOURCE_DIR}" "${PROJECT_BINARY_DIR}/maplibre-native")
 
-add_library(maplibre_native_abi SHARED src/abi/hello.cpp)
+set(
+  MLN_PLATFORM_SUPPORT_SOURCES
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/monotonic_timer.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/thread_local.cpp
+)
+set(MLN_PLATFORM_SUPPORT_LIBRARIES)
+if(APPLE)
+  enable_language(OBJCXX)
+  list(
+    APPEND MLN_PLATFORM_SUPPORT_SOURCES
+    ${MLN_SOURCE_DIR}/platform/darwin/core/async_task.cpp
+    ${MLN_SOURCE_DIR}/platform/darwin/core/nsthread.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/run_loop.cpp
+  )
+  list(
+    APPEND MLN_PLATFORM_SUPPORT_LIBRARIES
+    "-framework CoreFoundation"
+    "-framework Foundation"
+  )
+else()
+  message(
+    FATAL_ERROR
+    "maplibre_native_abi platform support is currently wired for Apple targets only"
+  )
+endif()
+
+add_library(
+  maplibre_native_abi
+  SHARED
+  src/abi/hello.cpp
+  ${MLN_PLATFORM_SUPPORT_SOURCES}
+)
 add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)
 
 target_include_directories(
@@ -50,9 +82,13 @@ target_include_directories(
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+  PRIVATE ${MLN_SOURCE_DIR}/src ${MLN_SOURCE_DIR}/platform/default/include
 )
 
-target_link_libraries(maplibre_native_abi PRIVATE Mapbox::Map)
+target_link_libraries(
+  maplibre_native_abi
+  PRIVATE Mapbox::Map ${MLN_PLATFORM_SUPPORT_LIBRARIES}
+)
 
 set_target_properties(
   maplibre_native_abi

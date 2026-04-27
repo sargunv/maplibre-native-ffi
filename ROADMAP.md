@@ -35,7 +35,7 @@ Acceptance evidence:
   using `MLN_SOURCE_DIR` when provided and the submodule by default.
 - `cmake --build build` builds `maplibre_native_abi` linked against MapLibre
   Native `mbgl-core` with the Metal backend on macOS.
-- `zig build run` prints the ABI hello-world message through the shared library.
+- `zig build run` exercises exported ABI symbols through the shared library.
 
 Out of scope:
 
@@ -43,7 +43,7 @@ Out of scope:
 - Android AARs or iOS XCFrameworks.
 - Language bindings beyond the C header.
 
-## M1: Minimal C ABI Skeleton
+## M1: Minimal C ABI Skeleton Completed
 
 Goal: Create the public C boundary and prove it is consumable outside C++.
 
@@ -62,6 +62,24 @@ Acceptance:
 - Runtime create/destroy works from Zig.
 - Invalid arguments return documented `mln_status` values.
 - C++ exceptions do not cross the C ABI.
+
+Acceptance evidence:
+
+- `include/maplibre_native_abi.h` defines the public C boundary with exported
+  function decoration, opaque `mln_runtime`, `mln_status`, and versioned
+  `mln_runtime_options` with an ABI-provided default initializer.
+- `mln_runtime_create` and `mln_runtime_destroy` validate arguments, convert C++
+  exceptions to `MLN_STATUS_NATIVE_ERROR`, preserve thread-local diagnostics,
+  and reject non-live runtime handles.
+- `mln_runtime_destroy` enforces owner-thread destruction for the runtime
+  handle.
+- `examples/zig-hello/main.zig` imports the public header with `@cImport`, calls
+  `mln_runtime_create`/`mln_runtime_destroy`, and verifies a documented invalid
+  argument result.
+- `/Users/sargunv/.local/share/mise/installs/cmake/3.31.6/cmake-3.31.6-macos-universal/CMake.app/Contents/bin/cmake --build build`
+  builds `maplibre_native_abi` on macOS.
+- `zig build run` prints the ABI version and completes the runtime lifecycle
+  smoke.
 
 Out of scope:
 

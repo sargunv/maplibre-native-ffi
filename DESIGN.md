@@ -781,3 +781,10 @@ target.
 Normal builds should not implicitly download native dependencies. Packaging
 formats such as Android AARs, iOS XCFrameworks, and published binary artifacts
 are distribution concerns, not part of the core ABI design.
+
+When building against MapLibre Native with `MLN_WITH_CORE_ONLY`, the wrapper
+must still provide or link the platform support symbols that `mbgl-core`
+expects, such as logging, run-loop, thread-local storage, timers, and platform
+thread helpers. On macOS the initial wrapper links the Darwin run-loop/thread
+helpers plus the default portable support files directly into
+`maplibre_native_abi`.
