@@ -204,6 +204,7 @@ typedef uint32_t (*mln_log_callback)(
  * Returning a non-zero value from the callback consumes the message. Returning
  * zero lets it fall through to MapLibre Native's platform logger. The callback
  * and user_data must remain valid until the callback is replaced or cleared.
+ * The message is borrowed and valid only for the duration of the callback.
  *
  * This is a low-level native callback. It may be invoked from MapLibre logging
  * or worker threads depending on the async severity mask, and it may be invoked
@@ -295,8 +296,9 @@ typedef struct mln_resource_transform_response {
  * callback may run on a MapLibre worker/network thread, not the runtime owner
  * thread; it must be thread-safe, return quickly, and must not call back into
  * the ABI. url and out_response are valid only during the callback and must not
- * be retained. The callback and user_data must remain valid until no live maps
- * or in-flight requests can invoke the transform, normally until runtime
+ * be retained. When out_response->url is set, the ABI copies it before the
+ * callback returns. The callback and user_data must remain valid until no live
+ * maps or in-flight requests can invoke the transform, normally until runtime
  * teardown.
  */
 typedef mln_status (*mln_resource_transform_callback)(
@@ -359,6 +361,12 @@ typedef struct mln_resource_response {
  * HANDLE, the provider may complete inline or later; completion is copied by
  * the ABI and may be called from any thread. Providers should release the
  * handle after they no longer need to complete or observe cancellation.
+ *
+ * The callback runs synchronously on the thread that reaches the ABI network
+ * file source, which may be a MapLibre worker or network thread rather than the
+ * runtime owner thread. It must be thread-safe, return quickly, and must not
+ * call back into map/runtime ABI functions. It may call resource request handle
+ * functions for the handle provided to this callback.
  */
 typedef uint32_t (*mln_resource_provider_callback)(
   void* user_data, const mln_resource_request* request,

@@ -667,93 +667,44 @@ the common ABI shape and which parts must remain backend-specific.
 
 ## Resource Loading and Cache
 
-Resource configuration should be runtime-level by default so multiple maps can
-share file sources, cache policy, and tile-server URL behavior.
+Resource configuration is runtime-level so multiple maps can share file sources,
+cache policy, and tile-server URL behavior. The ABI should keep MapLibre's
+native resource stack in control instead of asking host languages to reimplement
+loading.
 
-The resource subsystem uses MapLibre Native's `MainResourceLoader` behind the
-process-global `FileSourceManager` hook. The ABI registers native built-in file
-sources and wraps `FileSourceType::Network` to expose a runtime-scoped network
-provider extension point before delegating pass-through requests to native
-`OnlineFileSource`. The runtime's unique `platformContext` remains the
-file-source cache identity.
+The resource subsystem design is:
 
-The MapLibre `FileSourceManager::get()` hook is platform glue, but network
-interception, runtime lookup, resource transform forwarding, and custom provider
-callback machinery are core runtime behavior. Keep platform-owned files thin and
-route them to `src/core` factories.
-
-For the Apple target, HTTP/HTTPS loading uses MapLibre's default
-`OnlineFileSource` backed by the Darwin `HTTPFileSource` (`NSURLSession`) and
-`MLNNativeNetworkManager` fallback configuration. Network reachability state is
-process-global and exposed as direct wrappers over `mbgl::NetworkStatus`, not as
-runtime-scoped policy.
-
-`DatabaseFileSource` is registered for every runtime, matching MapLibre's
-default `ResourceOptions::cachePath()` of `":memory:"`. Without an ABI
-`cache_path`, database/cache behavior is transient and not durable beyond the
-native database lifetime. With `cache_path`, the same MapLibre database provider
-persists ambient cache and future offline-region data at the caller's path.
-Native `MainResourceLoader` owns the cache-first waterfall for cache-capable
-resources: usable cached responses may be returned immediately while network
-revalidation continues, and successful network responses are forwarded into the
-database. `maximum_cache_size` is creation-time runtime policy and is applied
-through `DatabaseFileSource::setMaximumAmbientCacheSize`, not only through
-`ResourceOptions`.
-
-MBTiles and PMTiles are registered as built-in Core scheme handlers. MBTiles
-uses absolute local `mbtiles://` paths. The wrapper build forces
-`MLN_WITH_PMTILES=ON`, so PMTiles uses MapLibre's full provider; nested file or
-network range requests re-enter `MainResourceLoader` through `FileSourceManager`
-and therefore use the same runtime resource options and network interception.
-
-Resource transforms are URL-only, matching `mbgl::ResourceTransform`. They are
-runtime-scoped, registered before map creation, and forwarded to
-`OnlineFileSource`. They apply wherever native `OnlineFileSource` applies them,
-including nested PMTiles network requests. They do not mutate headers or apply
-to file, asset, database, MBTiles, PMTiles metadata handling, or ABI provider
-responses intercepted before `OnlineFileSource`.
-
-Expose native-backed `ResourceOptions` and `TileServerOptions` concepts through
-runtime-level configuration:
-
-- Tile-server URL normalization options, including base URL, URI scheme alias,
-  URL templates, default styles, and optional API-key query parameter behavior
-  for providers that require it.
-- Cache path and maximum ambient cache size.
-- Asset path for `asset://` resolution.
-- ABI-owned runtime-unique `platformContext` for MapLibre file-source identity.
-- Resource transform hooks for URL-only network request rewriting.
-
-Cache and offline operations should be modeled explicitly where they correspond
-to MapLibre Native APIs, not as wrapper-invented policy:
-
-- ambient cache maintenance: reset database, invalidate ambient cache, clear
-  ambient cache, pack database, and maximum ambient cache size;
-- offline regions: list, get, create, update metadata, set observer, set
-  download state, get status, merge, delete, and invalidate. Public offline
-  region APIs remain deferred until region handle ownership, metadata buffers,
-  observer delivery, and download status semantics are designed;
-- process-level network status: wrap `mbgl::NetworkStatus` as process-global ABI
-  state, matching MapLibre Native rather than adding runtime-scoped network
+- Use MapLibre Native's `MainResourceLoader` behind the `FileSourceManager`
+  hook.
+- Register native built-ins for file, asset, database/cache, MBTiles, PMTiles,
+  and platform HTTP/HTTPS loading.
+- Wrap `FileSourceType::Network` only as an extension point: ABI providers may
+  handle host-specific resources, otherwise requests pass through to native
+  `OnlineFileSource`.
+- Keep `ResourceOptions` runtime-derived, including asset path, cache path,
+  maximum ambient cache size, and runtime-unique `platformContext` identity.
+- Expose process-level network status as wrappers over `mbgl::NetworkStatus`,
+  matching MapLibre Native rather than inventing runtime-scoped online/offline
   policy.
+- Keep resource transforms URL-only, matching `mbgl::ResourceTransform`; do not
+  expose header/body/auth mutation unless a concrete product requirement selects
+  a separate request-interception feature.
 
-Retry policy, custom eviction hooks, and higher-level online/offline product
-modes should stay out of the core ABI unless they are direct wrappers over a
-specific MapLibre Native API.
+Custom providers use an async request-handle ABI. The provider callback decides
+pass-through versus handle, may complete inline or later, can observe
+cancellation, and releases the handle when finished. Completion copies response
+bytes/strings before returning to the host. Provider failures become MapLibre
+resource errors and ABI events/diagnostics without allowing exceptions through
+the C boundary.
 
-Any thread that calls `FileSource::request` must own an active
-`mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
-by dropping the returned `AsyncRequest`. In this ABI, map/resource work should
-normally run through the runtime owner thread so requests use the runtime-owned
-`RunLoop`. If MapLibre issues a resource request from another RunLoop thread,
-the wrapper must marshal host-provider invocation to the runtime owner thread
-and marshal completion back to the requesting RunLoop thread.
+Cache and offline operations should stay direct wrappers over MapLibre concepts:
 
-Custom provider callbacks must preserve that boundary: native code may ask host
-code for resource bytes for a registered URL scheme from the runtime owner path,
-copy the returned bytes before returning to MapLibre, and convert provider
-failures to MapLibre resource errors and ABI diagnostics/events without allowing
-exceptions through the C ABI.
+- Ambient cache maintenance covers reset database, invalidate ambient cache,
+  clear ambient cache, pack database, and maximum ambient cache size.
+- Offline region APIs remain deferred until region handle ownership, metadata
+  buffer release, observer delivery, and download status semantics are designed.
+- Retry policy, custom eviction hooks, and higher-level online/offline product
+  modes stay out of the core ABI unless they wrap a specific MapLibre API.
 
 ## Style and Data APIs
 
@@ -822,8 +773,9 @@ Error strings are diagnostic only and must not be parsed by adapters.
 
 - Host-provided strings and buffers are borrowed for the duration of the call
   unless a function explicitly retains/copies them.
-- Runtime-returned strings and buffers must be released through explicit ABI
-  functions.
+- ABI-owned returned strings and buffers must be released through explicit ABI
+  functions. Do not add release APIs until a public function returns owned ABI
+  storage.
 - No pointer returned from the ABI remains valid after a mutating call unless
   documented.
 - Image buffers must document pixel format, stride, premultiplication, color

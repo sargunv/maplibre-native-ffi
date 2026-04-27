@@ -55,6 +55,11 @@ test "runtime rejects stale handles" {
     const runtime = try support.createRuntime();
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_destroy(runtime));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_run_once(runtime));
+}
+
+test "runtime run once rejects null runtime" {
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_run_once(null));
 }
 
 test "runtime rejects wrong-thread destroy" {

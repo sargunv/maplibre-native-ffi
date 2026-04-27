@@ -1,4 +1,5 @@
-const testing = @import("std").testing;
+const std = @import("std");
+const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
@@ -32,4 +33,33 @@ test "event polling rejects invalid outputs" {
 
     event.size = @sizeOf(c.mln_map_event) - 1;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event, &has_event));
+}
+
+test "event message storage is copied into caller output" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "unsupported://style.json"));
+
+    var event = support.emptyEvent();
+    for (0..1000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+        var has_event = false;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+        if (has_event and event.type == c.MLN_MAP_EVENT_MAP_LOADING_FAILED) break;
+    } else return error.EventNotFound;
+
+    const message = std.mem.sliceTo(&event.message, 0);
+    try testing.expect(message.len > 0);
+    var copied_message: [512]u8 = undefined;
+    @memcpy(copied_message[0..message.len], message);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+    try testing.expectEqualSlices(u8, copied_message[0..message.len], std.mem.sliceTo(&event.message, 0));
 }

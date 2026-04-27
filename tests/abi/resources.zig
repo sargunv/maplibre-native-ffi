@@ -194,6 +194,11 @@ fn passThroughStyleProvider(user_data: ?*anyopaque, request: [*c]const c.mln_res
     return c.MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH;
 }
 
+fn completeRequestOnThread(handle: *c.mln_resource_request_handle, out_status: *c.mln_status) void {
+    var response = styleResponse();
+    out_status.* = c.mln_resource_request_complete(handle, &response);
+}
+
 fn waitForProviderRequest(runtime: *c.mln_runtime, state: *AsyncProviderState) !*c.mln_resource_request_handle {
     for (0..1000) |_| {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
@@ -306,9 +311,50 @@ test "custom provider can complete style request later" {
     var cancelled = true;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_cancelled(handle, &cancelled));
     try testing.expect(!cancelled);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_resource_request_cancelled(handle, null));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_resource_request_complete(handle, null));
 
     var response = styleResponse();
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_complete(handle, &response));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_resource_request_complete(handle, &response));
+    try pumpAndExpectStyleLoaded(runtime, map);
+}
+
+test "custom provider request handles validate lifecycle" {
+    c.mln_resource_request_release(null);
+
+    var cancelled = true;
+    var response = styleResponse();
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_resource_request_cancelled(null, &cancelled));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_resource_request_complete(null, &response));
+}
+
+test "custom provider can complete request from another thread" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var state = AsyncProviderState{};
+    var provider = c.mln_resource_provider{
+        .size = @sizeOf(c.mln_resource_provider),
+        .callback = delayedStyleProvider,
+        .user_data = &state,
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_set_resource_provider(runtime, &provider));
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "custom://style.json"));
+    const handle = try waitForProviderRequest(runtime, &state);
+    defer c.mln_resource_request_release(handle);
+
+    var status: c.mln_status = c.MLN_STATUS_INVALID_STATE;
+    const thread = try std.Thread.spawn(.{}, completeRequestOnThread, .{ handle, &status });
+    thread.join();
+    try testing.expectEqual(c.MLN_STATUS_OK, status);
     try pumpAndExpectStyleLoaded(runtime, map);
 }
 

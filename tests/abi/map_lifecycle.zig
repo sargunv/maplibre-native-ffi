@@ -58,6 +58,14 @@ test "map lifecycle rejects invalid state and stale handles" {
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_destroy(map));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_destroy(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_style_json(map, support.style_json));
+
+    var camera = c.mln_camera_options_default();
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_get_camera(map, &camera));
+
+    var event = support.emptyEvent();
+    var has_event = true;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event, &has_event));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
 }
