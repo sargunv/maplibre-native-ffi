@@ -1,3 +1,4 @@
 build*/
 .zig-cache/
 zig-out/
+workpad.md

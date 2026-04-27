@@ -664,6 +664,13 @@ the common ABI shape and which parts must remain backend-specific.
 Resource configuration should be runtime-level by default so multiple maps can
 share file sources, cache policy, and tile-server URL behavior.
 
+The first resource-provider slice should stay local and deterministic: wire a
+real resource loader for `file://` and filesystem `asset://` resources, and add
+a host-backed custom provider path for registered URL schemes that are not plain
+files (for example, APK assets or application-specific bundled resources).
+Network, ambient cache policy, offline regions, and resource transforms remain
+separate decisions.
+
 Expose native-backed `ResourceOptions` and `TileServerOptions` concepts first:
 
 - Tile-server URL normalization options, including base URL, URI scheme alias,
@@ -693,6 +700,12 @@ Any thread that calls `FileSource::request` must own an active
 by dropping the returned `AsyncRequest`. In this ABI, map/resource work should
 run through the runtime owner thread so these requests use the runtime-owned
 `RunLoop`.
+
+Custom provider callbacks must preserve that boundary: native code may ask host
+code for resource bytes for a registered URL scheme from the runtime owner path,
+copy the returned bytes before returning to MapLibre, and convert provider
+failures to MapLibre resource errors and ABI diagnostics/events without allowing
+exceptions through the C ABI.
 
 ## Style and Data APIs
 

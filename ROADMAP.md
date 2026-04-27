@@ -150,45 +150,112 @@ Out of scope:
 - Native surfaces.
 - Interactive windowed UI.
 
-## M2.1: Basic Resource Provider Wiring Placeholder
+## M2.x: Resource Loading, Cache, and Offline
 
-Goal: Explore and define the smallest resource-provider integration needed after
-M2 so map lifecycle and later rendering tests can load realistic local styles
-without relying only on inline style JSON.
+Goal: Build the resource subsystem in the final ABI shape: a runtime-owned,
+wrapper-composite resource loader that supports local files, bundled resources,
+custom URL schemes, network loading, ambient cache, and offline data without
+requiring callers to reimplement MapLibre's normal resource stack.
 
-Status: Placeholder. Scope needs exploration against MapLibre Native's default
-and Darwin file-source implementations before this milestone is committed.
+Design reference: `RESOURCE_API_DESIGN_DRAFT.md`.
 
-Candidate deliverables:
+Shared architecture:
 
-- Inventory which MapLibre Native platform/default file-source sources are
-  needed for local file, asset, style URL, sprite, glyph, and GeoJSON URL
-  loading on macOS.
-- Decide whether M2.1 should replace the null `FileSourceManager` with the
-  default manager, a wrapper-owned minimal manager, or a deliberately narrower
-  local-only provider.
-- Define runtime-level resource options needed for local smoke tests, such as
-  asset path and cache path, without designing the full cache/offline API.
-- Add ABI tests that cover one successful local style/resource load and one
-  missing-resource failure with diagnostics/events.
-- Document remaining resource-loading limitations before M3/M4.
+- Replace the M2 null `FileSourceManager` with an ABI-owned manager and
+  composite `ResourceLoader`.
+- Keep resource configuration runtime-level and pass runtime-derived
+  `mbgl::ResourceOptions` into map creation.
+- Treat M2.x boundaries as provider enablement slices, not as throwaway loader
+  designs.
+- Keep custom providers additive for host-specific schemes such as `apk://`,
+  `bundle://`, or app-specific package URLs.
+- Add each built-in provider behind explicit ABI options and deterministic
+  tests.
 
-Open questions:
+### M2.1: Composite Loader, Local Files, and Custom Schemes
 
-- Should network loading be explicitly out of scope for this slice?
-- Should the first style URL smoke use `file://`, `asset://`, or a wrapper-owned
-  test resource scheme?
-- How much of MapLibre Native's default storage stack can be linked without
-  pulling in cache/offline/database policy prematurely?
-- Does Metal texture rendering in M4 require sprite/glyph loading to be real, or
-  can M4 continue with an inline/sprite-free style?
+Deliverables:
 
-Out of scope unless exploration says otherwise:
+- ABI-owned composite `ResourceLoader` skeleton with cancellation-safe requests.
+- Runtime `asset_path` and optional `cache_path` options.
+- `file://` and filesystem `asset://` loading.
+- Custom scheme provider registration and dispatch.
+- Tests for successful `file://`, successful `asset://`, successful custom
+  scheme, missing-resource failure, invalid provider registration, and existing
+  inline-style behavior.
+- Zig headless smoke loads a visible local style by URL.
 
-- Offline regions.
-- Ambient cache management.
-- Network policy and retry behavior.
-- Public resource transform hooks.
+Out of scope:
+
+- Built-in network, ambient cache, offline regions, MBTiles/PMTiles, and
+  resource transforms.
+
+### M2.2: Built-In Network Provider
+
+Deliverables:
+
+- Runtime network enablement option.
+- MapLibre-backed HTTP/HTTPS provider wiring for the first target platform.
+- Tile-server/API-key options only as needed for deterministic tests.
+- Tests against a controlled local HTTP fixture or equivalent non-flaky
+  endpoint.
+
+Research required:
+
+- Default libcurl vs Darwin `NSURLSession` source selection and CMake inputs.
+- `ClientOptions`, network status, resource transform, and platform lifecycle
+  requirements.
+
+### M2.3: Ambient Cache Provider
+
+Deliverables:
+
+- Runtime cache path, cache enablement, and maximum cache size options.
+- MapLibre-backed database/cache provider wiring.
+- Tests proving cached data can satisfy a later request without network.
+
+Research required:
+
+- `DatabaseFileSource`, `OfflineDatabase`, SQLite/temp path setup, and whether
+  ambient cache and offline regions share a database path.
+
+### M2.4: Offline Regions and Offline Database APIs
+
+Deliverables:
+
+- ABI operations for supported MapLibre offline region lifecycle and status.
+- Offline observer/event plumbing.
+- Deterministic offline tests using controlled resources.
+
+Research required:
+
+- Current MapLibre Native offline APIs, platform differences, metadata/merge
+  behavior, and threading constraints.
+
+### M2.5: MBTiles/PMTiles Providers
+
+Deliverables:
+
+- Built-in local package provider support where available.
+- URL tests for `mbtiles://` and/or `pmtiles://` fixtures.
+
+Research required:
+
+- Full vs stub PMTiles source selection, dependencies, URL forms, and TileJSON
+  metadata behavior.
+
+### M2.6: Resource Transform and Request Interception
+
+Deliverables:
+
+- Request/header/auth/URL transform ABI only if required by a concrete product
+  use case.
+- Clear callback threading and memory ownership contract.
+
+Research required:
+
+- Which MapLibre providers honor `ResourceTransform`, how Android/Darwin use it,
+  and how transforms interact with custom schemes and cache keys.
 
 ## M3: ABI Contracts and Test Harness
 
