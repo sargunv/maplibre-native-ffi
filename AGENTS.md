@@ -12,11 +12,9 @@
 
 - Each milestone should have clear acceptance evidence before being considered
   done. Mark milestones completed in the roadmap.
-- Record important discoveries in `DESIGN.md` if they affect architecture.
+- Record important changes to the overall architecture in `DESIGN.md`.
 - Record sequencing changes, deferred work, or newly split milestones in
   `ROADMAP.md`.
-- Do not leave important architectural decisions only in commit messages or
-  chat.
 
 ## Implementation Notes
 

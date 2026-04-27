@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <mbgl/util/run_loop.hpp>
+
 #include "core/runtime.hpp"
 
 #include "core/diagnostics.hpp"
@@ -40,6 +42,26 @@ auto validate_runtime_options(const mln_runtime_options* options)
 
 namespace mln::core {
 
+auto validate_runtime(mln_runtime* runtime) -> mln_status {
+  if (runtime == nullptr) {
+    set_thread_error("runtime must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const std::scoped_lock lock(runtime_registry_mutex());
+  if (!runtime_registry().contains(runtime)) {
+    set_thread_error("runtime is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (runtime->owner_thread != std::this_thread::get_id()) {
+    set_thread_error("runtime call must be made on its owner thread");
+    return MLN_STATUS_WRONG_THREAD;
+  }
+
+  return MLN_STATUS_OK;
+}
+
 auto create_runtime(
   const mln_runtime_options* options, mln_runtime** out_runtime
 ) -> mln_status {
@@ -58,8 +80,9 @@ auto create_runtime(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  auto owned_runtime =
-    std::make_unique<mln_runtime>(mln_runtime{std::this_thread::get_id()});
+  auto owned_runtime = std::make_unique<mln_runtime>(
+    mln_runtime{.owner_thread = std::this_thread::get_id()}
+  );
   auto* runtime = owned_runtime.get();
   {
     const std::scoped_lock lock(runtime_registry_mutex());
@@ -71,12 +94,12 @@ auto create_runtime(
 }
 
 auto destroy_runtime(mln_runtime* runtime) -> mln_status {
+  const std::scoped_lock lock(runtime_registry_mutex());
   if (runtime == nullptr) {
     set_thread_error("runtime must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  const std::scoped_lock lock(runtime_registry_mutex());
   const auto found = runtime_registry().find(runtime);
   if (found == runtime_registry().end()) {
     set_thread_error("runtime is not a live handle");
@@ -88,8 +111,47 @@ auto destroy_runtime(mln_runtime* runtime) -> mln_status {
     return MLN_STATUS_WRONG_THREAD;
   }
 
+  if (found->second->live_maps != 0) {
+    set_thread_error("runtime still owns live maps");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
   runtime_registry().erase(runtime);
   return MLN_STATUS_OK;
+}
+
+auto run_runtime_once(mln_runtime* runtime) -> mln_status {
+  const auto status = validate_runtime(runtime);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  if (auto* run_loop = mbgl::util::RunLoop::Get()) {
+    run_loop->runOnce();
+  }
+  return MLN_STATUS_OK;
+}
+
+auto retain_runtime_map(mln_runtime* runtime) -> mln_status {
+  const auto status = validate_runtime(runtime);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  const std::scoped_lock lock(runtime_registry_mutex());
+  ++runtime->live_maps;
+  return MLN_STATUS_OK;
+}
+
+auto release_runtime_map(mln_runtime* runtime) noexcept -> void {
+  if (runtime == nullptr) {
+    return;
+  }
+
+  const std::scoped_lock lock(runtime_registry_mutex());
+  if (runtime_registry().contains(runtime) && runtime->live_maps != 0) {
+    --runtime->live_maps;
+  }
 }
 
 }  // namespace mln::core

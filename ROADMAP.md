@@ -76,8 +76,7 @@ Acceptance evidence:
 - `examples/zig-headless/main.zig` imports the public header with `@cImport`,
   calls `mln_runtime_create`/`mln_runtime_destroy`, and verifies a documented
   invalid argument result.
-- `/Users/sargunv/.local/share/mise/installs/cmake/3.31.6/cmake-3.31.6-macos-universal/CMake.app/Contents/bin/cmake --build build`
-  builds `maplibre_native_abi` on macOS.
+- `cmake --build build` builds `maplibre_native_abi` on macOS.
 - `zig build run` prints the ABI version and completes the runtime lifecycle
   smoke.
 
@@ -87,7 +86,7 @@ Out of scope:
 - Rendering.
 - Map events.
 
-## M2: Headless Map Lifecycle Smoke
+## M2: Headless Map Lifecycle Smoke Completed
 
 Goal: Prove map lifecycle, style loading, camera control, and map-owned event
 plumbing before introducing GPU texture ownership.
@@ -101,7 +100,7 @@ Deliverables:
 - Camera snapshot and basic camera commands.
 - Map-owned event queue with style, camera, render-invalidated, and error events
   where available.
-- Handle-scoped diagnostics for runtime and map failures.
+- Thread-local diagnostics for synchronous runtime and map failures.
 - Zig CLI lifecycle smoke.
 
 Acceptance:
@@ -114,6 +113,34 @@ Acceptance:
 - Style parse/load failures produce status codes, map events, and diagnostics.
 - Wrong-thread and invalid-lifecycle calls return documented statuses.
 
+Acceptance evidence:
+
+- `include/maplibre_native_abi.h` now exposes opaque `mln_map`, map options,
+  camera options, event structs, style load, camera command/snapshot, event
+  polling, and run-loop pumping. Synchronous failures use thread-local
+  diagnostics; async/observer failures use map events.
+- `src/core/map.cpp` constructs a real `mbgl::Map` with an owner-thread
+  `mbgl::util::RunLoop`, `MapObserver` event bridge, and headless
+  `RendererFrontend` that queues render-invalidated events without owning GPU
+  resources.
+- `examples/zig-headless/main.zig` creates a runtime and map, loads a visible
+  inline style JSON with a background and inline GeoJSON circle layer, issues
+  camera commands, drains map events, and destroys handles cleanly.
+- `tests/abi/main.zig` covers intentional failure cases and lifecycle contracts:
+  invalid runtime arguments, runtime destruction while maps are live, stale map
+  handles, inline style success, camera snapshot fields, and malformed style
+  status/diagnostic/event behavior.
+- `cmake --build build` builds `maplibre_native_abi` on macOS.
+- `zig build test --summary all` reports 4/4 ABI tests passed.
+- `zig build run` prints ABI/map events and completes the headless map lifecycle
+  demo without deliberate failure calls.
+
+Remaining risk:
+
+- Style URL loading currently reports a native style-load failure because the M2
+  wrapper links a null `FileSourceManager`; full resource-provider wiring
+  remains part of the resource-loading/cache slice.
+
 Confidence: This milestone proves ABI shape and map/event plumbing. It does not
 prove GPU rendering, texture synchronization, or UI integration.
 
@@ -122,6 +149,46 @@ Out of scope:
 - Texture sessions.
 - Native surfaces.
 - Interactive windowed UI.
+
+## M2.1: Basic Resource Provider Wiring Placeholder
+
+Goal: Explore and define the smallest resource-provider integration needed after
+M2 so map lifecycle and later rendering tests can load realistic local styles
+without relying only on inline style JSON.
+
+Status: Placeholder. Scope needs exploration against MapLibre Native's default
+and Darwin file-source implementations before this milestone is committed.
+
+Candidate deliverables:
+
+- Inventory which MapLibre Native platform/default file-source sources are
+  needed for local file, asset, style URL, sprite, glyph, and GeoJSON URL
+  loading on macOS.
+- Decide whether M2.1 should replace the null `FileSourceManager` with the
+  default manager, a wrapper-owned minimal manager, or a deliberately narrower
+  local-only provider.
+- Define runtime-level resource options needed for local smoke tests, such as
+  asset path and cache path, without designing the full cache/offline API.
+- Add ABI tests that cover one successful local style/resource load and one
+  missing-resource failure with diagnostics/events.
+- Document remaining resource-loading limitations before M3/M4.
+
+Open questions:
+
+- Should network loading be explicitly out of scope for this slice?
+- Should the first style URL smoke use `file://`, `asset://`, or a wrapper-owned
+  test resource scheme?
+- How much of MapLibre Native's default storage stack can be linked without
+  pulling in cache/offline/database policy prematurely?
+- Does Metal texture rendering in M4 require sprite/glyph loading to be real, or
+  can M4 continue with an inline/sprite-free style?
+
+Out of scope unless exploration says otherwise:
+
+- Offline regions.
+- Ambient cache management.
+- Network policy and retry behavior.
+- Public resource transform hooks.
 
 ## M3: ABI Contracts and Test Harness
 
@@ -132,7 +199,7 @@ Deliverables:
 
 - Per-function documentation for possible `mln_status` returns.
 - Per-function async category and valid calling-thread documentation.
-- Diagnostic APIs for thread-local and handle-scoped errors.
+- Diagnostic API contract for thread-local synchronous errors.
 - Runtime-returned string/buffer release APIs.
 - ABI tests for struct sizes, null handling, lifecycle state, ownership, and
   event draining.
@@ -140,7 +207,7 @@ Deliverables:
 Acceptance:
 
 - Tests cover invalid arguments, stale handles where feasible, wrong lifecycle
-  state, and diagnostics ownership.
+  state, and thread-local diagnostics behavior.
 - Public APIs document whether completion is represented by return status, later
   map events, or both.
 - No returned pointer has undocumented lifetime.

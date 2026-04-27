@@ -1,10 +1,8 @@
 #define MLN_BUILDING_ABI
 
-#include <exception>
-
 #include "core/runtime.hpp"
 
-#include "core/diagnostics.hpp"
+#include "abi/boundary.hpp"
 #include "maplibre_native_abi.h"
 
 auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
@@ -14,25 +12,19 @@ auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
 auto mln_runtime_create(
   const mln_runtime_options* options, mln_runtime** out_runtime
 ) noexcept -> mln_status {
-  try {
+  return mln::abi::status_boundary([&]() -> mln_status {
     return mln::core::create_runtime(options, out_runtime);
-  } catch (const std::exception& exception) {
-    mln::core::set_thread_error(exception);
-    return MLN_STATUS_NATIVE_ERROR;
-  } catch (...) {
-    mln::core::set_thread_error("unknown native exception");
-    return MLN_STATUS_NATIVE_ERROR;
-  }
+  });
 }
 
 auto mln_runtime_destroy(mln_runtime* runtime) noexcept -> mln_status {
-  try {
+  return mln::abi::status_boundary([&]() -> mln_status {
     return mln::core::destroy_runtime(runtime);
-  } catch (const std::exception& exception) {
-    mln::core::set_thread_error(exception);
-    return MLN_STATUS_NATIVE_ERROR;
-  } catch (...) {
-    mln::core::set_thread_error("unknown native exception");
-    return MLN_STATUS_NATIVE_ERROR;
-  }
+  });
+}
+
+auto mln_runtime_run_once(mln_runtime* runtime) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::run_runtime_once(runtime);
+  });
 }

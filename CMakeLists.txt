@@ -47,6 +47,25 @@ set(
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/monotonic_timer.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/thread_local.cpp
+  ${MLN_SOURCE_DIR}/platform/qt/src/mbgl/bidi.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/gfx/headless_backend.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/layermanager/layer_manager.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/utf.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/background_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/circle_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/color_relief_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/custom_drawable_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/custom_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/fill_extrusion_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/fill_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/heatmap_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/hillshade_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/layer_manager.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/line_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/location_indicator_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/raster_layer_factory.cpp
+  ${MLN_SOURCE_DIR}/src/mbgl/layermanager/symbol_layer_factory.cpp
 )
 set(MLN_PLATFORM_SUPPORT_LIBRARIES)
 if(APPLE)
@@ -54,13 +73,21 @@ if(APPLE)
   list(
     APPEND MLN_PLATFORM_SUPPORT_SOURCES
     ${MLN_SOURCE_DIR}/platform/darwin/core/async_task.cpp
+    ${MLN_SOURCE_DIR}/platform/darwin/core/collator.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/image.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/local_glyph_rasterizer.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/number_format.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/nsthread.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/run_loop.cpp
+    ${MLN_SOURCE_DIR}/platform/darwin/core/string_nsstring.mm
   )
   list(
     APPEND MLN_PLATFORM_SUPPORT_LIBRARIES
     "-framework CoreFoundation"
+    "-framework CoreGraphics"
+    "-framework CoreText"
     "-framework Foundation"
+    "-framework ImageIO"
   )
 else()
   message(
@@ -73,10 +100,13 @@ add_library(
   maplibre_native_abi
   SHARED
   src/abi/diagnostics.cpp
+  src/abi/map.cpp
   src/abi/runtime.cpp
   src/abi/version.cpp
   src/core/diagnostics.cpp
+  src/core/map.cpp
   src/core/runtime.cpp
+  src/platform/null_file_source_manager.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
 add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)
@@ -86,10 +116,18 @@ target_include_directories(
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+  PRIVATE ${PROJECT_SOURCE_DIR}/src
+)
+target_include_directories(
+  maplibre_native_abi
+  SYSTEM
   PRIVATE
-    ${PROJECT_SOURCE_DIR}/src
     ${MLN_SOURCE_DIR}/src
+    ${MLN_SOURCE_DIR}/platform/darwin/core
+    ${MLN_SOURCE_DIR}/platform/darwin/include
+    ${MLN_SOURCE_DIR}/platform/darwin/src
     ${MLN_SOURCE_DIR}/platform/default/include
+    ${MLN_SOURCE_DIR}/vendor/icu/include
 )
 
 target_link_libraries(

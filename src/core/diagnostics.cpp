@@ -23,6 +23,10 @@ auto thread_last_error_message() noexcept -> const char* {
   return thread_last_error_buffer().data();
 }
 
+auto clear_thread_error() noexcept -> void {
+  thread_last_error_buffer().front() = '\0';
+}
+
 auto set_thread_error(const char* message) noexcept -> void {
   auto& buffer = thread_last_error_buffer();
   if (message == nullptr) {

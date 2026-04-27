@@ -715,11 +715,12 @@ target.
 
 ## Error Handling
 
-All ABI calls return `mln_status`. Detailed diagnostics should be retrievable
-through explicit diagnostic APIs with owned strings/buffers. Each function must
-document where diagnostics are stored on failure. The default rule is: if the
-function receives a valid handle, diagnostics are stored on that handle; if no
-valid handle exists, diagnostics are stored in thread-local diagnostics.
+All ABI calls return `mln_status`. Every ABI call clears thread-local
+diagnostics on entry, and every non-OK synchronous return stores its diagnostic
+message in thread-local diagnostics. Callers should read
+`mln_thread_last_error_message()` immediately after a non-OK status.
+Async/native observer failures are delivered through map events with copied
+error payloads rather than handle-local last-error state.
 
 Important error categories:
 

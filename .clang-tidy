@@ -15,6 +15,10 @@ CheckOptions:
     value: 2
   - key: readability-identifier-length.IgnoredVariableNames
     value: i|j|k|n|x|y|z
+  - key: readability-inconsistent-declaration-parameter-name.IgnoreMacros
+    value: false
 WarningsAsErrors: "*"
 FormatStyle: file
 SystemHeaders: false
+HeaderFilterRegex: "^(.*/)?(src|include)/"
+ExcludeHeaderFilterRegex: "^(.*/)?third_party/"

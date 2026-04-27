@@ -9,7 +9,7 @@ local allSteps = new Mapping<String, Step> {
     check = "cmake -S . -B build"
   }
   ["clang-tidy"] {
-    glob = List("src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx")
+    glob = List("include/**/*.h", "include/**/*.hpp", "src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx", "src/**/*.hpp")
     depends = List("cmake-configure")
     check = "clang-tidy --quiet -p build {{files}}"
   }
