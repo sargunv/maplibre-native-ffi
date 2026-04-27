@@ -5,4 +5,5 @@ comptime {
     _ = @import("camera.zig");
     _ = @import("diagnostics.zig");
     _ = @import("events.zig");
+    _ = @import("logging.zig");
 }

@@ -4,6 +4,9 @@ const support = @import("support.zig");
 const c = support.c;
 
 test "map loads inline style and emits events" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 
@@ -20,6 +23,9 @@ test "map loads inline style and emits events" {
 }
 
 test "malformed style returns failure status and event" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 
@@ -58,6 +64,9 @@ test "style functions reject null inputs" {
 }
 
 test "style URL reports current null resource provider failure" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 

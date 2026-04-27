@@ -2,9 +2,8 @@
 
 ## Workflow
 
-- `mise run build`
 - `mise run fix` -- run formatters and linters
-- `mise run test`
+- `mise run test` -- build project and run tests
 
 ## Source Of Truth
 

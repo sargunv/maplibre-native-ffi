@@ -31,6 +31,7 @@ run = [
 
 [tasks.test]
 description = "Run all tests"
+depends = ["build"]
 run = "zig build test --summary all"
 
 [tasks."build:headless"]

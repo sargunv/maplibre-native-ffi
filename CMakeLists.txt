@@ -100,6 +100,7 @@ add_library(
   maplibre_native_abi
   SHARED
   src/abi/diagnostics.cpp
+  src/abi/logging.cpp
   src/abi/map.cpp
   src/abi/runtime.cpp
   src/abi/version.cpp

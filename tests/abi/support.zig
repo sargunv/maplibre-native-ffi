@@ -5,6 +5,10 @@ pub const c = @cImport({
     @cInclude("maplibre_native_abi.h");
 });
 
+fn consumeLog(_: ?*anyopaque, _: u32, _: u32, _: i64, _: [*c]const u8) callconv(.c) u32 {
+    return 1;
+}
+
 pub const style_json =
     \\{
     \\  "version": 8,
@@ -49,6 +53,16 @@ pub fn destroyRuntime(runtime: *c.mln_runtime) void {
 
 pub fn destroyMap(map: *c.mln_map) void {
     testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_destroy(map)) catch @panic("map destroy failed");
+}
+
+pub fn suppressLogs() !void {
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(0));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_callback(consumeLog, null));
+}
+
+pub fn restoreLogs() void {
+    testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_clear_callback()) catch @panic("log clear failed");
+    testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_DEFAULT)) catch @panic("log async mask restore failed");
 }
 
 pub fn drainEvents(map: *c.mln_map) !usize {
