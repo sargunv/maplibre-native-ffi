@@ -29,6 +29,10 @@ run = [
   "cmake --build build --parallel",
 ]
 
+[tasks.test]
+description = "Run all tests"
+run = "zig build test --summary all"
+
 [tasks."build:headless"]
 description = "Build headless Zig smoke example"
 depends = ["build"]

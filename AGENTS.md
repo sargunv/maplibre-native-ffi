@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Workflow
+
+- `mise run build`
+- `mise run fix` -- run formatters and linters
+- `mise run test`
+
 ## Source Of Truth
 
 - `DESIGN.md` explains the intended architecture.

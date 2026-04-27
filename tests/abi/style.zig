@@ -42,3 +42,28 @@ test "malformed style returns failure status and event" {
     }
     try testing.expect(saw_failed_event);
 }
+
+test "style functions reject null inputs" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_style_json(map, null));
+    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_style_url(map, null));
+    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
+}
+
+test "style URL reports current null resource provider failure" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_NATIVE_ERROR, c.mln_map_set_style_url(map, "file:///tmp/missing-style.json"));
+    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
+}
