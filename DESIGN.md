@@ -683,6 +683,12 @@ resource loader, scheme rules, runtime lookup, and custom provider callback
 machinery are core runtime behavior. Keep platform-owned files thin and route
 them to `src/core` factories.
 
+For the Apple target, HTTP/HTTPS loading uses MapLibre's default
+`OnlineFileSource` backed by the Darwin `HTTPFileSource` (`NSURLSession`) and
+`MLNNativeNetworkManager` fallback configuration. Network reachability state is
+process-global and exposed as direct wrappers over `mbgl::NetworkStatus`, not as
+runtime-scoped policy.
+
 Expose native-backed `ResourceOptions` and `TileServerOptions` concepts through
 runtime-level configuration:
 

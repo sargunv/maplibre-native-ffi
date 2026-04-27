@@ -214,7 +214,7 @@ Out of scope:
 - Built-in network, ambient cache, offline regions, MBTiles/PMTiles, and
   resource transforms.
 
-### M2.2: Built-In Network Provider
+### M2.2: Built-In Network Provider Completed
 
 Deliverables:
 
@@ -229,6 +229,26 @@ Research required:
 - Default libcurl vs Darwin `NSURLSession` source selection and CMake inputs.
 - `ClientOptions`, process-global network status, resource transform, and
   platform lifecycle requirements.
+
+Acceptance evidence:
+
+- The ABI composite loader now includes MapLibre's `OnlineFileSource` and
+  dispatches `http://` and `https://` resources through it.
+- The Apple target wires Darwin `HTTPFileSource` (`NSURLSession`) plus
+  `native_apple_interface.m`, and avoids the default curl HTTP source.
+- `include/maplibre_native_abi.h` exposes process-global
+  `mln_network_status_get` and `mln_network_status_set` wrappers over
+  `mbgl::NetworkStatus`.
+- `tests/abi/resources.zig` covers invalid network status arguments,
+  online/offline round-tripping, and loading a style from a deterministic local
+  `http://127.0.0.1` fixture server.
+- `zig build test --summary all` reports 36/36 ABI tests passed.
+
+Remaining risk:
+
+- HTTPS dispatch uses the same MapLibre `OnlineFileSource` path as HTTP, but
+  M2.2 does not add a local HTTPS fixture. Deterministic HTTPS coverage would
+  require certificate/trust setup that is not worth adding for this slice.
 
 ### M2.3: Ambient Cache Provider
 

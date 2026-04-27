@@ -54,6 +54,8 @@ set(
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/online_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/platform/time.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/utf.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/background_layer_factory.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/circle_layer_factory.cpp
@@ -73,17 +75,21 @@ set(
 )
 set(MLN_PLATFORM_SUPPORT_LIBRARIES)
 if(APPLE)
+  enable_language(OBJC)
   enable_language(OBJCXX)
   list(
     APPEND MLN_PLATFORM_SUPPORT_SOURCES
     ${MLN_SOURCE_DIR}/platform/darwin/core/async_task.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/collator.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/http_file_source.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/image.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/local_glyph_rasterizer.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/native_apple_interface.m
     ${MLN_SOURCE_DIR}/platform/darwin/core/number_format.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/nsthread.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/run_loop.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/string_nsstring.mm
+    ${MLN_SOURCE_DIR}/platform/darwin/core/timer.cpp
   )
   list(
     APPEND MLN_PLATFORM_SUPPORT_LIBRARIES
@@ -92,6 +98,10 @@ if(APPLE)
     "-framework CoreText"
     "-framework Foundation"
     "-framework ImageIO"
+  )
+  set_source_files_properties(
+    ${MLN_SOURCE_DIR}/platform/darwin/core/native_apple_interface.m
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
   )
 else()
   message(
@@ -106,12 +116,14 @@ add_library(
   src/abi/diagnostics.cpp
   src/abi/logging.cpp
   src/abi/map.cpp
+  src/abi/network.cpp
   src/abi/runtime.cpp
   src/abi/version.cpp
   src/core/diagnostics.cpp
   src/core/custom_resource_provider.cpp
   src/core/logging.cpp
   src/core/map.cpp
+  src/core/network_status.cpp
   src/core/resource_loader.cpp
   src/core/resource_scheme.cpp
   src/core/runtime.cpp

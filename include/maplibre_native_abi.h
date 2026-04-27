@@ -88,6 +88,11 @@ typedef enum mln_log_severity {
   MLN_LOG_SEVERITY_ERROR = 3,
 } mln_log_severity;
 
+typedef enum mln_network_status {
+  MLN_NETWORK_STATUS_ONLINE = 1,
+  MLN_NETWORK_STATUS_OFFLINE = 2,
+} mln_network_status;
+
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask {
   MLN_LOG_SEVERITY_MASK_INFO = 1u << MLN_LOG_SEVERITY_INFO,
@@ -171,6 +176,31 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
+
+/**
+ * Reads MapLibre Native's process-global network status.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when out_status is null.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_network_status_get(uint32_t* out_status) MLN_NOEXCEPT;
+
+/**
+ * Sets MapLibre Native's process-global network status.
+ *
+ * Set ONLINE to allow HTTP/HTTPS requests and wake native subscribers when
+ * transitioning from offline. Set OFFLINE to make MapLibre's online source stop
+ * starting network requests until reachability returns, without touching
+ * runtime-scoped resource configuration.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when status is not a mln_network_status value.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_network_status_set(uint32_t status) MLN_NOEXCEPT;
 
 typedef struct mln_runtime_options {
   uint32_t size;

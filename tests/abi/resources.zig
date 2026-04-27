@@ -3,6 +3,12 @@ const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
+const HttpServerState = struct {
+    server: *std.Io.net.Server,
+    served: bool = false,
+    err: ?anyerror = null,
+};
+
 const TempStyle = struct {
     tmp: std.testing.TmpDir,
     dir_path: [:0]u8,
@@ -36,6 +42,29 @@ fn freeTempStyle(fixture: *const TempStyle) void {
 
 fn pumpAndExpectStyleLoaded(runtime: *c.mln_runtime, map: *c.mln_map) !void {
     try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_STYLE_LOADED));
+}
+
+fn serveOneHttpStyleInner(state: *HttpServerState) !void {
+    var stream = try state.server.accept(testing.io);
+    defer stream.close(testing.io);
+
+    var request_buffer: [1024]u8 = undefined;
+    _ = try std.posix.read(stream.socket.handle, &request_buffer);
+
+    var header_buffer: [256]u8 = undefined;
+    const header = try std.fmt.bufPrint(&header_buffer, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{support.style_json.len});
+    var response_buffer: [1024]u8 = undefined;
+    var writer = stream.writer(testing.io, &response_buffer);
+    try writer.interface.writeAll(header);
+    try writer.interface.writeAll(support.style_json);
+    try writer.interface.flush();
+    state.served = true;
+}
+
+fn serveOneHttpStyle(state: *HttpServerState) void {
+    serveOneHttpStyleInner(state) catch |err| {
+        state.err = err;
+    };
 }
 
 fn customStyleProvider(_: ?*anyopaque, url: [*c]const u8, out_response: [*c]c.mln_resource_provider_response) callconv(.c) c.mln_status {
@@ -110,6 +139,59 @@ test "custom URL style loads through registered provider" {
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "custom://style.json"));
     try pumpAndExpectStyleLoaded(runtime, map);
+}
+
+test "network status APIs wrap process-global MapLibre status" {
+    var status: u32 = 0;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_get(&status));
+    const original_status = status;
+    defer _ = c.mln_network_status_set(original_status);
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_network_status_get(null));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_network_status_set(999));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_set(c.MLN_NETWORK_STATUS_OFFLINE));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_get(&status));
+    try testing.expectEqual(@as(u32, c.MLN_NETWORK_STATUS_OFFLINE), status);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_set(c.MLN_NETWORK_STATUS_ONLINE));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_get(&status));
+    try testing.expectEqual(@as(u32, c.MLN_NETWORK_STATUS_ONLINE), status);
+}
+
+test "http URL style loads through network provider" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_network_status_set(c.MLN_NETWORK_STATUS_ONLINE));
+    defer _ = c.mln_network_status_set(c.MLN_NETWORK_STATUS_ONLINE);
+
+    var address = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+    var server = try address.listen(testing.io, .{ .reuse_address = true });
+
+    var server_state = HttpServerState{ .server = &server };
+    const server_thread = try std.Thread.spawn(.{}, serveOneHttpStyle, .{&server_state});
+    var server_thread_joined = false;
+    defer {
+        server.deinit(testing.io);
+        if (!server_thread_joined) server_thread.join();
+    }
+
+    const style_url = try std.fmt.allocPrintSentinel(testing.allocator, "http://127.0.0.1:{d}/style.json", .{server.socket.address.getPort()}, 0);
+    defer testing.allocator.free(style_url);
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, style_url));
+    try pumpAndExpectStyleLoaded(runtime, map);
+
+    server_thread.join();
+    server_thread_joined = true;
+    try testing.expect(server_state.served);
+    try testing.expectEqual(@as(?anyerror, null), server_state.err);
 }
 
 test "missing file URL reports map loading failure" {

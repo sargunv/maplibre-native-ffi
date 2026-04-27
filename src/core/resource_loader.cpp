@@ -8,6 +8,7 @@
 #include <mbgl/storage/file_source.hpp>
 #include <mbgl/storage/file_source_request.hpp>
 #include <mbgl/storage/local_file_source.hpp>
+#include <mbgl/storage/online_file_source.hpp>
 #include <mbgl/storage/resource.hpp>
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/storage/response.hpp>
@@ -71,6 +72,11 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
           std::make_unique<mbgl::AssetFileSource>(
             resource_options_.clone(), client_options_.clone()
           )
+        ),
+        network_(
+          std::make_unique<mbgl::OnlineFileSource>(
+            resource_options_.clone(), client_options_.clone()
+          )
         ) {}
 
   auto request(const mbgl::Resource& resource, Callback callback)
@@ -85,6 +91,12 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
       return assets_->request(
         resource_with_scheme(resource, *scheme), std::move(callback)
       );
+    }
+    if (
+      scheme && (*scheme == "http" || *scheme == "https") &&
+      network_->canRequest(resource)
+    ) {
+      return network_->request(resource, std::move(callback));
     }
     if (scheme) {
       if (const auto* provider = custom_provider(*scheme)) {
@@ -111,17 +123,22 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
     if (*scheme == "file" || *scheme == "asset") {
       return true;
     }
+    if (*scheme == "http" || *scheme == "https") {
+      return network_->canRequest(resource);
+    }
     return custom_provider(*scheme) != nullptr;
   }
 
   void pause() override {
     local_files_->pause();
     assets_->pause();
+    network_->pause();
   }
 
   void resume() override {
     local_files_->resume();
     assets_->resume();
+    network_->resume();
   }
 
   void setResourceOptions(mbgl::ResourceOptions options) override {
@@ -131,6 +148,7 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
       runtime_resource_providers(resource_options_.platformContext());
     local_files_->setResourceOptions(options.clone());
     assets_->setResourceOptions(options.clone());
+    network_->setResourceOptions(options.clone());
   }
 
   auto getResourceOptions() -> mbgl::ResourceOptions override {
@@ -141,6 +159,7 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
     client_options_ = options.clone();
     local_files_->setClientOptions(options.clone());
     assets_->setClientOptions(options.clone());
+    network_->setClientOptions(options.clone());
   }
 
   auto getClientOptions() -> mbgl::ClientOptions override {
@@ -179,6 +198,7 @@ class AbiCompositeResourceLoader final : public mbgl::FileSource {
   std::vector<ResourceProvider> custom_providers_;
   std::unique_ptr<mbgl::LocalFileSource> local_files_;
   std::unique_ptr<mbgl::AssetFileSource> assets_;
+  std::unique_ptr<mbgl::FileSource> network_;
 };
 
 }  // namespace
