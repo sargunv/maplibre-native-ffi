@@ -22,6 +22,13 @@ endif()
 
 set(MLN_WITH_CORE_ONLY ON CACHE BOOL "Build only MapLibre Native core" FORCE)
 set(MLN_WITH_GLFW OFF CACHE BOOL "Disable MapLibre Native GLFW platform" FORCE)
+set(
+  MLN_WITH_PMTILES
+  ON
+  CACHE BOOL
+  "Build MapLibre Native PMTiles support"
+  FORCE
+)
 if(APPLE)
   set(MLN_WITH_METAL ON CACHE BOOL "Build MapLibre Native Metal backend" FORCE)
 else()
@@ -51,11 +58,20 @@ set(
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/gfx/headless_backend.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/layermanager/layer_manager.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/asset_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/database_file_source.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/mbtiles_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/offline.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/offline_database.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/offline_download.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/online_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/$<IF:$<BOOL:${MLN_WITH_PMTILES}>,pmtiles_file_source.cpp,pmtiles_file_source_stub.cpp>
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/sqlite3.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/platform/time.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/compression.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/filesystem.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/utf.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/background_layer_factory.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/circle_layer_factory.cpp
@@ -149,11 +165,17 @@ target_include_directories(
     ${MLN_SOURCE_DIR}/platform/darwin/src
     ${MLN_SOURCE_DIR}/platform/default/include
     ${MLN_SOURCE_DIR}/vendor/icu/include
+    ${MLN_SOURCE_DIR}/vendor/PMTiles/cpp
 )
 
 target_link_libraries(
   maplibre_native_abi
-  PRIVATE Mapbox::Map ${MLN_PLATFORM_SUPPORT_LIBRARIES}
+  PRIVATE
+    Mapbox::Map
+    mbgl-vendor-pmtiles
+    sqlite3
+    z
+    ${MLN_PLATFORM_SUPPORT_LIBRARIES}
 )
 
 set_target_properties(

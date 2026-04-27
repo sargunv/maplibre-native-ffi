@@ -15,6 +15,13 @@ caller-owned paths and cache size; process-global network status is exposed as a
 separate ABI surface matching MapLibre Native. Local package providers are
 ordinary built-in Core scheme handlers.
 
+Implementation status: M2.1, M2.2, M2.3, M2.5, and M2.6 are implemented in the
+wrapper. M2.4 offline region APIs remain deferred because region handle
+ownership, metadata buffer ownership, observer/event delivery, and download
+status semantics need a separate ABI design pass; the shared
+`DatabaseFileSource` prerequisite is in place through the ambient-cache
+implementation.
+
 ## Goals
 
 - Provide a real MapLibre resource loader behind the C ABI.
@@ -99,6 +106,8 @@ Fields by milestone:
 
 - `asset_path`: filesystem root for default `asset://` resolution.
 - `cache_path`: path for ambient cache and offline database storage.
+- no `cache_path`: MapLibre's default in-memory database path (`:memory:`),
+  useful for transient runtime cache behavior without filesystem persistence.
 - `maximum_cache_size`: ambient cache size limit.
 - `tile_server_options`: network-slice option for base URL, scheme alias, source
   templates, default style URLs, and API-key query parameter behavior.
@@ -219,9 +228,9 @@ on MapLibre logging or worker threads.
   Android.
 - Network follows MapLibre Native's online behavior, including its
   process-global network status model.
-- `cache_path` and offline database path are the same ABI field. MapLibre uses
-  one SQLite database path for ambient cache and offline regions on default,
-  Darwin, and Android stacks.
+- `cache_path` and offline database path are the same ABI field when persistence
+  is desired. If omitted, MapLibre's default `:memory:` SQLite database is still
+  used for transient cache/database behavior.
 - Do not expose a runtime provider matrix. Built-in scheme providers are wired
   as Core providers; runtime options only control policy that callers reasonably
   need to choose, such as paths and cache size.
@@ -332,7 +341,7 @@ Expected deliverables:
 
 ### M2.5: MBTiles/PMTiles Providers
 
-Goal: support local package formats as built-in providers when needed.
+Goal: support local package formats as built-in providers.
 
 Expected deliverables:
 
@@ -403,8 +412,9 @@ MBTiles and PMTiles:
   `pmtiles://file:///absolute/path/to/file.pmtiles` or `pmtiles://https://...`.
 - MBTiles is a straightforward optional child provider once SQLite/zlib-related
   sources are wired.
-- PMTiles full support is controlled by `MLN_WITH_PMTILES`; the wrapper build
-  should deliberately wire the full Core provider rather than the upstream stub.
+- PMTiles full support is controlled upstream by `MLN_WITH_PMTILES`; the wrapper
+  build deliberately forces it on and wires the full Core provider rather than
+  the upstream stub.
 - Full PMTiles recursively asks `FileSourceManager` for `ResourceLoader` to
   fetch byte ranges from the inner URL. The ABI composite must support ranged
   requests and otherwise preserve MapLibre Native's PMTiles behavior rather than

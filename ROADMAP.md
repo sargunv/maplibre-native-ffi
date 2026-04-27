@@ -250,7 +250,7 @@ Remaining risk:
   M2.2 does not add a local HTTPS fixture. Deterministic HTTPS coverage would
   require certificate/trust setup that is not worth adding for this slice.
 
-### M2.3: Ambient Cache Provider
+### M2.3: Ambient Cache Provider Completed
 
 Deliverables:
 
@@ -258,12 +258,31 @@ Deliverables:
 - MapLibre-backed database/cache provider wiring.
 - Tests proving cached data can satisfy a later request without network.
 
-Research required:
+Acceptance evidence:
 
-- `DatabaseFileSource`, `OfflineDatabase`, SQLite/temp path setup, and whether
-  ambient cache and offline regions share a database path.
+- `mln_runtime_options` now exposes `maximum_cache_size` behind
+  `MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE`, and runtime resource options forward
+  both `cache_path` and maximum cache size.
+- The ABI composite loader includes MapLibre's `DatabaseFileSource` when
+  `cache_path` is configured, routes cache-capable requests through the database
+  before network, and forwards successful network responses into the database.
+- `mln_runtime_run_ambient_cache_operation` wraps reset database, pack database,
+  invalidate ambient cache, and clear ambient cache with status-returning ABI
+  semantics. Runtimes without `cache_path` use MapLibre's default in-memory
+  database behavior rather than wrapper-invented rejection.
+- `tests/abi/resources.zig` covers default in-memory cache operation behavior,
+  invalid ambient cache operation arguments, maximum-cache-size runtime
+  creation, successful database maintenance operations, and cached HTTP style
+  loading after the first online load.
+- `zig build test --summary all` reports 39/39 ABI tests passed.
 
-### M2.4: Offline Regions and Offline Database APIs
+Remaining risk:
+
+- Headless style-load tests prove style resources are cached; tile/sprite/glyph
+  cache behavior will get stronger coverage once M4 adds a render target that
+  forces full source/tile loading.
+
+### M2.4: Offline Regions and Offline Database APIs Deferred
 
 Deliverables:
 
@@ -271,24 +290,43 @@ Deliverables:
 - Offline observer/event plumbing.
 - Deterministic offline tests using controlled resources.
 
-Research required:
+Deferred scope:
 
-- Current MapLibre Native offline APIs, platform differences, metadata/merge
-  behavior, and threading constraints.
+- The shared `DatabaseFileSource` prerequisite is now present for cache-backed
+  runtimes, but public offline region APIs are not exposed yet.
+- Region handles, metadata buffer ownership, observer/event delivery, download
+  state changes, status polling, merge/delete/invalidate semantics, and
+  deterministic offline download tests need a separate ABI design pass.
+- Do not mark M2.4 complete until those ownership and event semantics are
+  implemented and tested.
 
-### M2.5: MBTiles/PMTiles Providers
+### M2.5: MBTiles/PMTiles Provider Wiring Completed; Render Validation Deferred
 
 Deliverables:
 
-- Built-in local package provider support where available.
+- Built-in local package provider support for MBTiles and PMTiles.
 - URL tests for `mbtiles://` and/or `pmtiles://` fixtures.
 
-Research required:
+Acceptance evidence:
 
-- Full vs stub PMTiles source selection, dependencies, URL forms, and TileJSON
-  metadata behavior.
+- `FileSourceManager::get()` registers MBTiles and PMTiles file-source factories
+  in addition to the ABI composite resource loader.
+- The composite loader routes `mbtiles://` and `pmtiles://` through MapLibre's
+  built-in providers before local file, database, network, and custom-provider
+  fallback.
+- The wrapper build now includes MapLibre's default MBTiles provider and the
+  full PMTiles provider source by forcing `MLN_WITH_PMTILES=ON`, with SQLite,
+  zlib, and PMTiles vendor include/link wiring.
+- `cmake --build build --target maplibre_native_abi --parallel 4` builds the
+  full PMTiles provider on macOS.
 
-### M2.6: Resource Transform and Request Interception
+Deferred validation:
+
+- Current headless ABI tests cannot force tile package requests without a render
+  target. M4 texture rendering should add fixture styles that render MBTiles and
+  PMTiles tiles visibly before treating package URL rendering as fully proven.
+
+### M2.6: Resource Transform and Request Interception Completed
 
 Deliverables:
 
@@ -296,10 +334,76 @@ Deliverables:
   use case.
 - Clear callback threading and memory ownership contract.
 
-Research required:
+Acceptance evidence:
 
-- Which MapLibre providers honor `ResourceTransform`, how Android/Darwin use it,
-  and how transforms interact with custom schemes and cache keys.
+- `include/maplibre_native_abi.h` exposes `mln_resource_transform` and
+  `mln_runtime_set_resource_transform` as URL-only network rewrite APIs matching
+  MapLibre's `ResourceTransform` semantics.
+- Transform registration is runtime-scoped, rejected after map creation, and
+  forwarded to `OnlineFileSource` by the ABI composite.
+- `tests/abi/resources.zig` verifies a fake HTTP style URL is rewritten to a
+  deterministic local HTTP fixture and that post-map transform registration is
+  rejected.
+- `zig build test --summary all` reports 39/39 ABI tests passed.
+
+Remaining risk:
+
+- The ABI intentionally does not expose header/body/auth mutation because
+  MapLibre's native `ResourceTransform` only rewrites URLs.
+
+### M2.7: Async Custom Resource Providers
+
+Goal: Revisit resource-provider and database-maintenance async semantics so the
+ABI can represent MapLibre Native's asynchronous `FileSource` and
+`DatabaseFileSource` contracts as directly as a safe C ABI allows.
+
+Motivation:
+
+- The current custom provider path is adequate for bundled styles, sprites,
+  glyph chunks, and small local resources, but the host callback must return
+  bytes before returning.
+- MapLibre's outer `FileSource::request` model is asynchronous and cancellable;
+  an async custom-provider ABI would be the general shape, with synchronous
+  providers becoming the inline-completion case.
+- Native `FileSource` providers can complete later, retain request state,
+  observe cancellation, and handle byte ranges. The C ABI custom provider should
+  avoid inventing narrower restrictions beyond what is needed to make those
+  semantics safe across FFI.
+- Larger resources, host async file APIs, IPC, authentication refresh, ranged
+  package reads, and slow non-HTTP sources need explicit request handles,
+  completion, cancellation, range metadata, and lifetime rules.
+- MapLibre ambient cache and offline database maintenance APIs are also
+  callback-based asynchronous operations; the current status-returning ABI
+  blocks until completion and should be reviewed before offline region APIs are
+  added.
+
+Deliverables:
+
+- Design the async provider ABI shape and decide whether it replaces or
+  complements the synchronous provider API.
+- Define request handle ownership, completion threading, cancellation, runtime
+  teardown behavior, and reentrancy rules.
+- Explore whether the ABI composite should become a thin custom-scheme wrapper
+  around MapLibre's native `MainResourceLoader` instead of mirroring its
+  waterfall, so built-in provider dispatch stays closer to upstream behavior.
+- If `MainResourceLoader` delegation is not viable, document the concrete reason
+  and keep the wrapper composite's mirrored waterfall as an intentional
+  divergence.
+- Decide whether ambient cache maintenance should remain blocking or move to the
+  same request/event completion model planned for offline database APIs.
+- Include delayed completion and whole-resource responses in the first async
+  provider design.
+- Decide whether byte ranges are implemented in the first async provider slice
+  or explicitly split into the immediately following slice; do not leave the
+  final ABI shape incompatible with MapLibre range requests.
+- Add deterministic tests for inline completion, delayed completion,
+  cancellation, range metadata behavior, and provider error completion.
+
+Out of scope:
+
+- Designing the full API in this roadmap entry.
+- HTTP header/body/auth mutation unless it is deliberately selected as a
+  separate request-interception feature.
 
 ## M3: ABI Contracts and Test Harness
 
@@ -383,6 +487,40 @@ Out of scope:
 - Product-quality Zig SDK.
 - DVUI integration.
 - Compose integration.
+
+## M5.5: Offline Region ABI
+
+Goal: Expose MapLibre offline region management after the interactive/rendered
+map path can validate real tile/source downloads and package-backed rendering.
+
+Deliverables:
+
+- Public ABI handles and ownership rules for offline regions.
+- Metadata buffer ownership and release APIs.
+- APIs to list, get, create, update metadata, set download state, get status,
+  merge, delete, and invalidate offline regions through the shared
+  `DatabaseFileSource`.
+- Offline observer/event plumbing using the existing map/runtime event model
+  rather than direct arbitrary-thread host callbacks.
+- Deterministic tests using controlled local HTTP resources and rendered map
+  requests, including download progress and offline reload behavior.
+
+Acceptance:
+
+- A controlled style/source can be downloaded into an offline region and later
+  loaded without network when backed by persistent storage; in-memory database
+  behavior is allowed when MapLibre supports it but documented as non-durable.
+- Region status and observer events are delivered through documented ABI-owned
+  storage and lifetime rules.
+- Deleting or invalidating a region has observable, tested behavior without
+  corrupting ambient cache resources.
+
+Out of scope:
+
+- Product-level online/offline mode policy.
+- Custom eviction hooks or wrapper-invented cache policies.
+- Header/body/auth request interception beyond MapLibre's URL-only resource
+  transform.
 
 ## M6: Style and Data Mutation Slice
 

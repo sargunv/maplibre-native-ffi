@@ -44,7 +44,7 @@ test "runtime rejects invalid arguments" {
 
 test "runtime rejects unknown flags" {
     var options = c.mln_runtime_options_default();
-    options.flags = 1;
+    options.flags = 1 << 31;
 
     var runtime: ?*c.mln_runtime = null;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_create(&options, &runtime));

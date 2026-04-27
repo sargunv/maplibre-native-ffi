@@ -1,5 +1,7 @@
 #define MLN_BUILDING_ABI
 
+#include <cstdint>
+
 #include "core/runtime.hpp"
 
 #include "abi/boundary.hpp"
@@ -11,6 +13,7 @@ auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
     .flags = 0,
     .asset_path = nullptr,
     .cache_path = nullptr,
+    .maximum_cache_size = 0,
   };
 }
 
@@ -27,6 +30,22 @@ auto mln_runtime_register_resource_provider(
 ) noexcept -> mln_status {
   return mln::abi::status_boundary([&]() -> mln_status {
     return mln::core::register_resource_provider(runtime, provider);
+  });
+}
+
+auto mln_runtime_set_resource_transform(
+  mln_runtime* runtime, const mln_resource_transform* transform
+) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::set_resource_transform(runtime, transform);
+  });
+}
+
+auto mln_runtime_run_ambient_cache_operation(
+  mln_runtime* runtime, uint32_t operation
+) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::run_ambient_cache_operation(runtime, operation);
   });
 }
 

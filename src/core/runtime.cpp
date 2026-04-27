@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <condition_variable>
+#include <cstdint>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -7,7 +11,11 @@
 #include <utility>
 
 #include <mbgl/actor/scheduler.hpp>
+#include <mbgl/storage/database_file_source.hpp>
+#include <mbgl/storage/file_source.hpp>
+#include <mbgl/storage/file_source_manager.hpp>
 #include <mbgl/storage/resource_options.hpp>
+#include <mbgl/util/client_options.hpp>
 #include <mbgl/util/run_loop.hpp>
 
 #include "core/runtime.hpp"
@@ -40,7 +48,9 @@ auto validate_runtime_options(const mln_runtime_options* options)
     mln::core::set_thread_error("mln_runtime_options.size is too small");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (options->flags != 0) {
+  constexpr auto known_flags =
+    static_cast<uint32_t>(MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE);
+  if ((options->flags & ~known_flags) != 0) {
     mln::core::set_thread_error(
       "mln_runtime_options.flags contains unknown bits"
     );
@@ -53,6 +63,61 @@ auto validate_runtime_options(const mln_runtime_options* options)
 }  // namespace
 
 namespace mln::core {
+
+namespace {
+
+auto database_source_for_runtime(mln_runtime* runtime)
+  -> std::shared_ptr<mbgl::DatabaseFileSource> {
+  if (runtime == nullptr) {
+    return nullptr;
+  }
+
+  auto source = mbgl::FileSourceManager::get()->getFileSource(
+    mbgl::FileSourceType::Database, resource_options_for_runtime(runtime),
+    mbgl::ClientOptions()
+  );
+  auto database = std::dynamic_pointer_cast<mbgl::DatabaseFileSource>(source);
+  if (database != nullptr && runtime->has_maximum_cache_size) {
+    database->setMaximumAmbientCacheSize(
+      runtime->maximum_cache_size, [](std::exception_ptr) -> void {}
+    );
+  }
+  return database;
+}
+
+auto wait_for_database_operation(
+  const std::function<void(std::function<void(std::exception_ptr)>)>& start
+) -> mln_status {
+  auto mutex = std::mutex{};
+  auto condition = std::condition_variable{};
+  auto complete = false;
+  auto failure = std::exception_ptr{};
+
+  start([&](std::exception_ptr exception) -> void {
+    {
+      const std::scoped_lock lock(mutex);
+      failure = exception;
+      complete = true;
+    }
+    condition.notify_one();
+  });
+
+  auto lock = std::unique_lock{mutex};
+  condition.wait(lock, [&]() -> bool { return complete; });
+  if (failure) {
+    try {
+      std::rethrow_exception(failure);
+    } catch (const std::exception& exception) {
+      set_thread_error(exception.what());
+    } catch (...) {
+      set_thread_error("ambient cache operation failed");
+    }
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+  return MLN_STATUS_OK;
+}
+
+}  // namespace
 
 auto validate_runtime(mln_runtime* runtime) -> mln_status {
   if (runtime == nullptr) {
@@ -121,7 +186,11 @@ auto create_runtime(
                     : std::string{options->asset_path},
     .cache_path = options == nullptr || options->cache_path == nullptr
                     ? std::string{}
-                    : std::string{options->cache_path}
+                    : std::string{options->cache_path},
+    .has_maximum_cache_size =
+      options != nullptr &&
+      (options->flags & MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE) != 0,
+    .maximum_cache_size = options == nullptr ? 0 : options->maximum_cache_size,
   });
   auto* runtime = owned_runtime.get();
   {
@@ -131,6 +200,82 @@ auto create_runtime(
 
   *out_runtime = runtime;
   return MLN_STATUS_OK;
+}
+
+auto set_resource_transform(
+  mln_runtime* runtime, const mln_resource_transform* transform
+) -> mln_status {
+  const auto status = validate_runtime(runtime);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (transform == nullptr) {
+    set_thread_error("resource transform must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (transform->size < sizeof(mln_resource_transform)) {
+    set_thread_error("mln_resource_transform.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (transform->callback == nullptr) {
+    set_thread_error("resource transform callback must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const std::scoped_lock lock(runtime_registry_mutex());
+  if (runtime->live_maps != 0) {
+    set_thread_error(
+      "resource transform must be registered before map creation"
+    );
+    return MLN_STATUS_INVALID_STATE;
+  }
+  runtime->resource_transform_callback = transform->callback;
+  runtime->resource_transform_user_data = transform->user_data;
+  return MLN_STATUS_OK;
+}
+
+auto run_ambient_cache_operation(mln_runtime* runtime, uint32_t operation)
+  -> mln_status {
+  const auto status = validate_runtime(runtime);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  switch (operation) {
+    case MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE:
+    case MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE:
+    case MLN_AMBIENT_CACHE_OPERATION_INVALIDATE:
+    case MLN_AMBIENT_CACHE_OPERATION_CLEAR:
+      break;
+    default:
+      set_thread_error("ambient cache operation is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  switch (operation) {
+    case MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE:
+      return wait_for_database_operation([&](auto callback) -> void {
+        database->resetDatabase(std::move(callback));
+      });
+    case MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE:
+      return wait_for_database_operation([&](auto callback) -> void {
+        database->packDatabase(std::move(callback));
+      });
+    case MLN_AMBIENT_CACHE_OPERATION_INVALIDATE:
+      return wait_for_database_operation([&](auto callback) -> void {
+        database->invalidateAmbientCache(std::move(callback));
+      });
+    case MLN_AMBIENT_CACHE_OPERATION_CLEAR:
+      return wait_for_database_operation([&](auto callback) -> void {
+        database->clearAmbientCache(std::move(callback));
+      });
+    default:
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
 }
 
 auto register_resource_provider(
@@ -257,6 +402,9 @@ auto resource_options_for_runtime(mln_runtime* runtime)
     }
     if (!runtime->cache_path.empty()) {
       options.withCachePath(runtime->cache_path);
+    }
+    if (runtime->has_maximum_cache_size) {
+      options.withMaximumCacheSize(runtime->maximum_cache_size);
     }
   }
   return options;

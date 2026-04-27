@@ -93,6 +93,28 @@ typedef enum mln_network_status {
   MLN_NETWORK_STATUS_OFFLINE = 2,
 } mln_network_status;
 
+typedef enum mln_runtime_option_flag {
+  MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1u << 0u,
+} mln_runtime_option_flag;
+
+typedef enum mln_ambient_cache_operation {
+  MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE = 1,
+  MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE = 2,
+  MLN_AMBIENT_CACHE_OPERATION_INVALIDATE = 3,
+  MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
+} mln_ambient_cache_operation;
+
+typedef enum mln_resource_kind {
+  MLN_RESOURCE_KIND_UNKNOWN = 0,
+  MLN_RESOURCE_KIND_STYLE = 1,
+  MLN_RESOURCE_KIND_SOURCE = 2,
+  MLN_RESOURCE_KIND_TILE = 3,
+  MLN_RESOURCE_KIND_GLYPHS = 4,
+  MLN_RESOURCE_KIND_SPRITE_IMAGE = 5,
+  MLN_RESOURCE_KIND_SPRITE_JSON = 6,
+  MLN_RESOURCE_KIND_IMAGE = 7,
+} mln_resource_kind;
+
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask {
   MLN_LOG_SEVERITY_MASK_INFO = 1u << MLN_LOG_SEVERITY_INFO,
@@ -210,7 +232,40 @@ typedef struct mln_runtime_options {
   /** Cache database path forwarded to MapLibre options. Copied during create.
    */
   const char* cache_path;
+  /** Maximum ambient cache size in bytes when the matching flag is set. */
+  uint64_t maximum_cache_size;
 } mln_runtime_options;
+
+typedef struct mln_resource_transform_response {
+  uint32_t size;
+  /** Replacement URL. Null or empty keeps the original URL. */
+  const char* url;
+} mln_resource_transform_response;
+
+/**
+ * Rewrites a network resource URL.
+ *
+ * This callback maps directly to MapLibre Native's ResourceTransform behavior:
+ * it can only return a replacement URL string. It cannot mutate headers,
+ * bodies, cache policy, or convert a request into an error. Returning a non-OK
+ * status is treated as no rewrite and does not fail the resource request. The
+ * callback may run on a MapLibre worker/network thread, not the runtime owner
+ * thread; it must be thread-safe, return quickly, and must not call back into
+ * the ABI. url and out_response are valid only during the callback and must not
+ * be retained. The callback and user_data must remain valid until no live maps
+ * or in-flight requests can invoke the transform, normally until runtime
+ * teardown.
+ */
+typedef mln_status (*mln_resource_transform_callback)(
+  void* user_data, uint32_t kind, const char* url,
+  mln_resource_transform_response* out_response
+);
+
+typedef struct mln_resource_transform {
+  uint32_t size;
+  mln_resource_transform_callback callback;
+  void* user_data;
+} mln_resource_transform;
 
 typedef struct mln_resource_provider_response {
   uint32_t size;
@@ -284,6 +339,48 @@ MLN_API mln_status mln_runtime_create(
  */
 MLN_API mln_status mln_runtime_register_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
+) MLN_NOEXCEPT;
+
+/**
+ * Registers a runtime-scoped URL transform for network resources.
+ *
+ * The transform must be registered before any map is created from the runtime.
+ * It is forwarded to MapLibre's OnlineFileSource and therefore applies to
+ * HTTP/HTTPS requests, including nested PMTiles network range requests. It does
+ * not apply to file, asset, database, MBTiles, or custom-scheme providers.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, transform is
+ *   null, transform->size is too small, or callback is null.
+ * - MLN_STATUS_INVALID_STATE when runtime already owns live maps.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_runtime_set_resource_transform(
+  mln_runtime* runtime, const mln_resource_transform* transform
+) MLN_NOEXCEPT;
+
+/**
+ * Runs a MapLibre ambient cache maintenance operation for this runtime.
+ *
+ * When runtime options omit cache_path, this operates on MapLibre's default
+ * in-memory database and its effects are not durable beyond the native database
+ * lifetime. Native cache operations are asynchronous internally; this ABI call
+ * waits until MapLibre's database callback reports completion, then returns the
+ * resulting status.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, or operation
+ *   is not a mln_ambient_cache_operation value.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_runtime_run_ambient_cache_operation(
+  mln_runtime* runtime, uint32_t operation
 ) MLN_NOEXCEPT;
 
 /**

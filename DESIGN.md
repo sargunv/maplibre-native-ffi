@@ -671,12 +671,11 @@ the common ABI shape and which parts must remain backend-specific.
 Resource configuration should be runtime-level by default so multiple maps can
 share file sources, cache policy, and tile-server URL behavior.
 
-The first resource-provider slice should stay local and deterministic: wire a
-real resource loader for `file://` and filesystem `asset://` resources, and add
-a host-backed custom provider path for registered URL schemes that are not plain
-files (for example, APK assets or application-specific bundled resources).
-Network, ambient cache policy, offline regions, and resource transforms remain
-separate decisions.
+The resource subsystem uses a runtime-isolated ABI composite loader behind
+MapLibre Native's process-global `FileSourceManager` hook. It routes local
+files, filesystem assets, custom schemes, network, ambient cache, MBTiles, and
+PMTiles through MapLibre-backed providers while preserving the runtime's unique
+`platformContext` as the file-source cache identity.
 
 The MapLibre `FileSourceManager::get()` hook is platform glue, but the composite
 resource loader, scheme rules, runtime lookup, and custom provider callback
@@ -689,6 +688,30 @@ For the Apple target, HTTP/HTTPS loading uses MapLibre's default
 process-global and exposed as direct wrappers over `mbgl::NetworkStatus`, not as
 runtime-scoped policy.
 
+The composite includes `DatabaseFileSource` for every runtime, matching
+MapLibre's default `ResourceOptions::cachePath()` of `":memory:"`. Without an
+ABI `cache_path`, database/cache behavior is transient and not durable beyond
+the native database lifetime. With `cache_path`, the same MapLibre database
+provider persists ambient cache and future offline-region data at the caller's
+path. The composite mirrors MapLibre's cache-first waterfall for cache-capable
+resources: usable cached responses may be returned immediately while network
+revalidation continues, and successful network responses are forwarded into the
+database. `maximum_cache_size` is creation-time runtime policy and is applied
+through `DatabaseFileSource::setMaximumAmbientCacheSize`, not only through
+`ResourceOptions`.
+
+MBTiles and PMTiles are registered as built-in Core scheme handlers. MBTiles
+uses absolute local `mbtiles://` paths. The wrapper build forces
+`MLN_WITH_PMTILES=ON`, so PMTiles uses MapLibre's full provider; nested file or
+network range requests re-enter the ABI composite through `FileSourceManager`
+and therefore use the same runtime resource options.
+
+Resource transforms are URL-only, matching `mbgl::ResourceTransform`. They are
+runtime-scoped, registered before map creation, forwarded to `OnlineFileSource`,
+and apply only to HTTP/HTTPS network requests, including nested PMTiles network
+requests. They do not mutate headers or apply to file, asset, database, MBTiles,
+or custom providers.
+
 Expose native-backed `ResourceOptions` and `TileServerOptions` concepts through
 runtime-level configuration:
 
@@ -698,8 +721,7 @@ runtime-level configuration:
 - Cache path and maximum ambient cache size.
 - Asset path for `asset://` resolution.
 - ABI-owned runtime-unique `platformContext` for MapLibre file-source identity.
-- Resource transform hooks only when a concrete request interception use case
-  needs them.
+- Resource transform hooks for URL-only network request rewriting.
 
 Cache and offline operations should be modeled explicitly where they correspond
 to MapLibre Native APIs, not as wrapper-invented policy:
@@ -707,7 +729,9 @@ to MapLibre Native APIs, not as wrapper-invented policy:
 - ambient cache maintenance: reset database, invalidate ambient cache, clear
   ambient cache, pack database, and maximum ambient cache size;
 - offline regions: list, get, create, update metadata, set observer, set
-  download state, get status, merge, delete, and invalidate;
+  download state, get status, merge, delete, and invalidate. Public offline
+  region APIs remain deferred until region handle ownership, metadata buffers,
+  observer delivery, and download status semantics are designed;
 - process-level network status: wrap `mbgl::NetworkStatus` as process-global ABI
   state, matching MapLibre Native rather than adding runtime-scoped network
   policy.

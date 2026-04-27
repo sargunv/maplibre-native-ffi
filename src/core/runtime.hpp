@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -26,7 +27,11 @@ struct mln_runtime {
   std::unique_ptr<mbgl::util::RunLoop> run_loop;
   std::string asset_path;
   std::string cache_path;
+  bool has_maximum_cache_size = false;
+  std::uint64_t maximum_cache_size = 0;
   std::vector<mln::core::ResourceProvider> resource_providers;
+  mln_resource_transform_callback resource_transform_callback = nullptr;
+  void* resource_transform_user_data = nullptr;
   std::size_t live_maps = 0;
 };
 
@@ -40,6 +45,11 @@ auto run_runtime_once(mln_runtime* runtime) -> mln_status;
 auto register_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
 ) -> mln_status;
+auto set_resource_transform(
+  mln_runtime* runtime, const mln_resource_transform* transform
+) -> mln_status;
+auto run_ambient_cache_operation(mln_runtime* runtime, uint32_t operation)
+  -> mln_status;
 auto retain_runtime_map(mln_runtime* runtime) -> mln_status;
 auto release_runtime_map(mln_runtime* runtime) noexcept -> void;
 auto validate_runtime(mln_runtime* runtime) -> mln_status;
