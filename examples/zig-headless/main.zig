@@ -14,7 +14,10 @@ pub fn main() !void {
         return error.RuntimeCreateFailed;
     }
     const runtime_handle = runtime.?;
-    errdefer _ = c.mln_runtime_destroy(runtime_handle);
+    var runtime_live = true;
+    errdefer {
+        if (runtime_live) _ = c.mln_runtime_destroy(runtime_handle);
+    }
 
     var map: ?*c.mln_map = null;
     var map_options = c.mln_map_options_default();
@@ -25,7 +28,10 @@ pub fn main() !void {
         return error.MapCreateFailed;
     }
     const map_handle = map.?;
-    errdefer _ = c.mln_map_destroy(map_handle);
+    var map_live = true;
+    errdefer {
+        if (map_live) _ = c.mln_map_destroy(map_handle);
+    }
 
     const style_json =
         \\{
@@ -98,11 +104,13 @@ pub fn main() !void {
         std.debug.print("map destroy failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.MapDestroyFailed;
     }
+    map_live = false;
 
     if (c.mln_runtime_destroy(runtime_handle) != c.MLN_STATUS_OK) {
         std.debug.print("runtime destroy failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.RuntimeDestroyFailed;
     }
+    runtime_live = false;
 
     std.debug.print("headless map lifecycle smoke passed\n", .{});
 }

@@ -216,6 +216,7 @@ MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not a live runtime
  *   handle.
+ * - MLN_STATUS_INVALID_STATE when no run loop is active for this runtime.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
