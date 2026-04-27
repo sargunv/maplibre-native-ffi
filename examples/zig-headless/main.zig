@@ -13,15 +13,19 @@ pub fn main() !void {
         std.debug.print("runtime create failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.RuntimeCreateFailed;
     }
+    const runtime_handle = runtime.?;
+    errdefer _ = c.mln_runtime_destroy(runtime_handle);
 
     var map: ?*c.mln_map = null;
     var map_options = c.mln_map_options_default();
     map_options.width = 512;
     map_options.height = 512;
-    if (c.mln_map_create(runtime, &map_options, &map) != c.MLN_STATUS_OK or map == null) {
+    if (c.mln_map_create(runtime_handle, &map_options, &map) != c.MLN_STATUS_OK or map == null) {
         std.debug.print("map create failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.MapCreateFailed;
     }
+    const map_handle = map.?;
+    errdefer _ = c.mln_map_destroy(map_handle);
 
     const style_json =
         \\{
@@ -45,7 +49,7 @@ pub fn main() !void {
         \\}
     ;
 
-    if (c.mln_map_set_style_json(map, style_json) != c.MLN_STATUS_OK) {
+    if (c.mln_map_set_style_json(map_handle, style_json) != c.MLN_STATUS_OK) {
         std.debug.print("style load failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.StyleLoadFailed;
     }
@@ -57,29 +61,29 @@ pub fn main() !void {
     camera.zoom = 11.0;
     camera.bearing = 12.0;
     camera.pitch = 30.0;
-    if (c.mln_map_jump_to(map, &camera) != c.MLN_STATUS_OK) {
+    if (c.mln_map_jump_to(map_handle, &camera) != c.MLN_STATUS_OK) {
         std.debug.print("camera jump failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.CameraJumpFailed;
     }
 
-    if (c.mln_map_move_by(map, 4, -2) != c.MLN_STATUS_OK) {
+    if (c.mln_map_move_by(map_handle, 4, -2) != c.MLN_STATUS_OK) {
         return error.CameraMoveFailed;
     }
 
     var snapshot = c.mln_camera_options_default();
-    if (c.mln_map_get_camera(map, &snapshot) != c.MLN_STATUS_OK) {
+    if (c.mln_map_get_camera(map_handle, &snapshot) != c.MLN_STATUS_OK) {
         return error.CameraSnapshotFailed;
     }
 
     for (0..8) |_| {
-        _ = c.mln_runtime_run_once(runtime);
+        _ = c.mln_runtime_run_once(runtime_handle);
     }
 
     var saw_event = false;
     while (true) {
         var event: c.mln_map_event = .{ .size = @sizeOf(c.mln_map_event), .type = c.MLN_MAP_EVENT_NONE, .code = 0, .message = [_:0]u8{0} ** 512 };
         var has_event = false;
-        const status = c.mln_map_poll_event(map, &event, &has_event);
+        const status = c.mln_map_poll_event(map_handle, &event, &has_event);
         if (status != c.MLN_STATUS_OK) return error.EventPollFailed;
         if (!has_event) break;
         saw_event = true;
@@ -90,12 +94,12 @@ pub fn main() !void {
         return error.NoMapEvents;
     }
 
-    if (c.mln_map_destroy(map) != c.MLN_STATUS_OK) {
+    if (c.mln_map_destroy(map_handle) != c.MLN_STATUS_OK) {
         std.debug.print("map destroy failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.MapDestroyFailed;
     }
 
-    if (c.mln_runtime_destroy(runtime) != c.MLN_STATUS_OK) {
+    if (c.mln_runtime_destroy(runtime_handle) != c.MLN_STATUS_OK) {
         std.debug.print("runtime destroy failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.RuntimeDestroyFailed;
     }
