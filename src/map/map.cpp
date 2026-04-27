@@ -25,11 +25,11 @@
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/size.hpp>
 
-#include "core/map.hpp"
+#include "map/map.hpp"
 
-#include "core/diagnostics.hpp"
-#include "core/runtime.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
+#include "runtime/runtime.hpp"
 
 namespace {
 using MapRegistry = std::unordered_map<mln_map*, std::unique_ptr<mln_map>>;

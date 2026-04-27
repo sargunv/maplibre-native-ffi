@@ -18,9 +18,9 @@
 #include <mbgl/util/client_options.hpp>
 #include <mbgl/util/run_loop.hpp>
 
-#include "core/runtime.hpp"
+#include "runtime/runtime.hpp"
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
 namespace {

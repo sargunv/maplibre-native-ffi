@@ -109,16 +109,22 @@ src/
     events.cpp
     texture.cpp
     surface.cpp
-  core/
+  diagnostics/
     diagnostics.hpp/.cpp
+  logging/
+    logging.hpp/.cpp
+  runtime/
     runtime.hpp/.cpp
+  map/
     map.hpp/.cpp
     handle_registry.hpp/.cpp
     event_queue.hpp/.cpp
     map_observer.hpp/.cpp
+    renderer_frontend.hpp/.cpp
+  resources/
     resource_loader.hpp/.cpp
     custom_resource_provider.hpp/.cpp
-    renderer_frontend.hpp/.cpp
+    file_source_manager.cpp
   render/
     texture_session.hpp/.cpp
     surface_session.hpp/.cpp
@@ -127,7 +133,7 @@ src/
     vulkan/
       vulkan_texture_session.hpp/.cpp
   platform/
-    darwin/
+    darwin/  # only if wrapper-owned OS glue becomes necessary
 
 examples/
   zig-headless/
@@ -154,23 +160,21 @@ checks, struct-size checks, state checks, thread checks, error conversion, and
 calls into implementation objects. Files in this directory should stay thin:
 they are the no-exception C boundary, not the owner of MapLibre Native concepts.
 
-`src/core` owns C++ state that is independent of a concrete render backend:
-runtime and map handles, handle registries, diagnostics, event queues, the
-runtime-owned `RunLoop`, `mbgl::Map`, observer subclasses, the long-lived
-renderer frontend, resource-loader dispatch and custom provider invocation, and
-conversions between ABI structs and C++ types.
+Most implementation code lives in subsystem directories directly under `src`.
+These directories own the wrapper's runtime, map, resource, diagnostics,
+logging, and render semantics, including conversions between ABI structs and
+MapLibre Native C++ types.
 
 `src/render` owns render target sessions and backend-bound renderer resources.
 Common texture/surface lifecycle code lives directly under `src/render`;
 concrete graphics integrations live in backend subdirectories such as
 `src/render/metal` and `src/render/vulkan`.
 
-`src/platform` is reserved for wrapper-owned platform glue when needed, such as
-MapLibre Native platform entry points and host-specific adapters. Runtime-owned
-resource policy stays in `src/core`; platform files should only bridge
-MapLibre's platform seams to core implementations. Directly linked MapLibre
-Native platform support sources may remain in the build files until there is
-local wrapper code worth organizing here.
+`src/resources/file_source_manager.cpp` implements the MapLibre
+`FileSourceManager::get()` integration hook because it is part of the wrapper's
+resource subsystem. `src/platform` should only be introduced for wrapper-owned
+OS glue that is not already provided by directly linked MapLibre platform
+sources and is not specific to a render backend or UI adapter.
 
 `examples/zig-headless` validates the C header with `@cImport` and exercises
 runtime/map/event lifecycle without depending on a UI toolkit.

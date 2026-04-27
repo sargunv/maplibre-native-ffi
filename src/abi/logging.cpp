@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "core/logging.hpp"
+#include "logging/logging.hpp"
 
 #include "abi/boundary.hpp"
 #include "maplibre_native_abi.h"

@@ -1,6 +1,6 @@
 #define MLN_BUILDING_ABI
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 
 #include "maplibre_native_abi.h"
 

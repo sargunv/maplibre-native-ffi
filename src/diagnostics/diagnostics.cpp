@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 
 namespace {
 constexpr auto diagnostic_capacity = std::size_t{4096};

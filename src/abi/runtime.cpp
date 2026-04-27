@@ -2,11 +2,11 @@
 
 #include <cstdint>
 
-#include "core/runtime.hpp"
+#include "runtime/runtime.hpp"
 
 #include "abi/boundary.hpp"
-#include "core/custom_resource_provider.hpp"
 #include "maplibre_native_abi.h"
+#include "resources/custom_resource_provider.hpp"
 
 auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
   return mln_runtime_options{

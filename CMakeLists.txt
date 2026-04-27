@@ -136,14 +136,14 @@ add_library(
   src/abi/network.cpp
   src/abi/runtime.cpp
   src/abi/version.cpp
-  src/core/diagnostics.cpp
-  src/core/custom_resource_provider.cpp
-  src/core/logging.cpp
-  src/core/map.cpp
-  src/core/network_status.cpp
-  src/core/resource_loader.cpp
-  src/core/runtime.cpp
-  src/platform/abi_file_source_manager.cpp
+  src/diagnostics/diagnostics.cpp
+  src/logging/logging.cpp
+  src/map/map.cpp
+  src/resources/custom_resource_provider.cpp
+  src/resources/file_source_manager.cpp
+  src/resources/network_status.cpp
+  src/resources/resource_loader.cpp
+  src/runtime/runtime.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
 add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)

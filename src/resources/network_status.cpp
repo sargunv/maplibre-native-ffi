@@ -2,9 +2,9 @@
 
 #include <mbgl/storage/network_status.hpp>
 
-#include "core/network_status.hpp"
+#include "resources/network_status.hpp"
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
 namespace mln::core {

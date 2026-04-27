@@ -1,6 +1,6 @@
 #define MLN_BUILDING_ABI
 
-#include "core/map.hpp"
+#include "map/map.hpp"
 
 #include "abi/boundary.hpp"
 #include "maplibre_native_abi.h"

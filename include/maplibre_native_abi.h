@@ -1,3 +1,18 @@
+/**
+ * @file maplibre_native_abi.h
+ * Public C ABI for the MapLibre Native wrapper.
+ *
+ * All functions are memory-safe to call from any thread. Functions that operate
+ * on thread-affine handles validate the caller thread and return
+ * MLN_STATUS_WRONG_THREAD rather than causing undefined behavior. Functions
+ * without an explicit owner-thread requirement may be called from any thread.
+ *
+ * Status-returning functions clear thread-local diagnostics on entry. When a
+ * synchronous failure status is returned, callers should read
+ * mln_thread_last_error_message() on the same thread before making another ABI
+ * call. Asynchronous native failures are reported through map events.
+ */
+
 #ifndef MAPLIBRE_NATIVE_ABI_H
 #define MAPLIBRE_NATIVE_ABI_H
 
@@ -33,20 +48,8 @@
 extern "C" {
 #endif
 
-/**
- * ABI contract notes:
- *
- * All functions are memory-safe to call from any thread. Functions that operate
- * on thread-affine handles validate the caller thread and return
- * MLN_STATUS_WRONG_THREAD rather than causing undefined behavior. Functions
- * without an explicit owner-thread requirement may be called from any thread.
- *
- * Status-returning functions clear thread-local diagnostics on entry. When a
- * synchronous failure status is returned, callers should read
- * mln_thread_last_error_message() on the same thread before making another ABI
- * call. Asynchronous native failures are reported through map events.
- */
-
+#pragma region Common ABI contract
+/** Status values returned by status-returning ABI functions. */
 typedef enum mln_status {
   MLN_STATUS_OK = 0,
   /** A pointer, size field, mask, or handle argument was invalid. */
@@ -75,6 +78,9 @@ typedef struct mln_resource_request_handle mln_resource_request_handle;
  */
 MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
 
+#pragma endregion
+
+#pragma region Diagnostics
 /**
  * Returns the last thread-local diagnostic message, or an empty string.
  *
@@ -83,80 +89,14 @@ MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
+#pragma endregion
+
+#pragma region Logging
 typedef enum mln_log_severity {
   MLN_LOG_SEVERITY_INFO = 1,
   MLN_LOG_SEVERITY_WARNING = 2,
   MLN_LOG_SEVERITY_ERROR = 3,
 } mln_log_severity;
-
-typedef enum mln_network_status {
-  MLN_NETWORK_STATUS_ONLINE = 1,
-  MLN_NETWORK_STATUS_OFFLINE = 2,
-} mln_network_status;
-
-typedef enum mln_runtime_option_flag {
-  MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1u << 0u,
-} mln_runtime_option_flag;
-
-typedef enum mln_ambient_cache_operation {
-  MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE = 1,
-  MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE = 2,
-  MLN_AMBIENT_CACHE_OPERATION_INVALIDATE = 3,
-  MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
-} mln_ambient_cache_operation;
-
-typedef enum mln_resource_kind {
-  MLN_RESOURCE_KIND_UNKNOWN = 0,
-  MLN_RESOURCE_KIND_STYLE = 1,
-  MLN_RESOURCE_KIND_SOURCE = 2,
-  MLN_RESOURCE_KIND_TILE = 3,
-  MLN_RESOURCE_KIND_GLYPHS = 4,
-  MLN_RESOURCE_KIND_SPRITE_IMAGE = 5,
-  MLN_RESOURCE_KIND_SPRITE_JSON = 6,
-  MLN_RESOURCE_KIND_IMAGE = 7,
-} mln_resource_kind;
-
-typedef enum mln_resource_loading_method {
-  MLN_RESOURCE_LOADING_METHOD_ALL = 0,
-  MLN_RESOURCE_LOADING_METHOD_CACHE_ONLY = 1,
-  MLN_RESOURCE_LOADING_METHOD_NETWORK_ONLY = 2,
-} mln_resource_loading_method;
-
-typedef enum mln_resource_priority {
-  MLN_RESOURCE_PRIORITY_REGULAR = 0,
-  MLN_RESOURCE_PRIORITY_LOW = 1,
-} mln_resource_priority;
-
-typedef enum mln_resource_usage {
-  MLN_RESOURCE_USAGE_ONLINE = 0,
-  MLN_RESOURCE_USAGE_OFFLINE = 1,
-} mln_resource_usage;
-
-typedef enum mln_resource_storage_policy {
-  MLN_RESOURCE_STORAGE_POLICY_PERMANENT = 0,
-  MLN_RESOURCE_STORAGE_POLICY_VOLATILE = 1,
-} mln_resource_storage_policy;
-
-typedef enum mln_resource_response_status {
-  MLN_RESOURCE_RESPONSE_STATUS_OK = 0,
-  MLN_RESOURCE_RESPONSE_STATUS_ERROR = 1,
-  MLN_RESOURCE_RESPONSE_STATUS_NO_CONTENT = 2,
-  MLN_RESOURCE_RESPONSE_STATUS_NOT_MODIFIED = 3,
-} mln_resource_response_status;
-
-typedef enum mln_resource_error_reason {
-  MLN_RESOURCE_ERROR_REASON_NONE = 0,
-  MLN_RESOURCE_ERROR_REASON_NOT_FOUND = 1,
-  MLN_RESOURCE_ERROR_REASON_SERVER = 2,
-  MLN_RESOURCE_ERROR_REASON_CONNECTION = 3,
-  MLN_RESOURCE_ERROR_REASON_RATE_LIMIT = 4,
-  MLN_RESOURCE_ERROR_REASON_OTHER = 5,
-} mln_resource_error_reason;
-
-typedef enum mln_resource_provider_decision {
-  MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH = 0,
-  MLN_RESOURCE_PROVIDER_DECISION_HANDLE = 1,
-} mln_resource_provider_decision;
 
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask {
@@ -242,6 +182,78 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
+
+#pragma endregion
+
+#pragma region Runtime and resources
+typedef enum mln_network_status {
+  MLN_NETWORK_STATUS_ONLINE = 1,
+  MLN_NETWORK_STATUS_OFFLINE = 2,
+} mln_network_status;
+
+typedef enum mln_runtime_option_flag {
+  MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1u << 0u,
+} mln_runtime_option_flag;
+
+typedef enum mln_ambient_cache_operation {
+  MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE = 1,
+  MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE = 2,
+  MLN_AMBIENT_CACHE_OPERATION_INVALIDATE = 3,
+  MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
+} mln_ambient_cache_operation;
+
+typedef enum mln_resource_kind {
+  MLN_RESOURCE_KIND_UNKNOWN = 0,
+  MLN_RESOURCE_KIND_STYLE = 1,
+  MLN_RESOURCE_KIND_SOURCE = 2,
+  MLN_RESOURCE_KIND_TILE = 3,
+  MLN_RESOURCE_KIND_GLYPHS = 4,
+  MLN_RESOURCE_KIND_SPRITE_IMAGE = 5,
+  MLN_RESOURCE_KIND_SPRITE_JSON = 6,
+  MLN_RESOURCE_KIND_IMAGE = 7,
+} mln_resource_kind;
+
+typedef enum mln_resource_loading_method {
+  MLN_RESOURCE_LOADING_METHOD_ALL = 0,
+  MLN_RESOURCE_LOADING_METHOD_CACHE_ONLY = 1,
+  MLN_RESOURCE_LOADING_METHOD_NETWORK_ONLY = 2,
+} mln_resource_loading_method;
+
+typedef enum mln_resource_priority {
+  MLN_RESOURCE_PRIORITY_REGULAR = 0,
+  MLN_RESOURCE_PRIORITY_LOW = 1,
+} mln_resource_priority;
+
+typedef enum mln_resource_usage {
+  MLN_RESOURCE_USAGE_ONLINE = 0,
+  MLN_RESOURCE_USAGE_OFFLINE = 1,
+} mln_resource_usage;
+
+typedef enum mln_resource_storage_policy {
+  MLN_RESOURCE_STORAGE_POLICY_PERMANENT = 0,
+  MLN_RESOURCE_STORAGE_POLICY_VOLATILE = 1,
+} mln_resource_storage_policy;
+
+typedef enum mln_resource_response_status {
+  MLN_RESOURCE_RESPONSE_STATUS_OK = 0,
+  MLN_RESOURCE_RESPONSE_STATUS_ERROR = 1,
+  MLN_RESOURCE_RESPONSE_STATUS_NO_CONTENT = 2,
+  MLN_RESOURCE_RESPONSE_STATUS_NOT_MODIFIED = 3,
+} mln_resource_response_status;
+
+typedef enum mln_resource_error_reason {
+  MLN_RESOURCE_ERROR_REASON_NONE = 0,
+  MLN_RESOURCE_ERROR_REASON_NOT_FOUND = 1,
+  MLN_RESOURCE_ERROR_REASON_SERVER = 2,
+  MLN_RESOURCE_ERROR_REASON_CONNECTION = 3,
+  MLN_RESOURCE_ERROR_REASON_RATE_LIMIT = 4,
+  MLN_RESOURCE_ERROR_REASON_OTHER = 5,
+} mln_resource_error_reason;
+
+typedef enum mln_resource_provider_decision {
+  MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH = 0,
+  MLN_RESOURCE_PROVIDER_DECISION_HANDLE = 1,
+} mln_resource_provider_decision;
 
 /**
  * Reads MapLibre Native's process-global network status.
@@ -540,6 +552,9 @@ MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
  */
 MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 
+#pragma endregion
+
+#pragma region Map, camera, and events
 typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_CENTER = 1u << 0u,
   MLN_CAMERA_OPTION_ZOOM = 1u << 1u,
@@ -783,6 +798,8 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 MLN_API mln_status mln_map_poll_event(
   mln_map* map, mln_map_event* out_event, bool* out_has_event
 ) MLN_NOEXCEPT;
+
+#pragma endregion
 
 #ifdef __cplusplus
 }

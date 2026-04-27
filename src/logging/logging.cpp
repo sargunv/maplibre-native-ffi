@@ -5,9 +5,9 @@
 #include <mbgl/util/event.hpp>
 #include <mbgl/util/logging.hpp>
 
-#include "core/logging.hpp"
+#include "logging/logging.hpp"
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
 namespace {

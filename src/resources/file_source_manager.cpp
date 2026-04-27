@@ -10,7 +10,7 @@
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/util/client_options.hpp>
 
-#include "core/resource_loader.hpp"
+#include "resources/resource_loader.hpp"
 
 namespace mbgl {
 

@@ -2,7 +2,7 @@
 
 #include <exception>
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
 namespace mln::abi {

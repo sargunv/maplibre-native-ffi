@@ -20,12 +20,12 @@
 #include <mbgl/util/logging.hpp>
 #include <mbgl/util/string.hpp>
 
-#include "core/resource_loader.hpp"
+#include "resources/resource_loader.hpp"
 
-#include "core/custom_resource_provider.hpp"
-#include "core/diagnostics.hpp"
-#include "core/runtime.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
+#include "resources/custom_resource_provider.hpp"
+#include "runtime/runtime.hpp"
 
 namespace mln::core {
 namespace {

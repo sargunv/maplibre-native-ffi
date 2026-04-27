@@ -17,9 +17,9 @@
 #include <mbgl/util/async_request.hpp>
 #include <mbgl/util/chrono.hpp>
 
-#include "core/custom_resource_provider.hpp"
+#include "resources/custom_resource_provider.hpp"
 
-#include "core/diagnostics.hpp"
+#include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
 struct mln_resource_request_handle {
