@@ -156,7 +156,7 @@ Goal: Build the resource subsystem in the final ABI shape: native
 provider interception, network loading, ambient cache, and offline data without
 requiring callers to reimplement MapLibre's normal resource stack.
 
-Design reference: `RESOURCE_API_DESIGN.md`.
+Design reference: `DESIGN.md`.
 
 Shared architecture:
 
