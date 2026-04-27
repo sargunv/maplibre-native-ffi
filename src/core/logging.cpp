@@ -71,9 +71,6 @@ auto set_log_async_severity_mask(std::uint32_t mask) -> mln_status {
   }
 
   set_severity_async(
-    mask, MLN_LOG_SEVERITY_MASK_DEBUG, mbgl::EventSeverity::Debug
-  );
-  set_severity_async(
     mask, MLN_LOG_SEVERITY_MASK_INFO, mbgl::EventSeverity::Info
   );
   set_severity_async(

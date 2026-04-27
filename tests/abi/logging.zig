@@ -43,6 +43,7 @@ test "log async severity mask validates unknown bits" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_DEFAULT));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_ALL));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(0));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_log_set_async_severity_mask(1));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_ALL << 1));
     try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_DEFAULT));

@@ -83,7 +83,6 @@ MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
 typedef enum mln_log_severity {
-  MLN_LOG_SEVERITY_DEBUG = 0,
   MLN_LOG_SEVERITY_INFO = 1,
   MLN_LOG_SEVERITY_WARNING = 2,
   MLN_LOG_SEVERITY_ERROR = 3,
@@ -91,16 +90,14 @@ typedef enum mln_log_severity {
 
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask {
-  MLN_LOG_SEVERITY_MASK_DEBUG = 1u << MLN_LOG_SEVERITY_DEBUG,
   MLN_LOG_SEVERITY_MASK_INFO = 1u << MLN_LOG_SEVERITY_INFO,
   MLN_LOG_SEVERITY_MASK_WARNING = 1u << MLN_LOG_SEVERITY_WARNING,
   MLN_LOG_SEVERITY_MASK_ERROR = 1u << MLN_LOG_SEVERITY_ERROR,
-  MLN_LOG_SEVERITY_MASK_DEFAULT = MLN_LOG_SEVERITY_MASK_DEBUG |
-                                  MLN_LOG_SEVERITY_MASK_INFO |
-                                  MLN_LOG_SEVERITY_MASK_WARNING,
-  MLN_LOG_SEVERITY_MASK_ALL =
-    MLN_LOG_SEVERITY_MASK_DEBUG | MLN_LOG_SEVERITY_MASK_INFO |
-    MLN_LOG_SEVERITY_MASK_WARNING | MLN_LOG_SEVERITY_MASK_ERROR,
+  MLN_LOG_SEVERITY_MASK_DEFAULT =
+    MLN_LOG_SEVERITY_MASK_INFO | MLN_LOG_SEVERITY_MASK_WARNING,
+  MLN_LOG_SEVERITY_MASK_ALL = MLN_LOG_SEVERITY_MASK_INFO |
+                              MLN_LOG_SEVERITY_MASK_WARNING |
+                              MLN_LOG_SEVERITY_MASK_ERROR,
 } mln_log_severity_mask;
 
 /** MapLibre Native log event categories exposed as ABI-stable integer values.
@@ -166,7 +163,7 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  * Sets which severities are dispatched asynchronously by MapLibre Native.
  *
  * Pass MLN_LOG_SEVERITY_MASK_DEFAULT to restore MapLibre Native's default of
- * asynchronous debug/info/warning logs and synchronous error logs.
+ * asynchronous info/warning logs and synchronous error logs.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
