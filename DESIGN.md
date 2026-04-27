@@ -302,7 +302,7 @@ state from render attachment.
 
 ```text
 mln_map
-  owns map/control state: style, camera, resource options, observer events,
+  owns map/control state: style, camera, observer events,
   long-lived RendererFrontend, mbgl::Map
 
 mln_texture_session
@@ -671,15 +671,17 @@ files (for example, APK assets or application-specific bundled resources).
 Network, ambient cache policy, offline regions, and resource transforms remain
 separate decisions.
 
-Expose native-backed `ResourceOptions` and `TileServerOptions` concepts first:
+Expose native-backed `ResourceOptions` and `TileServerOptions` concepts through
+runtime-level configuration:
 
 - Tile-server URL normalization options, including base URL, URI scheme alias,
   URL templates, default styles, and optional API-key query parameter behavior
   for providers that require it.
 - Cache path and maximum ambient cache size.
 - Asset path for `asset://` resolution.
-- Platform context where required.
-- Resource transform hook through the native `FileSource` model.
+- ABI-owned runtime-unique `platformContext` for MapLibre file-source identity.
+- Resource transform hooks only when a concrete request interception use case
+  needs them.
 
 Cache and offline operations should be modeled explicitly where they correspond
 to MapLibre Native APIs, not as wrapper-invented policy:
@@ -688,8 +690,9 @@ to MapLibre Native APIs, not as wrapper-invented policy:
   ambient cache, pack database, and maximum ambient cache size;
 - offline regions: list, get, create, update metadata, set observer, set
   download state, get status, merge, delete, and invalidate;
-- process-level network status: expose only if wrapping `mbgl::NetworkStatus` is
-  intentional for the target platform.
+- process-level network status: wrap `mbgl::NetworkStatus` as process-global ABI
+  state, matching MapLibre Native rather than adding runtime-scoped network
+  policy.
 
 Retry policy, custom eviction hooks, and higher-level online/offline product
 modes should stay out of the core ABI unless they are direct wrappers over a
@@ -698,8 +701,10 @@ specific MapLibre Native API.
 Any thread that calls `FileSource::request` must own an active
 `mbgl::util::RunLoop`; callbacks return on that same thread, and cancellation is
 by dropping the returned `AsyncRequest`. In this ABI, map/resource work should
-run through the runtime owner thread so these requests use the runtime-owned
-`RunLoop`.
+normally run through the runtime owner thread so requests use the runtime-owned
+`RunLoop`. If MapLibre issues a resource request from another RunLoop thread,
+the wrapper must marshal host-provider invocation to the runtime owner thread
+and marshal completion back to the requesting RunLoop thread.
 
 Custom provider callbacks must preserve that boundary: native code may ask host
 code for resource bytes for a registered URL scheme from the runtime owner path,

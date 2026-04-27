@@ -1,36 +1,63 @@
-# Resource API Design Draft
+# Resource API Design
+
+## Recommendation
+
+Build M2.1 as the first slice of a permanent ABI-owned composite resource
+loader. Do not adopt MapLibre's full `MainResourceLoader`; mirror the useful
+dispatch and cache-forwarding behavior, but keep option forwarding null-safe and
+runtime policy explicit.
+
+The milestone boundary is implementation sequencing, not architecture. M2.1
+creates the final routing shape and implements only deterministic local/custom
+providers. Later M2.x slices plug MapLibre's built-in network, cache, offline,
+MBTiles, and PMTiles providers into the same composite. Runtime options control
+caller-owned paths and cache size; process-global network status is exposed as a
+separate ABI surface matching MapLibre Native. Local package providers are
+ordinary built-in scheme handlers when available in the build.
 
 ## Goals
 
 - Provide a real MapLibre resource loader behind the C ABI.
 - Let maps load styles, sprites, glyphs, tiles, and URL-backed sources through a
   stable runtime-owned resource subsystem.
-- Support host-provided resource bytes for custom schemes such as `apk://`,
-  `bundle://`, or application-specific package URLs.
-- Support normal MapLibre network loading, ambient cache, and offline data as
+- Support host-provided bytes for custom schemes such as `apk://`, `bundle://`,
+  or application package URLs.
+- Add normal MapLibre network loading, ambient cache, and offline data as
   first-class ABI features in later slices.
-- Keep platform policy explicit: callers configure paths and policy knobs, while
-  the ABI and MapLibre own request routing, caching, database behavior, and
-  offline APIs.
+- Keep platform policy explicit: callers configure paths and policy knobs; the
+  ABI and MapLibre own request routing, caching, database behavior, and offline
+  APIs.
 
 ## Non-Goals
 
 - Do not require callers to reimplement HTTP, ambient cache, or offline region
-  handling just to load normal web maps.
+  handling for normal web maps.
 - Do not silently enable network or persistent cache behavior without public ABI
   options and tests.
-- Do not expose MapLibre C++ ownership or exceptions through the C ABI.
+- Do not expose MapLibre C++ ownership, types, or exceptions through the C ABI.
 - Do not make custom providers a replacement for the built-in MapLibre stack.
-  Custom providers are an extension point for host-specific resources.
 
-## Target Architecture
+## Ownership
 
-The ABI should install a wrapper-owned `FileSourceManager` singleton that
-returns an ABI-owned composite loader for `FileSourceType::ResourceLoader`.
+- `FileSourceManager` hook: process-global, matching MapLibre's singleton entry
+  point.
+- Resource configuration, provider registry, and composite loader:
+  runtime-scoped.
+- Maps: share the loader and provider state owned by their `mln_runtime`.
+- Requests: own cancellation state through their `mbgl::AsyncRequest` handle.
+- Runtime identity: each runtime owns a unique `platformContext` so MapLibre's
+  internal file-source cache does not accidentally share sources across
+  runtimes.
 
-The composite loader is the permanent resource-routing point for this wrapper.
-It should be designed now with slots for all final provider families, even if
-only local/custom providers are enabled in early milestones.
+Runtime-scoped resource behavior must not mutate while maps are live. Runtime
+destruction remains blocked while maps exist; map teardown must release or
+cancel style/resource requests before runtime state is destroyed.
+
+Runtime isolation depends on consistently using the runtime-unique
+`platformContext`. MapLibre's file-source cache key does not include
+`assetPath`, maximum cache size, client options, or wrapper policy flags.
+
+## Architecture
 
 ```text
 mbgl::Map
@@ -40,63 +67,85 @@ mbgl::Map
        -> CustomSchemeProvider(s)
        -> AssetProvider
        -> FileProvider
-       -> MBTilesProvider
-       -> PMTilesProvider
+       -> MBTilesProvider, when available in the build
+       -> PMTilesProvider, when available in the build
        -> CacheProvider / DatabaseFileSource
        -> NetworkProvider / OnlineFileSource or platform network source
 ```
 
-The composite loader should be null-safe by construction. Disabled providers are
-either absent and checked before use, or represented by no-op providers that
-return unsupported. It must not reproduce MapLibre's `MainResourceLoader` issue
-where `setResourceOptions()` dereferences omitted children.
+`AbiCompositeResourceLoader` is the only registered
+`FileSourceType::ResourceLoader`. It implements `request`, `canRequest`,
+`setResourceOptions`, `getResourceOptions`, `setClientOptions`, and
+`getClientOptions`.
 
-## Runtime Resource Configuration
+The wrapper must integrate at MapLibre's process-global `FileSourceManager`
+entry point. In practice this means providing the platform
+`FileSourceManager::get()` implementation or registering a global
+`FileSourceType::ResourceLoader` factory that returns runtime-isolated loaders
+keyed by the runtime's `platformContext`; `mbgl::Map` does not accept a
+per-runtime `FileSourceManager` instance directly.
 
-Resource configuration should be runtime-level. Maps created from a runtime use
-resource options derived from that runtime.
+Disabled providers are absent with explicit null checks, or no-op providers that
+return unsupported. The composite must not reproduce MapLibre's
+`MainResourceLoader` issue where `setResourceOptions()` dereferences omitted
+children.
 
-Initial and eventual fields likely include:
+## Runtime Configuration
+
+Resource configuration is runtime-level. Maps created from a runtime use options
+derived from that runtime.
+
+Fields by milestone:
 
 - `asset_path`: filesystem root for default `asset://` resolution.
-- `cache_path`: path for ambient cache/database storage.
-- `offline_path` or `offline_database_path`: only if research confirms this is
-  distinct from `cache_path` for the chosen MapLibre platform stack.
+- `cache_path`: path for ambient cache and offline database storage.
 - `maximum_cache_size`: ambient cache size limit.
-- `network_enabled`: whether built-in outbound network requests may run.
-- `cache_enabled`: whether built-in ambient cache is used.
-- `offline_enabled`: whether offline database/regions are available.
-- `tile_server_options`: base URL, scheme alias, source templates, default style
-  URLs, and API-key query parameter behavior.
-- `api_key`: provider token where applicable.
-- `platform_context`: narrow escape hatch for platform-specific integrations
-  where MapLibre requires it.
+- `tile_server_options`: network-slice option for base URL, scheme alias, source
+  templates, default style URLs, and API-key query parameter behavior.
+- `api_key`: network-slice provider token where applicable.
+- runtime identity: ABI-owned runtime-unique `platformContext`.
 
-Callers provide paths and policy. The ABI should translate those options to
-MapLibre `ResourceOptions`, `ClientOptions`, and offline/cache APIs.
+Callers provide paths and policy. The ABI translates those options to MapLibre
+`ResourceOptions`, `ClientOptions`, and offline/cache APIs.
 
-## Provider Dispatch
+Resource identity options are creation-time policy for active maps. Changing
+`asset_path` or `cache_path` while maps are live is out of scope. Cache size is
+applied through `DatabaseFileSource` APIs, not by relying only on
+`ResourceOptions::maximumCacheSize()`.
 
-The composite loader should route deterministically. A likely order is:
+## Dispatch
+
+The composite loader routes deterministically:
 
 1. Custom registered schemes, exact scheme match.
 2. Filesystem `asset://`, using runtime `asset_path`.
-3. Local `file://`.
-4. `mbtiles://`, when enabled.
-5. `pmtiles://`, when enabled.
-6. Ambient cache/database, when enabled.
-7. Network, when enabled and request policy allows it.
+3. `mbtiles://`, when available in the build.
+4. `pmtiles://`, when available in the build.
+5. Local `file://`.
+6. Ambient cache/database fallback, when `cache_path` is configured.
+7. Network, following MapLibre Native's provider and process-global network
+   status behavior. Successful network responses are forwarded into the cache
+   when cache is configured.
 8. Unsupported-resource error.
 
-Custom provider precedence should be explicit. In the first version, custom
-providers should not override reserved built-in schemes such as `file`, `asset`,
-`http`, or `https`. Override/intercept behavior can be designed later if needed.
+Custom providers do not override reserved built-in schemes in M2.1: `file`,
+`asset`, `http`, and `https`. Override/intercept behavior is out of scope unless
+MapLibre Native Core exposes matching behavior that should be wrapped.
 
-## Custom Scheme Provider ABI
+Explicit local-package schemes such as `mbtiles://` and `pmtiles://` must fail
+as unsupported when unavailable in the build rather than falling through to
+network. Cache and network dispatch must respect MapLibre
+`Resource::LoadingMethod`: database handles cache requests, and online sources
+handle network requests.
 
-Custom providers are runtime-scoped and registered by URL scheme.
+## Custom Providers
 
-Expected shape:
+Custom providers are runtime-scoped and registered by URL scheme before map
+creation. Dynamic registration is out of scope until there is a concrete need
+for loader synchronization, cache invalidation, in-flight request handling, and
+style/source reload semantics.
+
+Expected ABI shape:
 
 ```c
 typedef struct mln_resource_provider {
@@ -110,7 +159,6 @@ typedef struct mln_resource_provider_response {
   uint32_t size;
   const uint8_t* bytes;
   size_t byte_count;
-  int32_t error_code;
   const char* error_message;
 } mln_resource_provider_response;
 
@@ -123,48 +171,95 @@ typedef mln_status (*mln_resource_provider_callback)(
 
 Contract:
 
-- Scheme registration is runtime-owned.
 - Schemes are normalized and validated by the ABI.
-- Reserved schemes are rejected initially: `file`, `asset`, `http`, `https`.
-- Provider callbacks return `mln_status` and fill a response struct.
+- Reserved schemes are rejected: `file`, `asset`, `http`, `https`.
+- The callback is a runtime-scoped native callback, not a process-global log
+  callback and not a polled map event.
+- The callback is invoked on the runtime owner thread while the host pumps the
+  runtime, such as from `mln_runtime_run_once`.
+- If MapLibre issues a request from another thread, the ABI posts provider
+  invocation to the runtime owner thread and posts completion back to the
+  request's MapLibre `RunLoop` thread.
+- The callback returns synchronously and fills `mln_resource_provider_response`.
 - Returned bytes only need to live until the callback returns; native code
   copies them before completing the MapLibre response.
-- Provider failures convert to MapLibre `Response::Error` and then to map events
-  and diagnostics where applicable.
-- Provider callbacks must not call back into the same runtime unless a future
-  async provider API explicitly supports reentrancy.
-- Provider callbacks must not throw through the C ABI. Native code still guards
-  C++ callback invocation paths and converts failures to status/errors.
+- Provider failures convert to MapLibre `Response::Error`, then flow through the
+  same native observer paths as other resource failures.
+- The callback must not call back into the same runtime unless a future async
+  provider API explicitly supports reentrancy.
+- The callback must not throw through the C ABI. Native code guards C++ callback
+  invocation paths and converts failures to status/errors.
+- The callback should return quickly. Slow local I/O is acceptable for bundled
+  resources; blocking network, IPC, or UI-thread round trips require a future
+  async provider API.
 
-Async host providers are out of scope for the first custom-provider slice. If a
-host needs asynchronous network or IPC-backed resources, add an explicit future
-ABI rather than overloading this synchronous callback contract.
+This preserves the universal ABI model: MapLibre observer notifications are
+queued for polling with the payloads Core exposes, custom providers are explicit
+runtime-owner-thread callbacks, and only the process-global log callback may run
+on MapLibre logging or worker threads.
 
-## Cancellation and Lifetime
-
-The composite loader must own cancellation state independent of `mln_runtime`.
-This avoids use-after-free when a map is destroyed while resource callbacks are
-queued.
-
-Rules:
+## Cancellation
 
 - Each request returns an `mbgl::AsyncRequest` implementation whose destructor
   cancels pending completion.
-- Posted completions check cancellation before touching runtime-owned provider
-  registry or invoking callbacks.
-- The loader must not retain raw runtime state beyond the lifetime guaranteed by
+- Posted provider invocations check cancellation before touching runtime-owned
+  provider registry or invoking callbacks.
+- Posted completions check cancellation before touching MapLibre response
+  callbacks or map observer event state.
+- The loader does not retain raw runtime state beyond the lifetime guaranteed by
   active maps and requests.
-- Runtime destruction remains blocked while maps are live. Map teardown must
-  release/cancel style/resource requests before runtime state is destroyed.
-- If MapLibre caches a file source by `platformContext`, set `platformContext`
-  to a runtime-unique value and avoid mutating resource identity while maps are
-  live.
 
-## Milestone Slices
+## Provider Decisions
 
-### M2.1: Composite Loader Skeleton, Local Files, Custom Schemes
+- Built-in `asset://` is reserved and not overrideable by custom providers. This
+  preserves MapLibre platform meaning: filesystem assets on default platforms,
+  default asset paths such as app bundle resources on Darwin, and APK assets on
+  Android.
+- Network follows MapLibre Native's online behavior, including its
+  process-global network status model.
+- `cache_path` and offline database path are the same ABI field. MapLibre uses
+  one SQLite database path for ambient cache and offline regions on default,
+  Darwin, and Android stacks.
+- Do not expose a runtime provider matrix. Built-in scheme providers are present
+  when supported by the build; runtime options only control policy that callers
+  reasonably need to choose, such as paths and cache size.
+- Expose resource failures with the detail MapLibre Native Core actually
+  provides through observer callbacks first. Do not invent richer resource-error
+  payloads unless Core exposes that detail or a later wrapper API directly wraps
+  a native source that provides it.
 
-Goal: Establish the permanent composite-loader architecture and deterministic
+## Process-Global Network Status ABI
+
+MapLibre Native exposes `mbgl::NetworkStatus` as process-global state with
+`Online` and `Offline` values. The C ABI should wrap that model directly, like
+the process-global log callback, rather than adding runtime-scoped network
+policy.
+
+Expected ABI shape:
+
+```c
+typedef enum mln_network_status {
+  MLN_NETWORK_STATUS_ONLINE = 1,
+  MLN_NETWORK_STATUS_OFFLINE = 2,
+} mln_network_status;
+
+MLN_API mln_status mln_network_status_get(uint32_t* out_status) MLN_NOEXCEPT;
+MLN_API mln_status mln_network_status_set(uint32_t status) MLN_NOEXCEPT;
+```
+
+Contract:
+
+- The status is process-global, not runtime-scoped.
+- `set(ONLINE)` maps to `mbgl::NetworkStatus::Set(Online)`, which also wakes
+  native subscribers through MapLibre's `Reachable()` path.
+- `set(OFFLINE)` maps to `mbgl::NetworkStatus::Set(Offline)`.
+- The ABI does not invent per-runtime network enablement.
+
+## Milestones
+
+### M2.1: Composite Loader, Local Files, Custom Schemes
+
+Goal: establish the permanent composite-loader architecture and deterministic
 local/custom resource loading.
 
 Deliverables:
@@ -172,8 +267,8 @@ Deliverables:
 - Replace the null `FileSourceManager` with `AbiFileSourceManager`.
 - Add `AbiCompositeResourceLoader` as the only registered
   `FileSourceType::ResourceLoader`.
-- Add runtime `asset_path` and optional `cache_path` fields, passing them into
-  MapLibre `ResourceOptions` at map creation.
+- Add runtime `asset_path` and runtime-unique `platformContext`, passing them
+  into MapLibre `ResourceOptions` at map creation.
 - Implement `file://` loading.
 - Implement filesystem `asset://` loading.
 - Implement custom scheme provider registration and dispatch.
@@ -193,171 +288,93 @@ Out of scope:
 
 ### M2.2: Built-In Network Provider
 
-Goal: Add normal HTTP/HTTPS loading through MapLibre's native network source
-behind explicit runtime options.
+Goal: add HTTP/HTTPS loading through MapLibre's native network source behind
+explicit runtime options.
 
 Expected deliverables:
 
-- Add `network_enabled` runtime option, defaulting to disabled until documented.
 - Wire the correct MapLibre network provider for the target platform.
+- Add process-global `mln_network_status_get` and `mln_network_status_set` APIs
+  that wrap `mbgl::NetworkStatus`.
 - Add tile server/API key options only as needed for deterministic tests.
-- Add tests using either a local HTTP fixture server or a fully controlled test
-  endpoint. Avoid tests that depend on public internet availability.
-
-Requires further MapLibre research:
-
-- Whether to use `platform/default/src/mbgl/storage/online_file_source.cpp` with
-  default `http_file_source.cpp` or Darwin `http_file_source.mm` on Apple.
-- Which CMake source files, frameworks, and platform delegates are required for
-  Darwin networking.
-- How `ClientOptions`, resource transforms, and network status interact with the
-  selected provider.
-- Whether MapLibre's network provider requires process-global initialization or
-  platform-specific lifecycle calls.
+- Add tests using a local HTTP fixture server or controlled test endpoint.
 
 ### M2.3: Ambient Cache Provider
 
-Goal: Add MapLibre-backed persistent cache for styles, tiles, sprites, glyphs,
-and source data where supported.
+Goal: add MapLibre-backed persistent cache for styles, tiles, sprites, glyphs,
+and source data.
 
 Expected deliverables:
 
-- Add runtime cache options: `cache_path`, `maximum_cache_size`, and cache
-  enabled/disabled behavior.
+- Add `cache_path`, `maximum_cache_size`, and defined no-cache-path behavior.
 - Wire `DatabaseFileSource` or equivalent MapLibre cache provider.
-- Define normal/cache-only/network-disabled request behavior.
-- Add tests that prove cache files are created and cached data can satisfy a
-  later request without network, using deterministic fixtures.
+- Apply `maximum_cache_size` through `DatabaseFileSource` cache-maintenance
+  APIs.
+- Define normal/cache-only/no-network-available request behavior.
+- Add tests proving cache files are created and cached data can satisfy a later
+  request without network.
 
-Requires further MapLibre research:
+### M2.4: Offline Regions and Database APIs
 
-- Exact relationship between `ResourceOptions::cachePath()`,
-  `DatabaseFileSource`, `OfflineDatabase`, and platform offline storage.
-- Required SQLite/temp path setup on each platform.
-- Whether ambient cache and offline regions share one database path.
-- Which cache maintenance APIs map cleanly to public ABI functions.
-
-### M2.4: Offline Regions and Offline Database APIs
-
-Goal: Expose MapLibre offline data management as explicit ABI operations rather
-than implicit resource-loader behavior.
+Goal: expose MapLibre offline data management as explicit ABI operations.
 
 Expected deliverables:
 
-- APIs to list, create, delete, invalidate, and query offline regions if the
-  MapLibre Native API supports them on the target platform.
+- APIs to list, create, delete, invalidate, and query offline regions through
+  `DatabaseFileSource`.
 - Observer/event plumbing for offline downloads.
 - Tests using a controlled source or local server.
 
-Requires further MapLibre research:
-
-- Current MapLibre Native offline APIs, especially around `OfflineDatabase`,
-  region definitions, metadata, merge packs, and observers.
-- Platform differences between default, Darwin, and Android offline storage.
-- Threading and run-loop constraints for offline operations.
-
 ### M2.5: MBTiles/PMTiles Providers
 
-Goal: Support local package formats as built-in providers when needed by product
-examples or tests.
+Goal: support local package formats as built-in providers when needed.
 
 Expected deliverables:
 
-- Runtime feature flags or build detection for MBTiles/PMTiles support.
+- Wire MBTiles/PMTiles providers as standard built-in scheme handlers when
+  available in the build.
 - URL tests for `mbtiles://` and/or `pmtiles://` fixtures.
 
-Requires further MapLibre research:
+### M2.6: Resource Transform
 
-- Whether the current build should link full PMTiles or stub PMTiles sources.
-- Dependencies required by `MBTilesFileSource` and `PMTilesFileSource`.
-- Expected URL forms and TileJSON metadata behavior.
-
-### M2.6: Resource Transform / Request Interception
-
-Goal: Add URL/request transformation only if a concrete product use case needs
-headers, auth, URL rewriting, or request logging.
+Goal: expose MapLibre Native's `ResourceTransform` behavior if a concrete
+product need requires URL transformation.
 
 Expected deliverables:
 
-- Public transform callback ABI, or a narrower set of request-header/auth APIs.
-- Clear threading and memory ownership contract.
+- Public ABI that maps directly to `mbgl::ResourceTransform` semantics.
+- Clear threading and memory ownership contract matching the native callback.
 
-Requires further MapLibre research:
+## Source Findings
 
-- `mbgl::ResourceTransform` behavior and which providers honor it.
-- Android and Darwin transform usage.
-- Interaction with custom scheme providers and network cache keys.
+Core contracts:
 
-## MapLibre Source Areas To Research Further
-
-- `include/mbgl/storage/file_source.hpp` — exact request, cancellation, resource
-  transform, and option-update contracts.
-- `include/mbgl/storage/file_source_manager.hpp` and
-  `src/mbgl/storage/file_source_manager.cpp` — source cache identity and factory
-  lifetime behavior.
-- `platform/default/src/mbgl/storage/main_resource_loader.cpp` — final provider
-  dispatch semantics to mirror or intentionally differ from.
-- `platform/default/src/mbgl/storage/online_file_source.cpp` — built-in online
-  provider behavior.
-- `platform/default/src/mbgl/storage/http_file_source.cpp` — libcurl-based HTTP
-  requirements and run-loop integration.
-- `platform/darwin/core/http_file_source.mm` and
-  `platform/darwin/core/native_apple_interface.m` — Darwin HTTP/session
-  dependencies and delegate requirements.
-- `platform/default/src/mbgl/storage/database_file_source.cpp` — ambient cache
-  behavior and `OfflineDatabase` integration.
-- `platform/default/src/mbgl/storage/offline.cpp` and related offline files —
-  offline region APIs and observers.
-- `platform/darwin/src/MLNOfflineStorage.mm` — Darwin cache/offline path setup
-  and shared file-source initialization.
-- `platform/android/MapLibreAndroid/src/cpp/file_source.cpp` — Android resource
-  options, network/cache setup, resource transforms, and asset provider wiring.
-- `platform/android/MapLibreAndroid/src/cpp/asset_manager_file_source.cpp` — APK
-  asset provider behavior to compare with the custom-scheme ABI.
-- `platform/default/src/mbgl/storage/mbtiles_file_source.cpp` — MBTiles URL and
-  metadata behavior.
-- `platform/default/src/mbgl/storage/pmtiles_file_source.cpp` and
-  `pmtiles_file_source_stub.cpp` — PMTiles support/stub selection.
-
-## Resolved Source Findings
-
-### Core FileSource Contracts
-
-- `AbiCompositeResourceLoader` must implement `request`, `canRequest`,
-  `setResourceOptions`, `getResourceOptions`, `setClientOptions`, and
-  `getClientOptions` from `mbgl::FileSource`.
 - `FileSource::request` callbacks must be asynchronous, delivered on the same
   thread as the request, and that thread must have an active MapLibre `RunLoop`.
-- Cancellation is destructor-driven through `AsyncRequest`; pending completions
-  must check cancellation before touching runtime state or invoking callbacks.
 - `FileSourceManager` caches sources by tile-server base URL, API key, cache
   path, and `platformContext`; it does not include `assetPath`, maximum cache
-  size, client options, provider registry contents, or enabled-provider flags.
-- Runtime-scoped resource behavior therefore needs a runtime-unique
-  `platformContext`, and resource identity should not mutate while maps are
-  live.
-- The ABI composite should mirror `MainResourceLoader`'s useful dispatch and
-  cache-forwarding semantics, but must intentionally differ by making option
-  forwarding null-safe.
+  size, client options, or wrapper policy flags.
+- The ABI composite should mirror `MainResourceLoader` dispatch and
+  cache-forwarding semantics, but must make option forwarding null-safe.
 
-### Network Provider
+Network:
 
 - Network can be added as a child of the ABI composite without adopting
-  MapLibre's `MainResourceLoader`; `OnlineFileSource` is already a normal
-  `FileSource` child in upstream dispatch.
-- On Apple, the likely provider stack is default `OnlineFileSource` plus Darwin
-  `HTTPFileSource` (`NSURLSession`). Do not add default libcurl
-  `http_file_source.cpp` on Apple unless deliberately building a curl platform.
-- Darwin networking needs `platform/darwin/core/http_file_source.mm` and
-  `platform/darwin/core/native_apple_interface.m`; nil delegate fallback exists,
-  but production request/session policy requires a later explicit ABI design.
-- `NetworkStatus` is process-global, so runtime `network_enabled` should gate
-  dispatch in the ABI composite rather than relying only on global network
-  status.
+  `MainResourceLoader`; `OnlineFileSource` is already a normal upstream child.
+- On Apple, use default `OnlineFileSource` plus Darwin `HTTPFileSource`
+  (`NSURLSession`). Do not add default libcurl `http_file_source.cpp` on Apple
+  unless deliberately building a curl platform.
+- Darwin networking needs `platform/darwin/core/http_file_source.mm`,
+  `platform/darwin/core/native_apple_interface.m`, and the global
+  `MLNNativeNetworkManager`/network-configuration behavior. Nil delegate
+  fallback exists, but production request/session policy requires later explicit
+  ABI design.
+- `NetworkStatus` is process-global; the ABI should wrap that model directly
+  rather than inventing per-runtime network state.
 - `ResourceTransform` rewrites URLs only and is honored by `OnlineFileSource`,
   not by asset, file, or database sources.
 
-### Ambient Cache and Offline
+Cache and offline:
 
 - `DatabaseFileSource` constructs `OfflineDatabase` from
   `ResourceOptions::cachePath()`.
@@ -371,78 +388,32 @@ Requires further MapLibre research:
   not require using Darwin `MLNOfflineStorage` directly.
 - Offline downloads use a `Network` file source internally, so M2.4 depends on a
   functioning network provider from M2.2.
-- Cache fallback in the ABI composite should mirror upstream behavior: try
-  database, return usable cached data when available, otherwise fetch network
-  and forward successful responses into the database.
+- Cache fallback should try database, return usable cached data when available,
+  otherwise fetch network and forward successful responses into the database.
 
-### MBTiles and PMTiles
+MBTiles and PMTiles:
 
-- `mbtiles://` accepts an absolute local path after the scheme; realistic URLs
-  look like `mbtiles:///absolute/path/to/file.mbtiles`.
+- `mbtiles://` accepts an absolute local path after the scheme, for example
+  `mbtiles:///absolute/path/to/file.mbtiles`.
 - `pmtiles://` wraps an inner resource URL, such as
-  `pmtiles://file:///absolute/path/to/file.pmtiles` or later
-  `pmtiles://https://...`.
+  `pmtiles://file:///absolute/path/to/file.pmtiles` or `pmtiles://https://...`.
 - MBTiles is a straightforward optional child provider once SQLite/zlib-related
   sources are wired.
-- PMTiles full support is controlled by `MLN_WITH_PMTILES`; the current wrapper
-  build does not automatically select full or stub PMTiles because it manually
-  wires platform sources under `MLN_WITH_CORE_ONLY`.
+- PMTiles full support is controlled by `MLN_WITH_PMTILES`; if the build uses
+  the upstream stub, `pmtiles://` should fail as unsupported rather than
+  becoming a runtime-configurable feature.
 - Full PMTiles recursively asks `FileSourceManager` for `ResourceLoader` to
   fetch byte ranges from the inner URL. The ABI composite must support ranged
-  requests and avoid accidental recursion loops.
+  requests and otherwise preserve MapLibre Native's PMTiles behavior rather than
+  adding wrapper-specific nested-URL policy.
 
-### Platform Assets and Custom Schemes
+Assets and custom schemes:
 
 - `asset://` is already a reserved platform asset scheme: default platforms map
   it to `assetPath`, while Android maps it to `AAssetManager`.
-- Keep custom providers separate from reserved schemes in M2.1: reject `asset`,
-  `file`, `http`, and `https` as custom scheme names.
 - Synchronous custom provider callbacks are sufficient for the first bundled
   resource slice. Android's `AssetManagerFileSource` also performs synchronous
   open/read on its worker thread and copies bytes before completing the request.
 - Whole-resource synchronous reads are fine for styles, sprites, glyphs, and
-  small bundled resources, but large packages or streaming resources need a
-  later ranged/async design.
-
-## Design Decisions
-
-- Built-in `asset://` is reserved and not overrideable by custom providers.
-  Host-specific assets should use custom schemes. This preserves MapLibre
-  platform meaning for `asset://`, including filesystem assets on default
-  platforms, bundle resources on Darwin, and APK assets on Android.
-- Network should follow MapLibre-style online behavior by default once the
-  network provider is implemented for a target. Callers that need deterministic
-  no-network operation can disable it with `network_enabled`.
-- `cache_path` and offline database path are the same ABI field. MapLibre uses
-  one SQLite database path for ambient cache and offline regions on default,
-  Darwin, and Android stacks.
-- Custom resource providers must be registered before map creation. Dynamic
-  provider registration is out of scope unless a future use case justifies
-  loader synchronization, cache invalidation, in-flight request handling, and
-  style/source reload semantics.
-- The initial custom-provider callback is synchronous. This is sufficient for
-  APK, bundle, and package-style local resources when native code copies bytes
-  before completing the MapLibre response. Async host providers can be added
-  later as a separate API for IPC, app-managed networking, or event-loop-backed
-  resources.
-- Providers are runtime-enabled or runtime-disabled rather than exposed as a
-  matrix of compile-time feature configurations. Platform-specific provider
-  implementations remain platform-specific, such as Android native asset
-  integration.
-- Resource errors should be exposed through a richer ABI resource-error event in
-  addition to existing map failure events. The resource-error event should carry
-  structured data such as resource kind, URL, provider/loading method, reason,
-  native/provider error code, message, retry-after where applicable, and tile
-  metadata when available.
-
-## Current Recommendation
-
-Build M2.1 as the first slice of the final ABI-owned composite loader. Do not
-use MapLibre's full default `MainResourceLoader` for M2.1, but do mirror its
-useful dispatch concepts and leave explicit provider slots for network, cache,
-offline, MBTiles, and PMTiles.
-
-The milestone boundary is provider enablement, not architecture. M2.1 should
-create the permanent composite loader and enable only deterministic local/custom
-providers. Later M2.x slices should plug in MapLibre's built-in provider
-implementations behind explicit ABI options and tests.
+  small bundled resources. Large packages or streaming resources need a later
+  ranged/async design.
