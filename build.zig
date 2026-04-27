@@ -3,14 +3,28 @@ const std = @import("std");
 const BuildOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    cmake_artifact_dir: std.Build.LazyPath,
 };
 
-fn linkMapLibreAbi(b: *std.Build, module: *std.Build.Module) void {
+fn linkMapLibreAbi(b: *std.Build, module: *std.Build.Module, cmake_artifact_dir: std.Build.LazyPath) void {
     module.addIncludePath(b.path("include"));
-    module.addLibraryPath(b.path("build"));
-    module.addRPath(b.path("build"));
+    module.addLibraryPath(cmake_artifact_dir);
+    module.addRPath(cmake_artifact_dir);
     module.linkSystemLibrary("maplibre_native_abi", .{});
     module.link_libc = true;
+}
+
+fn cmakeArtifactDir(b: *std.Build) std.Build.LazyPath {
+    const path = b.option(
+        []const u8,
+        "cmake-artifact-dir",
+        "Directory containing the CMake-built maplibre_native_abi library",
+    ) orelse "build";
+
+    if (std.fs.path.isAbsolute(path)) {
+        return .{ .cwd_relative = path };
+    }
+    return b.path(path);
 }
 
 fn addHeadlessExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
@@ -23,7 +37,7 @@ fn addHeadlessExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Comp
         }),
     });
 
-    linkMapLibreAbi(b, headless.root_module);
+    linkMapLibreAbi(b, headless.root_module, options.cmake_artifact_dir);
     b.installArtifact(headless);
     return headless;
 }
@@ -37,7 +51,7 @@ fn addAbiTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
         }),
     });
 
-    linkMapLibreAbi(b, abi_tests.root_module);
+    linkMapLibreAbi(b, abi_tests.root_module, options.cmake_artifact_dir);
     return abi_tests;
 }
 
@@ -45,6 +59,7 @@ pub fn build(b: *std.Build) void {
     const options = BuildOptions{
         .target = b.standardTargetOptions(.{}),
         .optimize = b.standardOptimizeOption(.{}),
+        .cmake_artifact_dir = cmakeArtifactDir(b),
     };
 
     const headless = addHeadlessExample(b, options);
