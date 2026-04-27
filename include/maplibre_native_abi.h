@@ -47,8 +47,6 @@ extern "C" {
  * call. Asynchronous native failures are reported through map events.
  */
 
-#pragma region Status and Handles
-
 typedef enum mln_status {
   MLN_STATUS_OK = 0,
   /** A pointer, size field, mask, or handle argument was invalid. */
@@ -68,10 +66,6 @@ typedef enum mln_status {
 typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
 
-#pragma endregion
-
-#pragma region ABI and Diagnostics
-
 /**
  * Returns the C ABI contract version.
  *
@@ -87,10 +81,6 @@ MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
  * call on the same thread that writes a thread-local diagnostic.
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
-
-#pragma endregion
-
-#pragma region Logging API
 
 typedef enum mln_log_severity {
   MLN_LOG_SEVERITY_DEBUG = 0,
@@ -182,10 +172,6 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  */
 MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
 
-#pragma endregion
-
-#pragma region Runtime API
-
 typedef struct mln_runtime_options {
   uint32_t size;
   uint32_t flags;
@@ -235,10 +221,6 @@ MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
-
-#pragma endregion
-
-#pragma region Map API
 
 typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_CENTER = 1u << 0u,
@@ -483,8 +465,6 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 MLN_API mln_status mln_map_poll_event(
   mln_map* map, mln_map_event* out_event, bool* out_has_event
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }
