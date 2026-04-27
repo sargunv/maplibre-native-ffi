@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include <mbgl/actor/scheduler.hpp>
 #include <mbgl/util/run_loop.hpp>
 
 #include "core/runtime.hpp"
@@ -132,9 +133,13 @@ auto run_runtime_once(mln_runtime* runtime) -> mln_status {
     return status;
   }
 
-  if (auto* run_loop = mbgl::util::RunLoop::Get()) {
-    run_loop->runOnce();
+  auto* scheduler = mbgl::Scheduler::GetCurrent(false);
+  auto* run_loop = dynamic_cast<mbgl::util::RunLoop*>(scheduler);
+  if (run_loop == nullptr) {
+    set_thread_error("runtime has no active run loop");
+    return MLN_STATUS_INVALID_STATE;
   }
+  run_loop->runOnce();
   return MLN_STATUS_OK;
 }
 
