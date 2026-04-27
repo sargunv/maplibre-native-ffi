@@ -73,6 +73,8 @@ class EventQueue final {
       .message = {}
     };
     copy_message(std::span<char, 512>{event.message}, message);
+
+    const std::scoped_lock lock(mutex_);
     if (type == MLN_MAP_EVENT_MAP_LOADING_FAILED) {
       failed_ = true;
       failure_message_ =
@@ -82,16 +84,23 @@ class EventQueue final {
   }
 
   auto clear_failure() -> void {
+    const std::scoped_lock lock(mutex_);
     failed_ = false;
     failure_message_.clear();
   }
 
-  [[nodiscard]] auto failed() const -> bool { return failed_; }
-  [[nodiscard]] auto failure_message() const -> const std::string& {
+  [[nodiscard]] auto failed() const -> bool {
+    const std::scoped_lock lock(mutex_);
+    return failed_;
+  }
+
+  [[nodiscard]] auto failure_message() const -> std::string {
+    const std::scoped_lock lock(mutex_);
     return failure_message_;
   }
 
   auto poll(mln_map_event* out_event) -> bool {
+    const std::scoped_lock lock(mutex_);
     if (events_.empty()) {
       return false;
     }
@@ -102,6 +111,7 @@ class EventQueue final {
   }
 
  private:
+  mutable std::mutex mutex_;
   std::deque<mln_map_event> events_;
   bool failed_ = false;
   std::string failure_message_;
