@@ -157,7 +157,7 @@ wrapper-composite resource loader that supports local files, bundled resources,
 custom URL schemes, network loading, ambient cache, and offline data without
 requiring callers to reimplement MapLibre's normal resource stack.
 
-Design reference: `RESOURCE_API_DESIGN_DRAFT.md`.
+Design reference: `RESOURCE_API_DESIGN.md`.
 
 Shared architecture:
 
