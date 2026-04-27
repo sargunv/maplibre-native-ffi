@@ -13,7 +13,7 @@ providers. Later M2.x slices plug MapLibre's built-in network, cache, offline,
 MBTiles, and PMTiles providers into the same composite. Runtime options control
 caller-owned paths and cache size; process-global network status is exposed as a
 separate ABI surface matching MapLibre Native. Local package providers are
-ordinary built-in scheme handlers when available in the build.
+ordinary built-in Core scheme handlers.
 
 ## Goals
 
@@ -67,8 +67,8 @@ mbgl::Map
        -> CustomSchemeProvider(s)
        -> AssetProvider
        -> FileProvider
-       -> MBTilesProvider, when available in the build
-       -> PMTilesProvider, when available in the build
+       -> MBTilesProvider
+       -> PMTilesProvider
        -> CacheProvider / DatabaseFileSource
        -> NetworkProvider / OnlineFileSource or platform network source
 ```
@@ -119,8 +119,8 @@ The composite loader routes deterministically:
 
 1. Custom registered schemes, exact scheme match.
 2. Filesystem `asset://`, using runtime `asset_path`.
-3. `mbtiles://`, when available in the build.
-4. `pmtiles://`, when available in the build.
+3. `mbtiles://`.
+4. `pmtiles://`.
 5. Local `file://`.
 6. Ambient cache/database fallback, when `cache_path` is configured.
 7. Network, following MapLibre Native's provider and process-global network
@@ -128,15 +128,13 @@ The composite loader routes deterministically:
    when cache is configured.
 8. Unsupported-resource error.
 
-Custom providers do not override reserved built-in schemes in M2.1: `file`,
-`asset`, `http`, and `https`. Override/intercept behavior is out of scope unless
-MapLibre Native Core exposes matching behavior that should be wrapped.
+Custom providers do not override Core-owned schemes in M2.1: `file`, `asset`,
+`http`, `https`, `mbtiles`, and `pmtiles`. Override/intercept behavior is out of
+scope unless MapLibre Native Core exposes matching behavior that should be
+wrapped.
 
-Explicit local-package schemes such as `mbtiles://` and `pmtiles://` must fail
-as unsupported when unavailable in the build rather than falling through to
-network. Cache and network dispatch must respect MapLibre
-`Resource::LoadingMethod`: database handles cache requests, and online sources
-handle network requests.
+Cache and network dispatch must respect MapLibre `Resource::LoadingMethod`:
+database handles cache requests, and online sources handle network requests.
 
 ## Custom Providers
 
@@ -172,7 +170,11 @@ typedef mln_status (*mln_resource_provider_callback)(
 Contract:
 
 - Schemes are normalized and validated by the ABI.
-- Reserved schemes are rejected: `file`, `asset`, `http`, `https`.
+- Core-owned schemes are rejected: `file`, `asset`, `http`, `https`, `mbtiles`,
+  `pmtiles`.
+- Custom scheme providers are an ABI-owned extension implemented behind a Core
+  `FileSource`; request completion must still follow Core `FileSource` threading
+  and callback semantics.
 - The callback is a runtime-scoped native callback, not a process-global log
   callback and not a polled map event.
 - The callback is invoked on the runtime owner thread while the host pumps the
@@ -220,9 +222,9 @@ on MapLibre logging or worker threads.
 - `cache_path` and offline database path are the same ABI field. MapLibre uses
   one SQLite database path for ambient cache and offline regions on default,
   Darwin, and Android stacks.
-- Do not expose a runtime provider matrix. Built-in scheme providers are present
-  when supported by the build; runtime options only control policy that callers
-  reasonably need to choose, such as paths and cache size.
+- Do not expose a runtime provider matrix. Built-in scheme providers are wired
+  as Core providers; runtime options only control policy that callers reasonably
+  need to choose, such as paths and cache size.
 - Expose resource failures with the detail MapLibre Native Core actually
   provides through observer callbacks first. Do not invent richer resource-error
   payloads unless Core exposes that detail or a later wrapper API directly wraps
@@ -250,8 +252,9 @@ MLN_API mln_status mln_network_status_set(uint32_t status) MLN_NOEXCEPT;
 Contract:
 
 - The status is process-global, not runtime-scoped.
-- `set(ONLINE)` maps to `mbgl::NetworkStatus::Set(Online)`, which also wakes
-  native subscribers through MapLibre's `Reachable()` path.
+- `set(ONLINE)` maps to `mbgl::NetworkStatus::Set(Online)`, which wakes native
+  subscribers through MapLibre's `Reachable()` path when transitioning from
+  offline to online.
 - `set(OFFLINE)` maps to `mbgl::NetworkStatus::Set(Offline)`.
 - The ABI does not invent per-runtime network enablement.
 
@@ -264,7 +267,8 @@ local/custom resource loading.
 
 Deliverables:
 
-- Replace the null `FileSourceManager` with `AbiFileSourceManager`.
+- Provide/register through MapLibre's process-global `FileSourceManager` entry
+  point.
 - Add `AbiCompositeResourceLoader` as the only registered
   `FileSourceType::ResourceLoader`.
 - Add runtime `asset_path` and runtime-unique `platformContext`, passing them
@@ -288,8 +292,9 @@ Out of scope:
 
 ### M2.2: Built-In Network Provider
 
-Goal: add HTTP/HTTPS loading through MapLibre's native network source behind
-explicit runtime options.
+Goal: add HTTP/HTTPS loading through MapLibre's native network source with
+explicit provider wiring, process-global network status, and deterministic
+tests.
 
 Expected deliverables:
 
@@ -331,8 +336,7 @@ Goal: support local package formats as built-in providers when needed.
 
 Expected deliverables:
 
-- Wire MBTiles/PMTiles providers as standard built-in scheme handlers when
-  available in the build.
+- Wire MBTiles/PMTiles providers as standard built-in Core scheme handlers.
 - URL tests for `mbtiles://` and/or `pmtiles://` fixtures.
 
 ### M2.6: Resource Transform
@@ -399,9 +403,8 @@ MBTiles and PMTiles:
   `pmtiles://file:///absolute/path/to/file.pmtiles` or `pmtiles://https://...`.
 - MBTiles is a straightforward optional child provider once SQLite/zlib-related
   sources are wired.
-- PMTiles full support is controlled by `MLN_WITH_PMTILES`; if the build uses
-  the upstream stub, `pmtiles://` should fail as unsupported rather than
-  becoming a runtime-configurable feature.
+- PMTiles full support is controlled by `MLN_WITH_PMTILES`; the wrapper build
+  should deliberately wire the full Core provider rather than the upstream stub.
 - Full PMTiles recursively asks `FileSourceManager` for `ResourceLoader` to
   fetch byte ranges from the inner URL. The ABI composite must support ranged
   requests and otherwise preserve MapLibre Native's PMTiles behavior rather than

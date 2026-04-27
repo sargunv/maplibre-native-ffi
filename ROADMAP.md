@@ -194,8 +194,8 @@ Out of scope:
 
 Deliverables:
 
-- Runtime network enablement option.
 - MapLibre-backed HTTP/HTTPS provider wiring for the first target platform.
+- Process-global network status APIs wrapping `mbgl::NetworkStatus`.
 - Tile-server/API-key options only as needed for deterministic tests.
 - Tests against a controlled local HTTP fixture or equivalent non-flaky
   endpoint.
@@ -203,8 +203,8 @@ Deliverables:
 Research required:
 
 - Default libcurl vs Darwin `NSURLSession` source selection and CMake inputs.
-- `ClientOptions`, network status, resource transform, and platform lifecycle
-  requirements.
+- `ClientOptions`, process-global network status, resource transform, and
+  platform lifecycle requirements.
 
 ### M2.3: Ambient Cache Provider
 

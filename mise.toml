@@ -29,6 +29,10 @@ run = [
   "cmake --build build --parallel",
 ]
 
+[tasks."clean:build"]
+description = "Remove generated CMake build directory"
+run = "rm -rf build"
+
 [tasks.test]
 description = "Run all tests"
 depends = ["build"]
