@@ -5,6 +5,7 @@
 #include "core/runtime.hpp"
 
 #include "abi/boundary.hpp"
+#include "core/custom_resource_provider.hpp"
 #include "maplibre_native_abi.h"
 
 auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
@@ -25,12 +26,33 @@ auto mln_runtime_create(
   });
 }
 
-auto mln_runtime_register_resource_provider(
+auto mln_runtime_set_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
 ) noexcept -> mln_status {
   return mln::abi::status_boundary([&]() -> mln_status {
-    return mln::core::register_resource_provider(runtime, provider);
+    return mln::core::set_resource_provider(runtime, provider);
   });
+}
+
+auto mln_resource_request_complete(
+  mln_resource_request_handle* handle, const mln_resource_response* response
+) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::complete_resource_request(handle, response);
+  });
+}
+
+auto mln_resource_request_cancelled(
+  const mln_resource_request_handle* handle, bool* out_cancelled
+) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::resource_request_cancelled(handle, out_cancelled);
+  });
+}
+
+auto mln_resource_request_release(mln_resource_request_handle* handle) noexcept
+  -> void {
+  mln::core::release_resource_request(handle);
 }
 
 auto mln_runtime_set_resource_transform(

@@ -65,6 +65,7 @@ typedef enum mln_status {
 
 typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
+typedef struct mln_resource_request_handle mln_resource_request_handle;
 
 /**
  * Returns the C ABI contract version.
@@ -114,6 +115,48 @@ typedef enum mln_resource_kind {
   MLN_RESOURCE_KIND_SPRITE_JSON = 6,
   MLN_RESOURCE_KIND_IMAGE = 7,
 } mln_resource_kind;
+
+typedef enum mln_resource_loading_method {
+  MLN_RESOURCE_LOADING_METHOD_ALL = 0,
+  MLN_RESOURCE_LOADING_METHOD_CACHE_ONLY = 1,
+  MLN_RESOURCE_LOADING_METHOD_NETWORK_ONLY = 2,
+} mln_resource_loading_method;
+
+typedef enum mln_resource_priority {
+  MLN_RESOURCE_PRIORITY_REGULAR = 0,
+  MLN_RESOURCE_PRIORITY_LOW = 1,
+} mln_resource_priority;
+
+typedef enum mln_resource_usage {
+  MLN_RESOURCE_USAGE_ONLINE = 0,
+  MLN_RESOURCE_USAGE_OFFLINE = 1,
+} mln_resource_usage;
+
+typedef enum mln_resource_storage_policy {
+  MLN_RESOURCE_STORAGE_POLICY_PERMANENT = 0,
+  MLN_RESOURCE_STORAGE_POLICY_VOLATILE = 1,
+} mln_resource_storage_policy;
+
+typedef enum mln_resource_response_status {
+  MLN_RESOURCE_RESPONSE_STATUS_OK = 0,
+  MLN_RESOURCE_RESPONSE_STATUS_ERROR = 1,
+  MLN_RESOURCE_RESPONSE_STATUS_NO_CONTENT = 2,
+  MLN_RESOURCE_RESPONSE_STATUS_NOT_MODIFIED = 3,
+} mln_resource_response_status;
+
+typedef enum mln_resource_error_reason {
+  MLN_RESOURCE_ERROR_REASON_NONE = 0,
+  MLN_RESOURCE_ERROR_REASON_NOT_FOUND = 1,
+  MLN_RESOURCE_ERROR_REASON_SERVER = 2,
+  MLN_RESOURCE_ERROR_REASON_CONNECTION = 3,
+  MLN_RESOURCE_ERROR_REASON_RATE_LIMIT = 4,
+  MLN_RESOURCE_ERROR_REASON_OTHER = 5,
+} mln_resource_error_reason;
+
+typedef enum mln_resource_provider_decision {
+  MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH = 0,
+  MLN_RESOURCE_PROVIDER_DECISION_HANDLE = 1,
+} mln_resource_provider_decision;
 
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask {
@@ -267,31 +310,63 @@ typedef struct mln_resource_transform {
   void* user_data;
 } mln_resource_transform;
 
-typedef struct mln_resource_provider_response {
+typedef struct mln_resource_request {
   uint32_t size;
-  /** Success bytes. May be null only when byte_count is 0. */
+  const char* url;
+  uint32_t kind;
+  uint32_t loading_method;
+  uint32_t priority;
+  uint32_t usage;
+  uint32_t storage_policy;
+  bool has_range;
+  uint64_t range_start;
+  uint64_t range_end;
+  bool has_prior_modified;
+  int64_t prior_modified_unix_ms;
+  bool has_prior_expires;
+  int64_t prior_expires_unix_ms;
+  const char* prior_etag;
+  const uint8_t* prior_data;
+  size_t prior_data_size;
+} mln_resource_request;
+
+typedef struct mln_resource_response {
+  uint32_t size;
+  uint32_t status;
+  uint32_t error_reason;
+  /** Response bytes. May be null only when byte_count is 0. */
   const uint8_t* bytes;
   size_t byte_count;
-  /** Optional failure message; non-null means the request failed. */
   const char* error_message;
-} mln_resource_provider_response;
+  bool must_revalidate;
+  bool has_modified;
+  int64_t modified_unix_ms;
+  bool has_expires;
+  int64_t expires_unix_ms;
+  const char* etag;
+  bool has_retry_after;
+  int64_t retry_after_unix_ms;
+} mln_resource_response;
 
 /**
- * Handles a custom-scheme resource request.
+ * Intercepts a network resource request.
  *
- * Return MLN_STATUS_OK with bytes/byte_count set for success. Return
- * MLN_STATUS_OK with error_message set, or return any non-OK status, for
- * failure. url and out_response are valid only during the callback and must not
- * be retained. out_response is non-null and preinitialized by the ABI. bytes
- * and error_message must remain valid until the callback returns.
+ * request and its pointed-to fields are valid only during the callback. The
+ * callback returns MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH to let native
+ * OnlineFileSource handle the request, or MLN_RESOURCE_PROVIDER_DECISION_HANDLE
+ * to complete it through the request handle. When returning PASS_THROUGH, the
+ * provider must not retain, complete, or release the handle. When returning
+ * HANDLE, the provider may complete inline or later; completion is copied by
+ * the ABI and may be called from any thread. Providers should release the
+ * handle after they no longer need to complete or observe cancellation.
  */
-typedef mln_status (*mln_resource_provider_callback)(
-  void* user_data, const char* url, mln_resource_provider_response* out_response
+typedef uint32_t (*mln_resource_provider_callback)(
+  void* user_data, const mln_resource_request* request,
+  mln_resource_request_handle* handle
 );
 
 typedef struct mln_resource_provider {
   uint32_t size;
-  const char* scheme;
   mln_resource_provider_callback callback;
   void* user_data;
 } mln_resource_provider;
@@ -317,37 +392,84 @@ MLN_API mln_status mln_runtime_create(
 ) MLN_NOEXCEPT;
 
 /**
- * Registers a runtime-scoped custom URL scheme provider.
+ * Sets a runtime-scoped network resource provider.
  *
- * Providers must be registered before any map is created from the runtime. The
- * scheme must start with an ASCII letter and contain only ASCII letters,
- * digits, '+', '-', or '.'. Scheme matching is case-insensitive. The scheme
- * must not be one of the built-in schemes: file, asset, http, https, mbtiles,
- * or pmtiles. Provider callbacks are invoked synchronously from the runtime
- * owner thread while the runtime is pumped. The callback and user_data must
- * remain valid until the runtime is destroyed.
+ * The provider must be set before any map is created from the runtime. It is
+ * invoked for requests that reach the ABI network file source; built-in
+ * non-network schemes such as file, asset, mbtiles, and pmtiles are handled by
+ * native MainResourceLoader before this extension point. The callback and
+ * user_data must remain valid until the runtime is destroyed.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, provider is
- *   null, provider->size is too small, scheme is invalid or reserved, callback
- *   is null, or the scheme is already registered.
+ *   null, provider->size is too small, or callback is null.
  * - MLN_STATUS_INVALID_STATE when runtime already owns live maps.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_runtime_register_resource_provider(
+MLN_API mln_status mln_runtime_set_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
+) MLN_NOEXCEPT;
+
+/**
+ * Completes an ABI resource provider request.
+ *
+ * May be called inline from the provider callback or later from any thread.
+ * The ABI copies all response bytes and strings before returning. Completion is
+ * one-shot: a second completion, completion after cancellation, or completion
+ * with null arguments returns a non-OK status and does not invoke MapLibre's
+ * resource callback. Malformed response contents are converted to provider
+ * error responses and still consume the one-shot completion.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the response was accepted for asynchronous delivery.
+ * - MLN_STATUS_INVALID_ARGUMENT when handle or response is null.
+ * - MLN_STATUS_INVALID_STATE when the request was cancelled, already completed,
+ *   or can no longer accept a response.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_resource_request_complete(
+  mln_resource_request_handle* handle, const mln_resource_response* response
+) MLN_NOEXCEPT;
+
+/**
+ * Reports whether MapLibre has cancelled an ABI resource provider request.
+ *
+ * May be called from any thread while the provider still owns the handle. A
+ * cancelled request no longer wants a response; later completion is ignored
+ * with MLN_STATUS_INVALID_STATE.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when handle or out_cancelled is null.
+ */
+MLN_API mln_status mln_resource_request_cancelled(
+  const mln_resource_request_handle* handle, bool* out_cancelled
+) MLN_NOEXCEPT;
+
+/**
+ * Releases the provider's reference to a resource request handle.
+ *
+ * Providers own a releasable handle only after returning
+ * MLN_RESOURCE_PROVIDER_DECISION_HANDLE from the callback. They must release
+ * that handle exactly once after completing the request or deciding not to
+ * complete it. Passing null is a no-op. Using a handle after release is
+ * invalid.
+ */
+MLN_API void mln_resource_request_release(
+  mln_resource_request_handle* handle
 ) MLN_NOEXCEPT;
 
 /**
  * Registers a runtime-scoped URL transform for network resources.
  *
  * The transform must be registered before any map is created from the runtime.
- * It is forwarded to MapLibre's OnlineFileSource and therefore applies to
- * HTTP/HTTPS requests, including nested PMTiles network range requests. It does
- * not apply to file, asset, database, MBTiles, or custom-scheme providers.
+ * It is forwarded to MapLibre's OnlineFileSource and therefore applies wherever
+ * native OnlineFileSource applies transforms, including nested PMTiles network
+ * range requests. It does not apply to file, asset, database, MBTiles, or
+ * registered ABI provider responses intercepted before OnlineFileSource.
  *
  * Returns:
  * - MLN_STATUS_OK on success.

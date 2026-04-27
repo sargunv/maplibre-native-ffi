@@ -151,56 +151,56 @@ Out of scope:
 
 ## M2.x: Resource Loading, Cache, and Offline
 
-Goal: Build the resource subsystem in the final ABI shape: a runtime-owned,
-wrapper-composite resource loader that supports local files, bundled resources,
-custom URL schemes, network loading, ambient cache, and offline data without
+Goal: Build the resource subsystem in the final ABI shape: native
+`MainResourceLoader` dispatch with ABI-owned runtime configuration, network
+provider interception, network loading, ambient cache, and offline data without
 requiring callers to reimplement MapLibre's normal resource stack.
 
 Design reference: `RESOURCE_API_DESIGN.md`.
 
 Shared architecture:
 
-- Replace the M2 null `FileSourceManager` with an ABI-owned manager and
-  composite `ResourceLoader`.
+- Replace the M2 null `FileSourceManager` with an ABI-owned manager that
+  registers native built-ins, native `MainResourceLoader`, and an ABI network
+  wrapper.
 - Keep resource configuration runtime-level and pass runtime-derived
   `mbgl::ResourceOptions` into map creation.
 - Treat M2.x boundaries as provider enablement slices, not as throwaway loader
   designs.
-- Keep custom providers additive for host-specific schemes such as `apk://`,
-  `bundle://`, or app-specific package URLs.
+- Keep the ABI provider additive as a network extension point for host-specific
+  resources such as `apk://`, `bundle://`, or app-specific package URLs.
 - Add each built-in provider behind explicit ABI options and deterministic
   tests.
 
-### M2.1: Composite Loader, Local Files, and Custom Schemes Completed
+### M2.1: Native Loader, Local Files, and Network Provider Completed
 
 Deliverables:
 
-- ABI-owned composite `ResourceLoader` skeleton with cancellation-safe requests.
+- ABI-owned resource loading skeleton with cancellation-safe requests.
 - Runtime `asset_path` and optional `cache_path` options.
 - `file://` and filesystem `asset://` loading.
-- Custom scheme provider registration and dispatch.
+- Custom network provider setting and dispatch.
 - Tests for successful `file://`, successful `asset://`, successful custom
-  scheme, missing-resource failure, invalid provider registration, and existing
+  scheme, missing-resource failure, invalid provider setting, and existing
   inline-style behavior.
 - Zig headless smoke loads a visible local style by URL.
 
 Acceptance evidence:
 
-- `FileSourceManager::get()` now returns an ABI-owned manager with a single
-  `FileSourceType::ResourceLoader` factory that constructs the wrapper composite
-  loader.
+- `FileSourceManager::get()` now returns an ABI-owned manager with
+  `FileSourceType::ResourceLoader` backed by native `MainResourceLoader` and
+  `FileSourceType::Network` backed by the ABI network wrapper.
 - Map creation passes runtime-derived `ResourceOptions` with runtime-unique
   `platformContext`, `asset_path`, and reserved `cache_path` into MapLibre.
-- The composite loader dispatches `file://` to MapLibre's default local file
-  source, `asset://` to MapLibre's default asset file source, registered custom
-  schemes to runtime-owned ABI callbacks, and unsupported URLs to resource
-  errors.
+- Native `MainResourceLoader` dispatches `file://`, `asset://`, package, cache,
+  and network requests; requests that reach the ABI network wrapper are
+  presented to the runtime provider extension point.
 - `include/maplibre_native_abi.h` exposes runtime resource options and
-  `mln_runtime_register_resource_provider`; registration rejects invalid,
-  reserved, duplicate, null-callback, and post-map providers.
+  `mln_runtime_set_resource_provider`; provider setting rejects invalid,
+  null-callback, and post-map providers.
 - `tests/abi/resources.zig` covers successful `file://`, successful `asset://`,
-  successful custom scheme, missing file failure, invalid provider registration,
-  and post-map registration rejection. Existing inline style tests continue to
+  successful custom scheme, missing file failure, invalid provider setting, and
+  post-map provider-setting rejection. Existing inline style tests continue to
   pass.
 - `examples/zig-headless/main.zig` writes a visible local style and loads it by
   `file://` URL through the C ABI.
@@ -232,8 +232,8 @@ Research required:
 
 Acceptance evidence:
 
-- The ABI composite loader now includes MapLibre's `OnlineFileSource` and
-  dispatches `http://` and `https://` resources through it.
+- The ABI network wrapper delegates unregistered network-capable resources to
+  MapLibre's `OnlineFileSource`.
 - The Apple target wires Darwin `HTTPFileSource` (`NSURLSession`) plus
   `native_apple_interface.m`, and avoids the default curl HTTP source.
 - `include/maplibre_native_abi.h` exposes process-global
@@ -263,9 +263,9 @@ Acceptance evidence:
 - `mln_runtime_options` now exposes `maximum_cache_size` behind
   `MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE`, and runtime resource options forward
   both `cache_path` and maximum cache size.
-- The ABI composite loader includes MapLibre's `DatabaseFileSource` when
-  `cache_path` is configured, routes cache-capable requests through the database
-  before network, and forwards successful network responses into the database.
+- Native `MainResourceLoader` includes MapLibre's `DatabaseFileSource`, routes
+  cache-capable requests through the database before network, and forwards
+  successful network responses into the database.
 - `mln_runtime_run_ambient_cache_operation` wraps reset database, pack database,
   invalidate ambient cache, and clear ambient cache with status-returning ABI
   semantics. Runtimes without `cache_path` use MapLibre's default in-memory
@@ -310,10 +310,9 @@ Deliverables:
 Acceptance evidence:
 
 - `FileSourceManager::get()` registers MBTiles and PMTiles file-source factories
-  in addition to the ABI composite resource loader.
-- The composite loader routes `mbtiles://` and `pmtiles://` through MapLibre's
-  built-in providers before local file, database, network, and custom-provider
-  fallback.
+  in addition to native `MainResourceLoader`.
+- Native `MainResourceLoader` routes `mbtiles://` and `pmtiles://` through
+  MapLibre's built-in providers before local file, database, and network.
 - The wrapper build now includes MapLibre's default MBTiles provider and the
   full PMTiles provider source by forcing `MLN_WITH_PMTILES=ON`, with SQLite,
   zlib, and PMTiles vendor include/link wiring.
@@ -340,7 +339,7 @@ Acceptance evidence:
   `mln_runtime_set_resource_transform` as URL-only network rewrite APIs matching
   MapLibre's `ResourceTransform` semantics.
 - Transform registration is runtime-scoped, rejected after map creation, and
-  forwarded to `OnlineFileSource` by the ABI composite.
+  forwarded to `OnlineFileSource` by the ABI network wrapper.
 - `tests/abi/resources.zig` verifies a fake HTTP style URL is rewritten to a
   deterministic local HTTP fixture and that post-map transform registration is
   rejected.
@@ -379,16 +378,11 @@ Motivation:
 
 Deliverables:
 
-- Design the async provider ABI shape and decide whether it replaces or
-  complements the synchronous provider API.
+- Replace the synchronous provider ABI with an async provider ABI.
 - Define request handle ownership, completion threading, cancellation, runtime
   teardown behavior, and reentrancy rules.
-- Explore whether the ABI composite should become a thin custom-scheme wrapper
-  around MapLibre's native `MainResourceLoader` instead of mirroring its
-  waterfall, so built-in provider dispatch stays closer to upstream behavior.
-- If `MainResourceLoader` delegation is not viable, document the concrete reason
-  and keep the wrapper composite's mirrored waterfall as an intentional
-  divergence.
+- Keep `MainResourceLoader` native and expose provider interception in the
+  `Network` file source wrapper, so built-in provider dispatch stays upstream.
 - Decide whether ambient cache maintenance should remain blocking or move to the
   same request/event completion model planned for offline database APIs.
 - Include delayed completion and whole-resource responses in the first async
@@ -397,7 +391,10 @@ Deliverables:
   or explicitly split into the immediately following slice; do not leave the
   final ABI shape incompatible with MapLibre range requests.
 - Add deterministic tests for inline completion, delayed completion,
-  cancellation, range metadata behavior, and provider error completion.
+  cancellation, pass-through delegation, and provider error completion.
+- Defer ranged-provider metadata tests until a direct resource harness or
+  render-driven PMTiles path can force `Resource::dataRange` through the public
+  ABI.
 
 Out of scope:
 

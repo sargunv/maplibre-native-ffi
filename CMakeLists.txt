@@ -62,6 +62,7 @@ set(
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_request.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/main_resource_loader.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/mbtiles_file_source.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/offline.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/offline_database.cpp
@@ -141,7 +142,6 @@ add_library(
   src/core/map.cpp
   src/core/network_status.cpp
   src/core/resource_loader.cpp
-  src/core/resource_scheme.cpp
   src/core/runtime.cpp
   src/platform/abi_file_source_manager.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}

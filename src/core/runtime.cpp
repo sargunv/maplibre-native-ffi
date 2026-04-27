@@ -21,7 +21,6 @@
 #include "core/runtime.hpp"
 
 #include "core/diagnostics.hpp"
-#include "core/resource_scheme.hpp"
 #include "maplibre_native_abi.h"
 
 namespace {
@@ -278,7 +277,7 @@ auto run_ambient_cache_operation(mln_runtime* runtime, uint32_t operation)
   }
 }
 
-auto register_resource_provider(
+auto set_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
 ) -> mln_status {
   const auto status = validate_runtime(runtime);
@@ -298,38 +297,16 @@ auto register_resource_provider(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  const auto scheme = normalize_scheme(provider->scheme);
-  if (!is_valid_scheme(scheme)) {
-    set_thread_error("provider scheme is invalid");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  if (is_reserved_scheme(scheme)) {
-    set_thread_error("provider scheme is reserved by the ABI");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-
   const std::scoped_lock lock(runtime_registry_mutex());
   if (runtime->live_maps != 0) {
-    set_thread_error(
-      "resource providers must be registered before map creation"
-    );
+    set_thread_error("resource provider must be set before map creation");
     return MLN_STATUS_INVALID_STATE;
   }
-  const auto existing = std::ranges::find_if(
-    runtime->resource_providers,
-    [&](const auto& entry) -> bool { return entry.scheme == scheme; }
-  );
-  if (existing != runtime->resource_providers.end()) {
-    set_thread_error("resource provider scheme is already registered");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  runtime->resource_providers.push_back(
-    ResourceProvider{
-      .scheme = scheme,
-      .callback = provider->callback,
-      .user_data = provider->user_data,
-    }
-  );
+  runtime->has_resource_provider = true;
+  runtime->resource_provider = ResourceProvider{
+    .callback = provider->callback,
+    .user_data = provider->user_data,
+  };
   return MLN_STATUS_OK;
 }
 
