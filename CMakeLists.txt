@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 project(maplibre_native_experiments VERSION 0.1.0 LANGUAGES C CXX)
 
