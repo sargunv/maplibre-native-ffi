@@ -105,6 +105,7 @@ add_library(
   src/abi/runtime.cpp
   src/abi/version.cpp
   src/core/diagnostics.cpp
+  src/core/logging.cpp
   src/core/map.cpp
   src/core/runtime.cpp
   src/platform/null_file_source_manager.cpp
