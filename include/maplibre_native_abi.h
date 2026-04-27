@@ -131,17 +131,20 @@ typedef uint32_t (*mln_log_callback)(
 );
 
 /**
- * Installs a process-global MapLibre Native log callback.
+ * Installs a process-global MapLibre Native log callback. Passing a null
+ * callback clears the current callback.
  *
  * Returning a non-zero value from the callback consumes the message. Returning
  * zero lets it fall through to MapLibre Native's platform logger. The callback
  * and user_data must remain valid until the callback is replaced or cleared.
  *
- * The callback may be invoked from MapLibre logging or worker threads depending
- * on the async severity mask. The callback should not call logging
- * configuration APIs.
- *
- * Passing a null callback clears the current callback.
+ * This is a low-level native callback. It may be invoked from MapLibre logging
+ * or worker threads depending on the async severity mask, and it may be invoked
+ * while MapLibre holds internal logging locks. The callback must be
+ * thread-safe, return quickly, and must not call any MapLibre Native API.
+ * Language adapters for runtimes that restrict native-thread callbacks should
+ * marshal records into host-managed logging facilities before invoking user
+ * code.
  *
  * Returns:
  * - MLN_STATUS_OK on success.

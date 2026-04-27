@@ -1,1 +1,5 @@
-{ "editor.formatOnSave": true, "editor.defaultFormatter": "dprint.dprint" }
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "dprint.dprint",
+  "git.detectSubmodules": false
+}

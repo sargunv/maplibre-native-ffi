@@ -286,8 +286,10 @@ mln_status mln_map_rotate_by(mln_map* map,
 mln_status mln_map_cancel_transitions(mln_map* map);
 ```
 
-Do not expose C++ types, STL types, exceptions, callbacks, references,
-templates, or C++ object ownership through the ABI.
+Do not expose C++ types, STL types, exceptions, references, templates, or C++
+object ownership through the ABI. Avoid callbacks in the universal ABI unless a
+callback is explicitly documented as a low-level native callback with strict
+threading, reentrancy, and lifetime rules.
 
 ## Map and Render Targets Are Separate
 
@@ -437,6 +439,13 @@ on an owner thread and must call map/control APIs and runtime pumping APIs from
 that thread. The ABI should not create a hidden map/control thread in the
 initial design. Adapters that want a threaded model can build one above the C
 ABI.
+
+Process-global native callbacks, such as the low-level log callback, are an
+explicit exception to the host-pumped model. They may run on MapLibre logging or
+worker threads and must not call back into the ABI or MapLibre Native. Language
+adapters should translate these callbacks into host-appropriate logging models,
+for example by queueing records onto a runtime-owned executor before invoking
+user code.
 
 ## RendererFrontend Model
 
@@ -749,7 +758,9 @@ Error strings are diagnostic only and must not be parsed by adapters.
 ## Safety Invariants
 
 - No C++ exceptions cross the C ABI.
-- No host-language callback is invoked directly from arbitrary native threads.
+- Host-language callbacks are not invoked directly from arbitrary native
+  threads; any low-level native callback exception must be explicitly documented
+  and adapted by higher-level language bindings before reaching user code.
 - Opaque handles have explicit owners and destruction rules.
 - Thread-affine calls validate their owner thread.
 - Rendering and teardown happen only with valid backend/context state where
