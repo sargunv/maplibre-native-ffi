@@ -25,6 +25,13 @@
 - Treat local MapLibre Native behavior as evidence; inspect
   `third_party/maplibre-native` or `MLN_SOURCE_DIR` before guessing.
 
+## Conventions
+
+- Mark every exported `MLN_API` C++ definition `noexcept`; status-returning ABI
+  functions must catch exceptions and convert them to `mln_status`.
+- Keep diagnostics paths non-throwing where practical; fallback diagnostics are
+  better than letting error reporting violate the C ABI boundary.
+
 ## Validation
 
 - Every milestone should add or update a smoke test, example, or automated test

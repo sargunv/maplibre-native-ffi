@@ -4,4 +4,4 @@
 
 #include "maplibre_native_abi.h"
 
-auto mln_abi_version(void) -> std::uint32_t { return 0; }
+auto mln_abi_version(void) noexcept -> std::uint32_t { return 0; }

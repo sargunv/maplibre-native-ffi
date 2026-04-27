@@ -4,6 +4,6 @@
 
 #include "maplibre_native_abi.h"
 
-auto mln_thread_last_error_message(void) -> const char* {
-  return mln::core::thread_last_error().c_str();
+auto mln_thread_last_error_message(void) noexcept -> const char* {
+  return mln::core::thread_last_error_message();
 }

@@ -92,9 +92,7 @@ The C ABI owns cross-language concerns:
 
 ## Project Structure
 
-This repository should start as a small C/C++ ABI project with Zig smoke tests.
-Keep bindings and toolkit adapters outside the core until the ABI shape is
-proven.
+This structure is representative.
 
 ```text
 include/

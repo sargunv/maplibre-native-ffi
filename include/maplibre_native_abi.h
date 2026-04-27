@@ -20,6 +20,12 @@
 #endif
 
 #ifdef __cplusplus
+#define MLN_NOEXCEPT noexcept
+#else
+#define MLN_NOEXCEPT
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -46,12 +52,12 @@ typedef struct mln_runtime_options {
  * Returns 0 while the ABI is unstable. Stable ABI contract editions use YYYYMM
  * and only change when the ABI contract changes.
  */
-MLN_API uint32_t mln_abi_version(void);
+MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
 
 /**
  * Returns default runtime options with the ABI size field populated.
  */
-MLN_API mln_runtime_options mln_runtime_options_default(void);
+MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
 
 /**
  * Returns the last thread-local diagnostic message, or an empty string.
@@ -59,7 +65,7 @@ MLN_API mln_runtime_options mln_runtime_options_default(void);
  * The returned pointer is owned by the ABI and remains valid until the next ABI
  * call on the same thread that writes a thread-local diagnostic.
  */
-MLN_API const char* mln_thread_last_error_message(void);
+MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
 /**
  * Creates a runtime handle on the calling thread.
@@ -76,7 +82,7 @@ MLN_API const char* mln_thread_last_error_message(void);
  */
 MLN_API mln_status mln_runtime_create(
   const mln_runtime_options* options, mln_runtime** out_runtime
-);
+) MLN_NOEXCEPT;
 
 /**
  * Destroys a runtime handle.
@@ -89,7 +95,7 @@ MLN_API mln_status mln_runtime_create(
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime);
+MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
 
 #ifdef __cplusplus
 }

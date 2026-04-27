@@ -7,13 +7,13 @@
 #include "core/diagnostics.hpp"
 #include "maplibre_native_abi.h"
 
-auto mln_runtime_options_default(void) -> mln_runtime_options {
+auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
   return mln_runtime_options{.size = sizeof(mln_runtime_options), .flags = 0};
 }
 
 auto mln_runtime_create(
   const mln_runtime_options* options, mln_runtime** out_runtime
-) -> mln_status {
+) noexcept -> mln_status {
   try {
     return mln::core::create_runtime(options, out_runtime);
   } catch (const std::exception& exception) {
@@ -25,7 +25,7 @@ auto mln_runtime_create(
   }
 }
 
-auto mln_runtime_destroy(mln_runtime* runtime) -> mln_status {
+auto mln_runtime_destroy(mln_runtime* runtime) noexcept -> mln_status {
   try {
     return mln::core::destroy_runtime(runtime);
   } catch (const std::exception& exception) {

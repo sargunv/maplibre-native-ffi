@@ -1,12 +1,13 @@
-#include "core/runtime.hpp"
-
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 
+#include "core/runtime.hpp"
+
 #include "core/diagnostics.hpp"
+#include "maplibre_native_abi.h"
 
 namespace {
 using RuntimeRegistry =
@@ -22,7 +23,8 @@ auto runtime_registry() -> RuntimeRegistry& {
   return value;
 }
 
-auto validate_runtime_options(const mln_runtime_options* options) -> mln_status {
+auto validate_runtime_options(const mln_runtime_options* options)
+  -> mln_status {
   if (options == nullptr) {
     return MLN_STATUS_OK;
   }
