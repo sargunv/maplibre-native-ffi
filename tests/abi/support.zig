@@ -57,6 +57,7 @@ pub fn destroyMap(map: *c.mln_map) void {
 
 pub fn suppressLogs() !void {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(0));
+    errdefer restoreLogs();
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_callback(consumeLog, null));
 }
 
