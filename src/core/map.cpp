@@ -517,18 +517,24 @@ auto map_cancel_transitions(mln_map* map) -> mln_status {
   return MLN_STATUS_OK;
 }
 
-auto map_poll_event(mln_map* map, mln_map_event* out_event) -> mln_status {
+auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
+  -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (out_event == nullptr || out_event->size < sizeof(mln_map_event)) {
-    set_thread_error("out_event must not be null and must have a valid size");
+  if (
+    out_event == nullptr || out_has_event == nullptr ||
+    out_event->size < sizeof(mln_map_event)
+  ) {
+    set_thread_error(
+      "out_event and out_has_event must not be null, and out_event must have a "
+      "valid size"
+    );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (!map->events.poll(out_event)) {
-    return MLN_STATUS_ACCEPTED;
-  }
+
+  *out_has_event = map->events.poll(out_event);
   return MLN_STATUS_OK;
 }
 

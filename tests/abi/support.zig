@@ -69,9 +69,10 @@ pub fn drainEvents(map: *c.mln_map) !usize {
     var count: usize = 0;
     while (true) {
         var event = emptyEvent();
-        const status = c.mln_map_poll_event(map, &event);
-        if (status == c.MLN_STATUS_ACCEPTED) break;
+        var has_event = false;
+        const status = c.mln_map_poll_event(map, &event, &has_event);
         try testing.expectEqual(c.MLN_STATUS_OK, status);
+        if (!has_event) break;
         count += 1;
     }
     return count;

@@ -38,9 +38,10 @@ test "malformed style returns failure status and event" {
     var saw_failed_event = false;
     while (true) {
         var event = support.emptyEvent();
-        const status = c.mln_map_poll_event(map, &event);
-        if (status == c.MLN_STATUS_ACCEPTED) break;
+        var has_event = false;
+        const status = c.mln_map_poll_event(map, &event, &has_event);
         try testing.expectEqual(c.MLN_STATUS_OK, status);
+        if (!has_event) break;
         if (event.type == c.MLN_MAP_EVENT_MAP_LOADING_FAILED) {
             saw_failed_event = true;
             break;

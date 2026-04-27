@@ -238,7 +238,6 @@ Use status returns:
 ```c
 typedef enum mln_status {
     MLN_STATUS_OK = 0,
-    MLN_STATUS_ACCEPTED = 1,
     MLN_STATUS_INVALID_ARGUMENT = -1,
     MLN_STATUS_INVALID_STATE = -2,
     MLN_STATUS_WRONG_THREAD = -3,

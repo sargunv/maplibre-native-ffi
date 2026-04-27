@@ -12,19 +12,24 @@ test "event polling reports empty queues" {
     _ = try support.drainEvents(map);
 
     var event = support.emptyEvent();
-    try testing.expectEqual(c.MLN_STATUS_ACCEPTED, c.mln_map_poll_event(map, &event));
+    var has_event = true;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+    try testing.expect(!has_event);
 }
 
-test "event polling rejects invalid output buffers" {
+test "event polling rejects invalid outputs" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, null));
+    var has_event = false;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, null, &has_event));
 
     var event = support.emptyEvent();
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event, null));
+
     event.size = @sizeOf(c.mln_map_event) - 1;
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event, &has_event));
 }

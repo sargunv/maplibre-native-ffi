@@ -78,9 +78,10 @@ pub fn main() !void {
     var saw_event = false;
     while (true) {
         var event: c.mln_map_event = .{ .size = @sizeOf(c.mln_map_event), .type = c.MLN_MAP_EVENT_NONE, .code = 0, .message = [_:0]u8{0} ** 512 };
-        const status = c.mln_map_poll_event(map, &event);
-        if (status == c.MLN_STATUS_ACCEPTED) break;
+        var has_event = false;
+        const status = c.mln_map_poll_event(map, &event, &has_event);
         if (status != c.MLN_STATUS_OK) return error.EventPollFailed;
+        if (!has_event) break;
         saw_event = true;
         std.debug.print("event type={d} code={d} message={s}\n", .{ event.type, event.code, std.mem.sliceTo(&event.message, 0) });
     }

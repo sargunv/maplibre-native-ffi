@@ -22,6 +22,7 @@ auto map_rotate_by(
 ) -> mln_status;
 auto map_pitch_by(mln_map* map, double pitch) -> mln_status;
 auto map_cancel_transitions(mln_map* map) -> mln_status;
-auto map_poll_event(mln_map* map, mln_map_event* out_event) -> mln_status;
+auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
+  -> mln_status;
 
 }  // namespace mln::core

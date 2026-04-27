@@ -7,6 +7,9 @@
 // NOLINTBEGIN(modernize-use-using)
 // NOLINTBEGIN(readability-uppercase-literal-suffix)
 
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,7 +39,7 @@ extern "C" {
  * All functions are memory-safe to call from any thread. Functions that operate
  * on thread-affine handles validate the caller thread and return
  * MLN_STATUS_WRONG_THREAD rather than causing undefined behavior. Functions
- * without an explicit owner-thread requirement are callable from any thread.
+ * without an explicit owner-thread requirement may be called from any thread.
  *
  * Status-returning functions clear thread-local diagnostics on entry. When a
  * synchronous failure status is returned, callers should read
@@ -48,9 +51,6 @@ extern "C" {
 
 typedef enum mln_status {
   MLN_STATUS_OK = 0,
-  /** Operation was accepted, or no item was available for non-blocking poll
-     APIs. */
-  MLN_STATUS_ACCEPTED = 1,
   /** A pointer, size field, mask, or handle argument was invalid. */
   MLN_STATUS_INVALID_ARGUMENT = -1,
   /** The object is valid but not currently in a state that permits the call. */
@@ -77,8 +77,6 @@ typedef struct mln_map mln_map;
  *
  * Returns 0 while the ABI is unstable. Stable ABI contract editions use YYYYMM
  * and only change when the ABI contract changes.
- *
- * Threading: callable from any thread.
  */
 MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
 
@@ -87,8 +85,6 @@ MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
  *
  * The returned pointer is owned by the ABI and remains valid until the next ABI
  * call on the same thread that writes a thread-local diagnostic.
- *
- * Threading: callable from any thread. Diagnostics are thread-local.
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
@@ -151,9 +147,9 @@ typedef uint32_t (*mln_log_callback)(
  * zero lets it fall through to MapLibre Native's platform logger. The callback
  * and user_data must remain valid until the callback is replaced or cleared.
  *
- * Threading: callable from any thread. The callback may be invoked from
- * MapLibre logging or worker threads depending on the async severity mask. The
- * callback should not call logging configuration APIs.
+ * The callback may be invoked from MapLibre logging or worker threads depending
+ * on the async severity mask. The callback should not call logging
+ * configuration APIs.
  *
  * Passing a null callback clears the current callback.
  *
@@ -167,8 +163,6 @@ mln_log_set_callback(mln_log_callback callback, void* user_data) MLN_NOEXCEPT;
 /**
  * Clears the process-global log callback.
  *
- * Threading: callable from any thread.
- *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -180,8 +174,6 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  *
  * Pass MLN_LOG_SEVERITY_MASK_DEFAULT to restore MapLibre Native's default of
  * asynchronous debug/info/warning logs and synchronous error logs.
- *
- * Threading: callable from any thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -201,20 +193,11 @@ typedef struct mln_runtime_options {
 
 /**
  * Returns default runtime options with the ABI size field populated.
- *
- * Threading: callable from any thread.
  */
 MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
 
 /**
- * Creates a runtime handle on the calling thread.
- *
- * The options pointer may be null. When non-null, options->size must be at
- * least sizeof(mln_runtime_options). The created runtime must be destroyed on
- * the same thread.
- *
- * Threading: callable from any thread. The calling thread becomes the runtime
- * owner thread on success.
+ * Creates a runtime handle.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -229,11 +212,6 @@ MLN_API mln_status mln_runtime_create(
 /**
  * Destroys a runtime handle.
  *
- * The runtime must not own live maps.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the runtime owner thread.
- *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not a live runtime
@@ -247,9 +225,6 @@ MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
 
 /**
  * Runs one pending owner-thread task for this runtime/map thread, if any.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the runtime owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -317,29 +292,18 @@ typedef struct mln_map_event {
 
 /**
  * Returns default map options with the ABI size field populated.
- *
- * Threading: callable from any thread.
  */
 MLN_API mln_map_options mln_map_options_default(void) MLN_NOEXCEPT;
 
 /**
  * Returns default empty camera options with the ABI size field populated.
- *
- * Threading: callable from any thread.
  */
 MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
 
 /**
  * Creates a map handle on the runtime owner thread.
  *
- * The options pointer may be null. When non-null, options->size must be at
- * least sizeof(mln_map_options), width and height must be positive, and
- * scale_factor must be positive and finite. The out_map pointer must point to a
- * null handle.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the runtime owner thread. The calling thread becomes the map
- * owner thread on success.
+ * On success, the runtime owner thread becomes the map owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -356,9 +320,6 @@ MLN_API mln_status mln_map_create(
 /**
  * Destroys a map handle on its owner thread.
  *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
- *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not a live map handle.
@@ -374,9 +335,6 @@ MLN_API mln_status mln_map_destroy(mln_map* map) MLN_NOEXCEPT;
  * Completion may be represented by the return status and later map events.
  * Synchronous failures are reported through status and thread-local
  * diagnostics; asynchronous native failures are reported through map events.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK when the load request was accepted.
@@ -396,9 +354,6 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
  * Malformed JSON can fail synchronously with diagnostics and a loading-failed
  * event.
  *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
- *
  * Returns:
  * - MLN_STATUS_OK when the load request was accepted.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null, not live, or json is null.
@@ -413,11 +368,7 @@ mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
 /**
  * Returns the current camera snapshot.
  *
- * The out_camera pointer must not be null and out_camera->size must be at least
- * sizeof(mln_camera_options). On success, *out_camera is overwritten.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
+ * On success, *out_camera is overwritten.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -433,11 +384,7 @@ mln_map_get_camera(mln_map* map, mln_camera_options* out_camera) MLN_NOEXCEPT;
 /**
  * Applies a camera jump command.
  *
- * The camera pointer must not be null and camera->size must be at least
- * sizeof(mln_camera_options). Only fields indicated by camera->fields are used.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
+ * Only fields indicated by camera->fields are used.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -452,9 +399,6 @@ mln_map_jump_to(mln_map* map, const mln_camera_options* camera) MLN_NOEXCEPT;
 
 /**
  * Applies a screen-space pan command.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -471,9 +415,6 @@ mln_map_move_by(mln_map* map, double delta_x, double delta_y) MLN_NOEXCEPT;
  *
  * The anchor pointer may be null.
  *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
- *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
@@ -487,9 +428,6 @@ MLN_API mln_status mln_map_scale_by(
 
 /**
  * Applies a screen-space rotate command.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -505,9 +443,6 @@ MLN_API mln_status mln_map_rotate_by(
 /**
  * Applies a pitch delta command.
  *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
- *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
@@ -519,9 +454,6 @@ MLN_API mln_status mln_map_pitch_by(mln_map* map, double pitch) MLN_NOEXCEPT;
 
 /**
  * Cancels active camera transitions.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -535,24 +467,22 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 /**
  * Pops the next queued map event.
  *
- * The out_event pointer must not be null and out_event->size must be at least
- * sizeof(mln_map_event). On success, *out_event is overwritten. Event message
- * storage is copied into out_event and remains valid after later ABI calls.
- *
- * Threading: callable from any thread. Returns MLN_STATUS_WRONG_THREAD unless
- * called from the map owner thread.
+ * On success, *out_has_event is set to whether an event was available. When an
+ * event is available, *out_event is overwritten. Event message storage is
+ * copied into out_event and remains valid after later ABI calls.
  *
  * Returns:
- * - MLN_STATUS_OK when an event was written to out_event.
- * - MLN_STATUS_ACCEPTED when the event queue is empty.
+ * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an
+ *   event was written to out_event.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, out_event is
- *   null, or out_event->size is too small.
+ *   null, out_has_event is null, or out_event->size is too small.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status
-mln_map_poll_event(mln_map* map, mln_map_event* out_event) MLN_NOEXCEPT;
+MLN_API mln_status mln_map_poll_event(
+  mln_map* map, mln_map_event* out_event, bool* out_has_event
+) MLN_NOEXCEPT;
 
 #pragma endregion
 

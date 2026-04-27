@@ -5,7 +5,8 @@ const c = support.c;
 
 fn pollMapOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
     var event = support.emptyEvent();
-    out_status.* = c.mln_map_poll_event(map, &event);
+    var has_event = false;
+    out_status.* = c.mln_map_poll_event(map, &event, &has_event);
 }
 
 test "map exposes default options" {
