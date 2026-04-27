@@ -73,9 +73,9 @@ Acceptance evidence:
   and reject non-live runtime handles.
 - `mln_runtime_destroy` enforces owner-thread destruction for the runtime
   handle.
-- `examples/zig-hello/main.zig` imports the public header with `@cImport`, calls
-  `mln_runtime_create`/`mln_runtime_destroy`, and verifies a documented invalid
-  argument result.
+- `examples/zig-headless/main.zig` imports the public header with `@cImport`,
+  calls `mln_runtime_create`/`mln_runtime_destroy`, and verifies a documented
+  invalid argument result.
 - `/Users/sargunv/.local/share/mise/installs/cmake/3.31.6/cmake-3.31.6-macos-universal/CMake.app/Contents/bin/cmake --build build`
   builds `maplibre_native_abi` on macOS.
 - `zig build run` prints the ABI version and completes the runtime lifecycle

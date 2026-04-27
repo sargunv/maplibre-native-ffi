@@ -102,18 +102,32 @@ include/
 
 src/
   abi/
+    version.cpp
+    diagnostics.cpp
     runtime.cpp
     map.cpp
+    style.cpp
+    camera.cpp
+    events.cpp
     texture.cpp
     surface.cpp
-    events.cpp
-    errors.cpp
-  cpp/
-    map_runtime.hpp/.cpp
+  core/
+    diagnostics.hpp/.cpp
+    runtime.hpp/.cpp
+    map.hpp/.cpp
+    handle_registry.hpp/.cpp
+    event_queue.hpp/.cpp
     map_observer.hpp/.cpp
     renderer_frontend.hpp/.cpp
-    metal_texture_target.hpp/.mm
-    vulkan_texture_target.hpp/.cpp
+  render/
+    texture_session.hpp/.cpp
+    surface_session.hpp/.cpp
+    metal/
+      metal_texture_session.hpp/.mm
+    vulkan/
+      vulkan_texture_session.hpp/.cpp
+  platform/
+    darwin/
 
 examples/
   zig-headless/
@@ -137,11 +151,22 @@ functions.
 
 `src/abi` implements exported C functions and performs ABI validation: null
 checks, struct-size checks, state checks, thread checks, error conversion, and
-handle lookup.
+calls into implementation objects. Files in this directory should stay thin:
+they are the no-exception C boundary, not the owner of MapLibre Native concepts.
 
-`src/cpp` owns MapLibre Native C++ integration: `mbgl::Map`, `RunLoop`, observer
-subclasses, renderer frontend, texture targets, surface targets, exception
-containment, and conversions between ABI structs and C++ types.
+`src/core` owns C++ state that is independent of a concrete render backend:
+runtime and map handles, handle registries, diagnostics, event queues,
+`mbgl::Map`, `RunLoop`, observer subclasses, the long-lived renderer frontend,
+and conversions between ABI structs and C++ types.
+
+`src/render` owns render target sessions and backend-bound renderer resources.
+Common texture/surface lifecycle code lives directly under `src/render`;
+concrete graphics integrations live in backend subdirectories such as
+`src/render/metal` and `src/render/vulkan`.
+
+`src/platform` is reserved for wrapper-owned platform glue when needed. Directly
+linked MapLibre Native platform support sources may remain in the build files
+until there is local wrapper code worth organizing here.
 
 `examples/zig-headless` validates the C header with `@cImport` and exercises
 runtime/map/event lifecycle without depending on a UI toolkit.

@@ -72,7 +72,11 @@ endif()
 add_library(
   maplibre_native_abi
   SHARED
-  src/abi/hello.cpp
+  src/abi/diagnostics.cpp
+  src/abi/runtime.cpp
+  src/abi/version.cpp
+  src/core/diagnostics.cpp
+  src/core/runtime.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
 add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)
@@ -82,7 +86,10 @@ target_include_directories(
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-  PRIVATE ${MLN_SOURCE_DIR}/src ${MLN_SOURCE_DIR}/platform/default/include
+  PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${MLN_SOURCE_DIR}/src
+    ${MLN_SOURCE_DIR}/platform/default/include
 )
 
 target_link_libraries(

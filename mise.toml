@@ -29,14 +29,14 @@ run = [
   "cmake --build build --parallel",
 ]
 
-[tasks."build:hello"]
-description = "Build hello-world Zig example"
+[tasks."build:headless"]
+description = "Build headless Zig smoke example"
 depends = ["build"]
 run = "zig build"
 
-[tasks."run:hello"]
-description = "Run hello-world Zig example"
-depends = ["build:hello"]
+[tasks."run:headless"]
+description = "Run headless Zig smoke example"
+depends = ["build:headless"]
 run = "zig build run"
 
 [tasks.check]
