@@ -2,15 +2,31 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
+#include <mbgl/storage/resource_options.hpp>
 #include <mbgl/util/run_loop.hpp>
 
 #include "maplibre_native_abi.h"
 
+namespace mln::core {
+
+struct ResourceProvider {
+  std::string scheme;
+  mln_resource_provider_callback callback = nullptr;
+  void* user_data = nullptr;
+};
+
+}  // namespace mln::core
+
 struct mln_runtime {
   std::thread::id owner_thread;
   std::unique_ptr<mbgl::util::RunLoop> run_loop;
+  std::string asset_path;
+  std::string cache_path;
+  std::vector<mln::core::ResourceProvider> resource_providers;
   std::size_t live_maps = 0;
 };
 
@@ -21,8 +37,15 @@ auto create_runtime(
 ) -> mln_status;
 auto destroy_runtime(mln_runtime* runtime) -> mln_status;
 auto run_runtime_once(mln_runtime* runtime) -> mln_status;
+auto register_resource_provider(
+  mln_runtime* runtime, const mln_resource_provider* provider
+) -> mln_status;
 auto retain_runtime_map(mln_runtime* runtime) -> mln_status;
 auto release_runtime_map(mln_runtime* runtime) noexcept -> void;
 auto validate_runtime(mln_runtime* runtime) -> mln_status;
+auto resource_options_for_runtime(mln_runtime* runtime)
+  -> mbgl::ResourceOptions;
+auto find_runtime_for_platform_context(void* platform_context) noexcept
+  -> mln_runtime*;
 
 }  // namespace mln::core

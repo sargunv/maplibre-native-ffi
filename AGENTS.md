@@ -32,6 +32,9 @@
 
 - Keep `include/maplibre_native_abi.h` as the public product boundary.
 - Keep implementation-only helpers out of the public header.
+- The ABI is currently unstable (`mln_abi_version() == 0`); do not add
+  backward-compatibility shims for changed structs or functions unless
+  explicitly requested.
 - Mark every exported `MLN_API` C++ definition `noexcept`; status-returning ABI
   functions must catch exceptions and convert them to `mln_status`.
 - Keep diagnostics paths non-throwing where practical; fallback diagnostics are

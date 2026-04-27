@@ -4,7 +4,7 @@ const c = @cImport({
     @cInclude("maplibre_native_abi.h");
 });
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     std.debug.print("ABI version: {d}\n", .{c.mln_abi_version()});
 
     var runtime: ?*c.mln_runtime = null;
@@ -55,7 +55,13 @@ pub fn main() !void {
         \\}
     ;
 
-    if (c.mln_map_set_style_json(map_handle, style_json) != c.MLN_STATUS_OK) {
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = ".zig-cache/headless-style.json", .data = style_json });
+    const cwd = try std.process.currentPathAlloc(init.io, init.gpa);
+    defer init.gpa.free(cwd);
+    const style_url = try std.fmt.allocPrintSentinel(init.gpa, "file://{s}/.zig-cache/headless-style.json", .{cwd}, 0);
+    defer init.gpa.free(style_url);
+
+    if (c.mln_map_set_style_url(map_handle, style_url) != c.MLN_STATUS_OK) {
         std.debug.print("style load failed: {s}\n", .{std.mem.span(c.mln_thread_last_error_message())});
         return error.StyleLoadFailed;
     }

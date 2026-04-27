@@ -64,7 +64,7 @@ test "style functions reject null inputs" {
     try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
 }
 
-test "style URL reports current null resource provider failure" {
+test "unsupported style URL is accepted then emits failure event" {
     try support.suppressLogs();
     defer support.restoreLogs();
 
@@ -74,6 +74,6 @@ test "style URL reports current null resource provider failure" {
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    try testing.expectEqual(c.MLN_STATUS_NATIVE_ERROR, c.mln_map_set_style_url(map, "file:///tmp/missing-style.json"));
-    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "unsupported://style.json"));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_MAP_LOADING_FAILED));
 }

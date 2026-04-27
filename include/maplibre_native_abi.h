@@ -175,7 +175,41 @@ MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
 typedef struct mln_runtime_options {
   uint32_t size;
   uint32_t flags;
+  /** Filesystem root used to resolve asset:// URLs. Copied during create. */
+  const char* asset_path;
+  /** Cache database path forwarded to MapLibre options. Copied during create.
+   */
+  const char* cache_path;
 } mln_runtime_options;
+
+typedef struct mln_resource_provider_response {
+  uint32_t size;
+  /** Success bytes. May be null only when byte_count is 0. */
+  const uint8_t* bytes;
+  size_t byte_count;
+  /** Optional failure message; non-null means the request failed. */
+  const char* error_message;
+} mln_resource_provider_response;
+
+/**
+ * Handles a custom-scheme resource request.
+ *
+ * Return MLN_STATUS_OK with bytes/byte_count set for success. Return
+ * MLN_STATUS_OK with error_message set, or return any non-OK status, for
+ * failure. url and out_response are valid only during the callback and must not
+ * be retained. out_response is non-null and preinitialized by the ABI. bytes
+ * and error_message must remain valid until the callback returns.
+ */
+typedef mln_status (*mln_resource_provider_callback)(
+  void* user_data, const char* url, mln_resource_provider_response* out_response
+);
+
+typedef struct mln_resource_provider {
+  uint32_t size;
+  const char* scheme;
+  mln_resource_provider_callback callback;
+  void* user_data;
+} mln_resource_provider;
 
 /**
  * Returns default runtime options with the ABI size field populated.
@@ -195,6 +229,31 @@ MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
  */
 MLN_API mln_status mln_runtime_create(
   const mln_runtime_options* options, mln_runtime** out_runtime
+) MLN_NOEXCEPT;
+
+/**
+ * Registers a runtime-scoped custom URL scheme provider.
+ *
+ * Providers must be registered before any map is created from the runtime. The
+ * scheme must start with an ASCII letter and contain only ASCII letters,
+ * digits, '+', '-', or '.'. Scheme matching is case-insensitive. The scheme
+ * must not be one of the built-in schemes: file, asset, http, https, mbtiles,
+ * or pmtiles. Provider callbacks are invoked synchronously from the runtime
+ * owner thread while the runtime is pumped. The callback and user_data must
+ * remain valid until the runtime is destroyed.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, provider is
+ *   null, provider->size is too small, scheme is invalid or reserved, callback
+ *   is null, or the scheme is already registered.
+ * - MLN_STATUS_INVALID_STATE when runtime already owns live maps.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_runtime_register_resource_provider(
+  mln_runtime* runtime, const mln_resource_provider* provider
 ) MLN_NOEXCEPT;
 
 /**

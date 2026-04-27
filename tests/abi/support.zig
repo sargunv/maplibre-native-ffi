@@ -5,6 +5,8 @@ pub const c = @cImport({
     @cInclude("maplibre_native_abi.h");
 });
 
+extern fn usleep(useconds: c_uint) c_int;
+
 fn consumeLog(_: ?*anyopaque, _: u32, _: u32, _: i64, _: [*c]const u8) callconv(.c) u32 {
     return 1;
 }
@@ -77,6 +79,21 @@ pub fn drainEvents(map: *c.mln_map) !usize {
         count += 1;
     }
     return count;
+}
+
+pub fn waitForEvent(runtime: *c.mln_runtime, map: *c.mln_map, event_type: u32) !bool {
+    for (0..1000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+        while (true) {
+            var event = emptyEvent();
+            var has_event = false;
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+            if (!has_event) break;
+            if (event.type == event_type) return true;
+        }
+        _ = usleep(1000);
+    }
+    return false;
 }
 
 pub fn emptyEvent() c.mln_map_event {

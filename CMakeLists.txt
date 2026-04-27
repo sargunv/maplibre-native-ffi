@@ -50,6 +50,10 @@ set(
   ${MLN_SOURCE_DIR}/platform/qt/src/mbgl/bidi.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/gfx/headless_backend.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/layermanager/layer_manager.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/asset_file_source.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_request.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_request.cpp
+  ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_source.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/utf.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/background_layer_factory.cpp
   ${MLN_SOURCE_DIR}/src/mbgl/layermanager/circle_layer_factory.cpp
@@ -105,10 +109,13 @@ add_library(
   src/abi/runtime.cpp
   src/abi/version.cpp
   src/core/diagnostics.cpp
+  src/core/custom_resource_provider.cpp
   src/core/logging.cpp
   src/core/map.cpp
+  src/core/resource_loader.cpp
+  src/core/resource_scheme.cpp
   src/core/runtime.cpp
-  src/platform/null_file_source_manager.cpp
+  src/platform/abi_file_source_manager.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
 add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)

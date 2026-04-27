@@ -21,7 +21,6 @@
 #include <mbgl/map/mode.hpp>
 #include <mbgl/renderer/renderer_frontend.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/storage/resource_options.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/size.hpp>
@@ -395,7 +394,7 @@ auto create_map(
     .withPixelRatio(static_cast<float>(effective.scale_factor));
   owned_map->map = std::make_unique<mbgl::Map>(
     *owned_map->frontend, *owned_map->observer, map_options,
-    mbgl::ResourceOptions::Default()
+    resource_options_for_runtime(runtime)
   );
 
   auto* handle = owned_map.get();

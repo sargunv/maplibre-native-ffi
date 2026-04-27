@@ -135,11 +135,10 @@ Acceptance evidence:
 - `zig build run` prints ABI/map events and completes the headless map lifecycle
   demo without deliberate failure calls.
 
-Remaining risk:
+Follow-up:
 
-- Style URL loading currently reports a native style-load failure because the M2
-  wrapper links a null `FileSourceManager`; full resource-provider wiring
-  remains part of the resource-loading/cache slice.
+- The M2.1 resource slice replaced the temporary null `FileSourceManager` and
+  resolved local style URL loading for file, asset, and custom schemes.
 
 Confidence: This milestone proves ABI shape and map/event plumbing. It does not
 prove GPU rendering, texture synchronization, or UI integration.
@@ -172,7 +171,7 @@ Shared architecture:
 - Add each built-in provider behind explicit ABI options and deterministic
   tests.
 
-### M2.1: Composite Loader, Local Files, and Custom Schemes
+### M2.1: Composite Loader, Local Files, and Custom Schemes Completed
 
 Deliverables:
 
@@ -184,6 +183,31 @@ Deliverables:
   scheme, missing-resource failure, invalid provider registration, and existing
   inline-style behavior.
 - Zig headless smoke loads a visible local style by URL.
+
+Acceptance evidence:
+
+- `FileSourceManager::get()` now returns an ABI-owned manager with a single
+  `FileSourceType::ResourceLoader` factory that constructs the wrapper composite
+  loader.
+- Map creation passes runtime-derived `ResourceOptions` with runtime-unique
+  `platformContext`, `asset_path`, and reserved `cache_path` into MapLibre.
+- The composite loader dispatches `file://` to MapLibre's default local file
+  source, `asset://` to MapLibre's default asset file source, registered custom
+  schemes to runtime-owned ABI callbacks, and unsupported URLs to resource
+  errors.
+- `include/maplibre_native_abi.h` exposes runtime resource options and
+  `mln_runtime_register_resource_provider`; registration rejects invalid,
+  reserved, duplicate, null-callback, and post-map providers.
+- `tests/abi/resources.zig` covers successful `file://`, successful `asset://`,
+  successful custom scheme, missing file failure, invalid provider registration,
+  and post-map registration rejection. Existing inline style tests continue to
+  pass.
+- `examples/zig-headless/main.zig` writes a visible local style and loads it by
+  `file://` URL through the C ABI.
+- `cmake --build build --target maplibre_native_abi --parallel 4` builds the
+  wrapper library.
+- `zig build test --summary all` reports 34/34 ABI tests passed.
+- `zig build run` completes the headless local-style URL smoke.
 
 Out of scope:
 

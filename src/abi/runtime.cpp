@@ -6,7 +6,12 @@
 #include "maplibre_native_abi.h"
 
 auto mln_runtime_options_default(void) noexcept -> mln_runtime_options {
-  return mln_runtime_options{.size = sizeof(mln_runtime_options), .flags = 0};
+  return mln_runtime_options{
+    .size = sizeof(mln_runtime_options),
+    .flags = 0,
+    .asset_path = nullptr,
+    .cache_path = nullptr,
+  };
 }
 
 auto mln_runtime_create(
@@ -14,6 +19,14 @@ auto mln_runtime_create(
 ) noexcept -> mln_status {
   return mln::abi::status_boundary([&]() -> mln_status {
     return mln::core::create_runtime(options, out_runtime);
+  });
+}
+
+auto mln_runtime_register_resource_provider(
+  mln_runtime* runtime, const mln_resource_provider* provider
+) noexcept -> mln_status {
+  return mln::abi::status_boundary([&]() -> mln_status {
+    return mln::core::register_resource_provider(runtime, provider);
   });
 }
 

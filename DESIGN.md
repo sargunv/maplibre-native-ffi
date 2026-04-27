@@ -116,6 +116,9 @@ src/
     handle_registry.hpp/.cpp
     event_queue.hpp/.cpp
     map_observer.hpp/.cpp
+    resource_loader.hpp/.cpp
+    custom_resource_provider.hpp/.cpp
+    resource_scheme.hpp/.cpp
     renderer_frontend.hpp/.cpp
   render/
     texture_session.hpp/.cpp
@@ -155,16 +158,20 @@ they are the no-exception C boundary, not the owner of MapLibre Native concepts.
 `src/core` owns C++ state that is independent of a concrete render backend:
 runtime and map handles, handle registries, diagnostics, event queues, the
 runtime-owned `RunLoop`, `mbgl::Map`, observer subclasses, the long-lived
-renderer frontend, and conversions between ABI structs and C++ types.
+renderer frontend, resource-loader dispatch and custom provider invocation, and
+conversions between ABI structs and C++ types.
 
 `src/render` owns render target sessions and backend-bound renderer resources.
 Common texture/surface lifecycle code lives directly under `src/render`;
 concrete graphics integrations live in backend subdirectories such as
 `src/render/metal` and `src/render/vulkan`.
 
-`src/platform` is reserved for wrapper-owned platform glue when needed. Directly
-linked MapLibre Native platform support sources may remain in the build files
-until there is local wrapper code worth organizing here.
+`src/platform` is reserved for wrapper-owned platform glue when needed, such as
+MapLibre Native platform entry points and host-specific adapters. Runtime-owned
+resource policy stays in `src/core`; platform files should only bridge
+MapLibre's platform seams to core implementations. Directly linked MapLibre
+Native platform support sources may remain in the build files until there is
+local wrapper code worth organizing here.
 
 `examples/zig-headless` validates the C header with `@cImport` and exercises
 runtime/map/event lifecycle without depending on a UI toolkit.
@@ -670,6 +677,11 @@ a host-backed custom provider path for registered URL schemes that are not plain
 files (for example, APK assets or application-specific bundled resources).
 Network, ambient cache policy, offline regions, and resource transforms remain
 separate decisions.
+
+The MapLibre `FileSourceManager::get()` hook is platform glue, but the composite
+resource loader, scheme rules, runtime lookup, and custom provider callback
+machinery are core runtime behavior. Keep platform-owned files thin and route
+them to `src/core` factories.
 
 Expose native-backed `ResourceOptions` and `TileServerOptions` concepts through
 runtime-level configuration:
