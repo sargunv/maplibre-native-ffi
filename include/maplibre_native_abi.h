@@ -69,6 +69,7 @@ typedef enum mln_status {
 typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
 typedef struct mln_resource_request_handle mln_resource_request_handle;
+typedef struct mln_texture_session mln_texture_session;
 
 /**
  * Returns the C ABI contract version.
@@ -638,6 +639,7 @@ MLN_API mln_status mln_map_create(
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not a live map handle.
+ * - MLN_STATUS_INVALID_STATE when map still has an attached texture session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -798,6 +800,171 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 MLN_API mln_status mln_map_poll_event(
   mln_map* map, mln_map_event* out_event, bool* out_has_event
 ) MLN_NOEXCEPT;
+
+#pragma endregion
+
+#pragma region Metal texture sessions
+
+typedef struct mln_metal_texture_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. Physical texture width is width *
+   * scale_factor. */
+  uint32_t width;
+  /** Logical map height in UI pixels. Physical texture height is height *
+   * scale_factor. */
+  uint32_t height;
+  double scale_factor;
+} mln_metal_texture_descriptor;
+
+typedef struct mln_metal_texture_frame {
+  uint32_t size;
+  uint64_t generation;
+  /** Physical Metal texture width in device pixels. */
+  uint32_t width;
+  /** Physical Metal texture height in device pixels. */
+  uint32_t height;
+  double scale_factor;
+  /** Opaque frame identity used to reject stale releases. */
+  uint64_t frame_id;
+  /** Borrowed id<MTLTexture> / MTL::Texture*. Valid until release only. */
+  void* texture;
+  /** Borrowed id<MTLDevice> / MTL::Device*. Valid until release only. */
+  void* device;
+  /** Backend-native pixel format value. Metal uses MTLPixelFormat. */
+  uint64_t pixel_format;
+} mln_metal_texture_frame;
+
+/** Returns default Metal texture descriptor values. */
+MLN_API mln_metal_texture_descriptor
+mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Attaches a Metal offscreen texture render target to a map.
+ *
+ * The map may have at most one live texture session. The session and every
+ * texture-session call are owner-thread affine to the map owner thread. The
+ * wrapper owns the Metal backend/device used by MapLibre's headless renderer.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_texture is null, or *out_texture is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a texture session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_attach(
+  mln_map* map, const mln_metal_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) MLN_NOEXCEPT;
+
+/**
+ * Resizes a Metal texture session and advances its generation.
+ *
+ * Width and height are logical map dimensions. The session renders into a
+ * physical Metal texture sized from the logical dimensions and scale_factor.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, dimensions
+ *   are zero, or scale_factor is not positive and finite.
+ * - MLN_STATUS_INVALID_STATE when the session is detached or a frame is
+ *   currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_resize(
+  mln_texture_session* texture, uint32_t width, uint32_t height,
+  double scale_factor
+) MLN_NOEXCEPT;
+
+/**
+ * Renders the latest map update into the offscreen Metal texture.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
+ * - MLN_STATUS_INVALID_STATE when no render update is available, the session is
+ *   detached, or a frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
+
+/**
+ * Acquires the most recently rendered Metal texture frame.
+ *
+ * The returned texture and device pointers are borrowed and remain valid only
+ * until mln_texture_release_frame is called for the same frame. While acquired,
+ * resize, render, detach, destroy, and a second acquire return
+ * MLN_STATUS_INVALID_STATE.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, out_frame is
+ *   null, or out_frame->size is too small.
+ * - MLN_STATUS_INVALID_STATE when no rendered frame is available, the session
+ * is detached, or another frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_acquire_frame(
+  mln_texture_session* texture, mln_metal_texture_frame* out_frame
+) MLN_NOEXCEPT;
+
+/**
+ * Releases a previously acquired Metal texture frame.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
+ * null, frame->size is too small, or the frame generation does not match the
+ * active acquired frame.
+ * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_release_frame(
+  mln_texture_session* texture, const mln_metal_texture_frame* frame
+) MLN_NOEXCEPT;
+
+/**
+ * Detaches backend-bound Metal resources from the map while keeping the session
+ * handle live for destruction.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
+ * - MLN_STATUS_INVALID_STATE when already detached or a frame is acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_texture_detach(mln_texture_session* texture) MLN_NOEXCEPT;
+
+/**
+ * Destroys a Metal texture session handle.
+ *
+ * If still attached, destroy detaches first. Destroy is rejected while a frame
+ * is acquired so borrowed texture pointers cannot outlive their session.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
+ * - MLN_STATUS_INVALID_STATE when a frame is acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_texture_destroy(mln_texture_session* texture) MLN_NOEXCEPT;
 
 #pragma endregion
 

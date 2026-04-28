@@ -42,10 +42,11 @@ Useful deferred items from the foundation:
 Current validation: `mise run fix` and `mise run test` pass with `48/48` ABI
 tests.
 
-## M4: Metal Texture Session
+## M4: Metal Texture Session Core
 
 Goal: Prove the primary rendering model on Apple platforms by rendering MapLibre
-into an offscreen Metal texture and sampling it from a host renderer.
+into an offscreen Metal texture through the C ABI and validating the headless
+texture lifecycle as far as possible before host-window sampling.
 
 Deliverables:
 
@@ -55,21 +56,54 @@ Deliverables:
 - Metal texture descriptor and frame structs.
 - Documented Metal ownership and synchronization contract.
 - Render target generation handling across resize/detach.
-- Minimal host renderer that samples the acquired `MTLTexture`.
+- Headless ABI tests that validate render/acquire/release, owner-thread rules,
+  and stale-frame prevention.
 
 Acceptance:
 
-- A visible local style renders into an offscreen `MTLTexture`.
-- Host Metal code samples the texture into a window.
+- A local style renders into an acquired offscreen `MTLTexture` frame.
+- Headless tests acquire a non-null `MTLTexture`/device pair after render.
 - Resize produces a new generation without use-after-free.
+- Scale-factor changes are accepted by the texture session and surfaced in
+  acquired frame metadata.
 - Acquire/release prevents stale texture use according to documented rules.
 - Detach and destroy release backend-bound resources on the correct thread.
+
+Remaining pre-M5 validation is split into M4.5 because the first texture-session
+slice should validate the C ABI and MapLibre headless Metal path before adding a
+window/input host.
 
 Out of scope:
 
 - Vulkan.
 - Compose, DVUI, or other full UI toolkit integration.
 - CPU readback as a product path.
+
+## M4.5: Minimal Metal Window Sampler
+
+Goal: Complete the visual validation gate for M4 by sampling an acquired
+`MTLTexture` into a host-owned Metal window before starting M5.
+
+Deliverables:
+
+- Minimal macOS Metal host renderer that uses C ABI calls only for MapLibre
+  runtime/map/texture operations.
+- Host sampling of the acquired `MTLTexture` into a window.
+- Resize path that observes generation changes and avoids stale acquired frames.
+- Validation of whether runtime scale-factor changes need an upstream MapLibre
+  `Map::setPixelRatio` API for visually correct output.
+
+Acceptance:
+
+- A local style is visibly rendered in a window from the acquired texture.
+- Host Metal code creates compatible sampling resources from the acquired
+  frame's device.
+- Resize produces visible output from the new generation without stale use.
+
+Out of scope:
+
+- Pointer/scroll/keyboard interaction; that remains M5.
+- Product-quality Zig SDK or full UI toolkit integration.
 
 ## M5: Interactive Zig Map Example
 

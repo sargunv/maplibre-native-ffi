@@ -658,6 +658,37 @@ Design assumptions:
 - The same texture-session concept can later be evaluated for Vulkan, even if
   Vulkan requires different ownership or synchronization details.
 
+Initial M4 contract:
+
+- `mln_texture_session` is attached to one `mln_map` and is owner-thread affine
+  to the map owner thread.
+- The Metal session owns MapLibre's Metal `HeadlessBackend` and `Renderer`; the
+  host does not provide the Metal device or command queue in this first slice.
+- `mln_texture_render` consumes the latest `UpdateParameters` retained by the
+  map's `RendererFrontend`. It returns invalid-state diagnostics until a map
+  update is available.
+- `mln_texture_acquire_frame` returns borrowed `MTLTexture` and `MTLDevice`
+  pointers, plus physical texture width, physical texture height, scale factor,
+  pixel format, and generation. The pointers are valid only until
+  `mln_texture_release_frame`.
+- `mln_texture_resize` accepts runtime scale-factor changes. Width and height
+  are logical map dimensions; the Metal backend texture is sized in physical
+  pixels from `logical * scale_factor`, and the map size remains logical.
+  MapLibre's public `Map` API does not expose a pixel-ratio setter, so M4.5 must
+  validate whether secondary density paths require an upstream
+  `Map::setPixelRatio` addition.
+- Only one frame may be acquired at a time. Render, resize, detach, destroy, and
+  a second acquire fail while a frame is acquired.
+- `mln_map_destroy` rejects maps that still have an attached texture session;
+  callers must destroy or detach texture sessions first so map/control teardown
+  does not depend on render-session implementation details.
+- Resize resets backend-bound resources and increments the texture generation;
+  stale frame releases are rejected by generation checks.
+- Initial synchronization is conservative because MapLibre's Metal offscreen
+  `swap()` commits and waits for its command buffer before the frame is exposed.
+- Windowed host sampling is tracked as M4.5 and must complete before the
+  interactive Zig map example begins.
+
 Risks:
 
 - MapLibre Native may need a small public or wrapper-private accessor for the

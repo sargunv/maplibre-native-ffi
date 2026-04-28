@@ -180,15 +180,25 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
           mbgl::Scheduler::GetBackground(), mbgl::util::SimpleIdentity::Empty
         ) {}
 
-  void reset() override { latest_update_.reset(); }
+  void reset() override {
+    const std::scoped_lock lock(latest_update_mutex_);
+    latest_update_.reset();
+  }
 
   void setObserver(mbgl::RendererObserver& unused_observer) override {
     static_cast<void>(unused_observer);
   }
 
   void update(std::shared_ptr<mbgl::UpdateParameters> update) override {
+    const std::scoped_lock lock(latest_update_mutex_);
     latest_update_ = std::move(update);
     events_->push(MLN_MAP_EVENT_RENDER_INVALIDATED);
+  }
+
+  [[nodiscard]] auto latest_update() const
+    -> std::shared_ptr<mbgl::UpdateParameters> {
+    const std::scoped_lock lock(latest_update_mutex_);
+    return latest_update_;
   }
 
   [[nodiscard]] auto getThreadPool() const
@@ -199,6 +209,7 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
  private:
   EventQueue* events_;
   mbgl::TaggedScheduler thread_pool_;
+  mutable std::mutex latest_update_mutex_;
   std::shared_ptr<mbgl::UpdateParameters> latest_update_;
 };
 
@@ -291,6 +302,7 @@ struct mln_map {
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
   std::unique_ptr<mbgl::Map> map;
+  mln_texture_session* texture_session = nullptr;
 };
 
 namespace mln::core {
@@ -413,6 +425,11 @@ auto destroy_map(mln_map* map) -> mln_status {
     return status;
   }
 
+  if (map->texture_session != nullptr) {
+    set_thread_error("map still has an attached texture session");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
   auto* runtime = map->runtime;
   auto owned_map = std::unique_ptr<mln_map>{};
   {
@@ -423,6 +440,64 @@ auto destroy_map(mln_map* map) -> mln_status {
   }
   owned_map.reset();
   release_runtime_map(runtime);
+  return MLN_STATUS_OK;
+}
+
+auto map_owner_thread(const mln_map* map) -> std::thread::id {
+  if (map == nullptr) {
+    return {};
+  }
+  return map->owner_thread;
+}
+
+auto map_native(mln_map* map) -> mbgl::Map* {
+  if (map == nullptr) {
+    return nullptr;
+  }
+  return map->map.get();
+}
+
+auto map_latest_update(mln_map* map)
+  -> std::shared_ptr<mbgl::UpdateParameters> {
+  if (map == nullptr || map->frontend == nullptr) {
+    return nullptr;
+  }
+  return map->frontend->latest_update();
+}
+
+auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (texture == nullptr) {
+    set_thread_error("texture session must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (map->texture_session != nullptr) {
+    set_thread_error("map already has an attached texture session");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  map->texture_session = texture;
+  return MLN_STATUS_OK;
+}
+
+auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (texture == nullptr) {
+    set_thread_error("texture session must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (map->texture_session != texture) {
+    set_thread_error("texture session is not attached to this map");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  map->texture_session = nullptr;
   return MLN_STATUS_OK;
 }
 

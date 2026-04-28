@@ -96,6 +96,7 @@ if(APPLE)
   enable_language(OBJCXX)
   list(
     APPEND MLN_PLATFORM_SUPPORT_SOURCES
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/mtl/headless_backend.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/async_task.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/collator.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/http_file_source.mm
@@ -115,10 +116,15 @@ if(APPLE)
     "-framework CoreText"
     "-framework Foundation"
     "-framework ImageIO"
+    "-framework Metal"
   )
   set_source_files_properties(
     ${MLN_SOURCE_DIR}/platform/darwin/core/native_apple_interface.m
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+  set_source_files_properties(
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/mtl/headless_backend.cpp
+    PROPERTIES COMPILE_FLAGS "-fno-rtti"
   )
 else()
   message(
@@ -135,6 +141,7 @@ add_library(
   src/abi/map.cpp
   src/abi/network.cpp
   src/abi/runtime.cpp
+  src/abi/texture.cpp
   src/abi/version.cpp
   src/diagnostics/diagnostics.cpp
   src/logging/logging.cpp
@@ -143,6 +150,7 @@ add_library(
   src/resources/file_source_manager.cpp
   src/resources/network_status.cpp
   src/resources/resource_loader.cpp
+  src/render/metal/metal_texture_session.mm
   src/runtime/runtime.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
@@ -167,11 +175,11 @@ target_include_directories(
     ${MLN_SOURCE_DIR}/vendor/icu/include
     ${MLN_SOURCE_DIR}/vendor/PMTiles/cpp
 )
-
 target_link_libraries(
   maplibre_native_abi
   PRIVATE
     Mapbox::Map
+    mbgl-vendor-metal-cpp
     mbgl-vendor-pmtiles
     sqlite3
     z

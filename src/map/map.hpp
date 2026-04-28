@@ -1,6 +1,14 @@
 #pragma once
 
+#include <memory>
+#include <thread>
+
 #include "maplibre_native_abi.h"
+
+namespace mbgl {
+class Map;
+class UpdateParameters;
+}  // namespace mbgl
 
 namespace mln::core {
 
@@ -23,6 +31,14 @@ auto map_rotate_by(
 auto map_pitch_by(mln_map* map, double pitch) -> mln_status;
 auto map_cancel_transitions(mln_map* map) -> mln_status;
 auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
+  -> mln_status;
+auto validate_map(mln_map* map) -> mln_status;
+auto map_owner_thread(const mln_map* map) -> std::thread::id;
+auto map_native(mln_map* map) -> mbgl::Map*;
+auto map_latest_update(mln_map* map) -> std::shared_ptr<mbgl::UpdateParameters>;
+auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
+  -> mln_status;
+auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
   -> mln_status;
 
 }  // namespace mln::core
