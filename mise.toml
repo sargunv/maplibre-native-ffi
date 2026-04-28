@@ -29,8 +29,8 @@ run = [
   "cmake --build build --parallel",
 ]
 
-[tasks."clean:build"]
-description = "Remove generated CMake build directory"
+[tasks.clean]
+description = "Remove generated build outputs"
 run = "rm -rf build"
 
 [tasks.test]
@@ -38,14 +38,9 @@ description = "Run all tests"
 depends = ["build"]
 run = "zig build test --summary all"
 
-[tasks."build:sdl3-map"]
-description = "Build SDL3 Zig map example"
+[tasks."example:zig-map"]
+description = "Run Zig map example"
 depends = ["build"]
-run = "zig build"
-
-[tasks."run:sdl3-map"]
-description = "Run SDL3 Zig map example"
-depends = ["build:sdl3-map"]
 run = "zig build run"
 
 [tasks.check]

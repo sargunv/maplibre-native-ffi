@@ -4,6 +4,7 @@
 
 - `mise run fix` -- run formatters and linters
 - `mise run test` -- build project and run tests
+- `mise run example:zig-map` -- build and run the Zig example map
 
 ## Source Of Truth
 

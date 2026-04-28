@@ -27,7 +27,7 @@ fn cmakeArtifactDir(b: *std.Build) std.Build.LazyPath {
     return b.path(path);
 }
 
-fn addSdl3MapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
+fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     const sdl = b.dependency("sdl", .{
         .target = options.target,
         .optimize = options.optimize,
@@ -38,9 +38,9 @@ fn addSdl3MapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compi
     });
 
     const example = b.addExecutable(.{
-        .name = "zig-sdl3-map",
+        .name = "zig-map",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/zig-sdl3-map/main.zig"),
+            .root_source_file = b.path("examples/zig-map/main.zig"),
             .target = options.target,
             .optimize = options.optimize,
         }),
@@ -76,14 +76,14 @@ pub fn build(b: *std.Build) void {
         .cmake_artifact_dir = cmakeArtifactDir(b),
     };
 
-    const sdl3_map = addSdl3MapExample(b, options);
+    const zig_map = addZigMapExample(b, options);
     const abi_tests = addAbiTests(b, options);
 
-    const run_sdl3_map = b.addRunArtifact(sdl3_map);
-    const run_step = b.step("run", "Run SDL3 Zig map example");
-    run_step.dependOn(&run_sdl3_map.step);
-    const run_sdl3_map_step = b.step("run:sdl3-map", "Run SDL3 Zig map example");
-    run_sdl3_map_step.dependOn(&run_sdl3_map.step);
+    const run_zig_map = b.addRunArtifact(zig_map);
+    const run_step = b.step("run", "Run Zig map example");
+    run_step.dependOn(&run_zig_map.step);
+    const run_zig_map_step = b.step("run:zig-map", "Run Zig map example");
+    run_zig_map_step.dependOn(&run_zig_map.step);
 
     const run_abi_tests = b.addRunArtifact(abi_tests);
     const test_step = b.step("test", "Run Zig ABI tests");

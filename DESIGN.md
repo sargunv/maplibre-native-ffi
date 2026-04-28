@@ -136,7 +136,7 @@ src/
     darwin/  # only if wrapper-owned OS glue becomes necessary
 
 examples/
-  zig-sdl3-map/
+  zig-map/
 
 tests/
   abi/
@@ -175,9 +175,9 @@ resource subsystem. `src/platform` should only be introduced for wrapper-owned
 OS glue that is not already provided by directly linked MapLibre platform
 sources and is not specific to a render backend or UI adapter.
 
-`examples/zig-sdl3-map` validates the primary rendering path from a non-C++
-consumer: import the public C header with `@cImport`, render into an offscreen
-Metal texture, and sample that texture in an SDL3-created native window.
+`examples/zig-map` validates the primary rendering path from a non-C++ consumer:
+import the public C header with `@cImport`, render into an offscreen Metal
+texture, and sample that texture in an SDL3-created native window.
 
 `third_party/maplibre-native` is the initial development source for MapLibre
 Native. Keeping it as a pinned submodule makes it possible to inspect, debug,
