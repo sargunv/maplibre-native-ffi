@@ -79,17 +79,22 @@ Out of scope:
 - Compose, DVUI, or other full UI toolkit integration.
 - CPU readback as a product path.
 
-## M4.5: Minimal Metal Window Sampler
+## M4.5: SDL3 Metal Window Sampler
 
 Goal: Complete the visual validation gate for M4 by sampling an acquired
-`MTLTexture` into a host-owned Metal window before starting M5.
+`MTLTexture` into an SDL3-created native window before starting M5, while
+keeping the host-window and input foundation suitable for the later Vulkan path.
 
 Deliverables:
 
-- Minimal macOS Metal host renderer that uses C ABI calls only for MapLibre
+- Minimal SDL3 desktop host that uses C ABI calls only for MapLibre
   runtime/map/texture operations.
+- macOS Metal host renderer that creates or obtains an SDL3 Metal view/layer and
+  samples the acquired `MTLTexture` into that window.
 - Host sampling of the acquired `MTLTexture` into a window.
 - Resize path that observes generation changes and avoids stale acquired frames.
+- Notes on how much ObjC/Metal glue is example-local versus generally useful for
+  future Zig or other native consumers.
 - Validation of whether runtime scale-factor changes need an upstream MapLibre
   `Map::setPixelRatio` API for visually correct output.
 
@@ -99,11 +104,16 @@ Acceptance:
 - Host Metal code creates compatible sampling resources from the acquired
   frame's device.
 - Resize produces visible output from the new generation without stale use.
+- SDL3 window lifecycle and resize handling remain separated from Metal-specific
+  sampling code so the M5 input shell can evolve toward Vulkan on non-Apple
+  platforms.
 
 Out of scope:
 
 - Pointer/scroll/keyboard interaction; that remains M5.
 - Product-quality Zig SDK or full UI toolkit integration.
+- DVUI integration; it remains the later non-Compose toolkit validation and is
+  not required for the M4.5 sampler.
 
 ## M5: Interactive Zig Map Example
 
@@ -113,7 +123,7 @@ map.
 Deliverables:
 
 - Zig example that imports the C header with `@cImport`.
-- Window/input shell using SDL3 or a tiny native host.
+- Window/input shell using SDL3.
 - Pointer drag, scroll, and keyboard controls translated into ABI camera
   commands.
 - Event drain loop.
@@ -125,6 +135,8 @@ Acceptance:
 - The example uses C ABI calls only; it does not call C++ directly.
 - Rendering remains texture-session based, not direct native-surface rendering.
 - Lifecycle, events, and diagnostics remain visible enough to debug failures.
+- The SDL3 shell keeps backend-specific rendering isolated so Metal on Apple can
+  later be paired with Vulkan on non-Apple platforms.
 
 Out of scope:
 

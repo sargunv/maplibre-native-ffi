@@ -201,6 +201,8 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
     return latest_update_;
   }
 
+  auto run_render_jobs() -> void { thread_pool_.runRenderJobs(); }
+
   [[nodiscard]] auto getThreadPool() const
     -> const mbgl::TaggedScheduler& override {
     return thread_pool_;
@@ -463,6 +465,13 @@ auto map_latest_update(mln_map* map)
     return nullptr;
   }
   return map->frontend->latest_update();
+}
+
+auto map_run_render_jobs(mln_map* map) -> void {
+  if (map == nullptr || map->frontend == nullptr) {
+    return;
+  }
+  map->frontend->run_render_jobs();
 }
 
 auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)

@@ -38,14 +38,14 @@ description = "Run all tests"
 depends = ["build"]
 run = "zig build test --summary all"
 
-[tasks."build:headless"]
-description = "Build headless Zig smoke example"
+[tasks."build:sdl3-map"]
+description = "Build SDL3 Zig map example"
 depends = ["build"]
 run = "zig build"
 
-[tasks."run:headless"]
-description = "Run headless Zig smoke example"
-depends = ["build:headless"]
+[tasks."run:sdl3-map"]
+description = "Run SDL3 Zig map example"
+depends = ["build:sdl3-map"]
 run = "zig build run"
 
 [tasks.check]

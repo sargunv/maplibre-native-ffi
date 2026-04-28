@@ -36,6 +36,7 @@ auto validate_map(mln_map* map) -> mln_status;
 auto map_owner_thread(const mln_map* map) -> std::thread::id;
 auto map_native(mln_map* map) -> mbgl::Map*;
 auto map_latest_update(mln_map* map) -> std::shared_ptr<mbgl::UpdateParameters>;
+auto map_run_render_jobs(mln_map* map) -> void;
 auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
   -> mln_status;
 auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)

@@ -296,6 +296,7 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
   auto guard = mbgl::gfx::BackendScope{
     *texture->backend, mbgl::gfx::BackendScope::ScopeType::Implicit
   };
+  map_run_render_jobs(texture->map);
   if (texture->renderer == nullptr) {
     texture->renderer = std::make_unique<mbgl::Renderer>(
       *texture->backend, static_cast<float>(texture->scale_factor)

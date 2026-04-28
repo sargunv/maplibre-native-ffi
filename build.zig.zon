@@ -1,0 +1,16 @@
+.{
+    .name = .maplibre_native_ffi,
+    .version = "0.16.0",
+    .dependencies = .{
+        .zig_objc = .{
+            .url = "git+https://github.com/mitchellh/zig-objc.git",
+            .hash = "zig_objc-0.0.0-Ir_Sp9gsAQCPAJc0oF5xoWePHWP6Y6tCphDeyNUThJoi",
+        },
+        .sdl = .{
+            .url = "git+https://github.com/allyourcodebase/SDL3.git",
+            .hash = "sdl-1.0.1+3.4.4-i4QD0QyGqQDgZygQmcCsv4heYJ2hxall1DeBJ8yyJndm",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x4a5753fec41abf42,
+}
