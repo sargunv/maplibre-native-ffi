@@ -10,6 +10,8 @@ dprint = "0.53.2"
 cmake = "3.31.6"
 "github:blankspruce/gersemi" = "0.27.2"
 zig = "0.16.0"
+java = "21.0.2"
+gradle = "8.14.3"
 
 [tools."github:llvm/llvm-project"]
 version = "22.1.4"
@@ -42,6 +44,10 @@ run = "zig build test --summary all"
 description = "Run Zig map example"
 depends = ["build"]
 run = "zig build run"
+
+[tasks."example:compose-map"]
+description = "Run Compose map texture demo"
+run = "gradle -p examples/compose-map run"
 
 [tasks.check]
 description = "Run all checks"

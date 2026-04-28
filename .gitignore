@@ -1,4 +1,6 @@
 build*/
+.gradle/
+hs_err_pid*.log
 .zig-cache/
 zig-out/
 zig-pkg/
