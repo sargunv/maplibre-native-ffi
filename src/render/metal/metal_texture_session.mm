@@ -301,6 +301,7 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
     texture->renderer = std::make_unique<mbgl::Renderer>(
       *texture->backend, static_cast<float>(texture->scale_factor)
     );
+    texture->renderer->setObserver(map_renderer_observer(texture->map));
   }
 
   texture->renderer->render(update);

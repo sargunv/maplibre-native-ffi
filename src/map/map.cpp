@@ -20,6 +20,7 @@
 #include <mbgl/map/map_options.hpp>
 #include <mbgl/map/mode.hpp>
 #include <mbgl/renderer/renderer_frontend.hpp>
+#include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/util/geo.hpp>
@@ -185,8 +186,8 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
     latest_update_.reset();
   }
 
-  void setObserver(mbgl::RendererObserver& unused_observer) override {
-    static_cast<void>(unused_observer);
+  void setObserver(mbgl::RendererObserver& observer) override {
+    observer_ = &observer;
   }
 
   void update(std::shared_ptr<mbgl::UpdateParameters> update) override {
@@ -203,6 +204,10 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
 
   auto run_render_jobs() -> void { thread_pool_.runRenderJobs(); }
 
+  [[nodiscard]] auto renderer_observer() const -> mbgl::RendererObserver* {
+    return observer_;
+  }
+
   [[nodiscard]] auto getThreadPool() const
     -> const mbgl::TaggedScheduler& override {
     return thread_pool_;
@@ -210,6 +215,7 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
 
  private:
   EventQueue* events_;
+  mbgl::RendererObserver* observer_ = nullptr;
   mbgl::TaggedScheduler thread_pool_;
   mutable std::mutex latest_update_mutex_;
   std::shared_ptr<mbgl::UpdateParameters> latest_update_;
@@ -465,6 +471,13 @@ auto map_latest_update(mln_map* map)
     return nullptr;
   }
   return map->frontend->latest_update();
+}
+
+auto map_renderer_observer(mln_map* map) -> mbgl::RendererObserver* {
+  if (map == nullptr || map->frontend == nullptr) {
+    return nullptr;
+  }
+  return map->frontend->renderer_observer();
 }
 
 auto map_run_render_jobs(mln_map* map) -> void {
