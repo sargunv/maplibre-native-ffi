@@ -53,7 +53,6 @@ compose.desktop {
 
 tasks.withType<JavaExec>().configureEach {
   dependsOn("compileNativeMetal")
-  systemProperty("skiko.renderApi", System.getProperty("skiko.renderApi") ?: "METAL")
   systemProperty("java.library.path", nativeOutputDir.get().asFile.absolutePath)
 }
 

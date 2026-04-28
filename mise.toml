@@ -47,7 +47,7 @@ run = "zig build run"
 
 [tasks."example:compose-map"]
 description = "Run Compose map texture demo"
-run = "gradle -p examples/compose-map run -Dskiko.renderApi=METAL"
+run = "gradle -p examples/compose-map run"
 
 [tasks.check]
 description = "Run all checks"
