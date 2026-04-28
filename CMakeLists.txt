@@ -119,12 +119,8 @@ if(APPLE)
     "-framework Metal"
   )
   set_source_files_properties(
-    ${MLN_SOURCE_DIR}/platform/darwin/core/native_apple_interface.m
-    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
-  )
-  set_source_files_properties(
     ${MLN_SOURCE_DIR}/platform/default/src/mbgl/mtl/headless_backend.cpp
-    PROPERTIES COMPILE_FLAGS "-fno-rtti"
+    PROPERTIES COMPILE_OPTIONS "-fno-rtti"
   )
 else()
   message(
@@ -184,6 +180,10 @@ target_link_libraries(
     sqlite3
     z
     ${MLN_PLATFORM_SUPPORT_LIBRARIES}
+)
+target_compile_options(
+  maplibre_native_abi
+  PRIVATE $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>
 )
 
 set_target_properties(
