@@ -8,7 +8,7 @@ leaking C++ ownership, exceptions, or threading assumptions.
 
 The design reference is `DESIGN.md`.
 
-## Completed Foundation: M0-M3
+## Completed Foundation: M0-M4
 
 The repository now builds a small C ABI wrapper against pinned MapLibre Native
 sources, with a Zig consumer proving the public header is usable outside C++.
@@ -25,13 +25,20 @@ The implemented foundation includes:
 - ABI contract tests for invalid arguments, stale handles, lifecycle state,
   wrong-thread calls, diagnostics, event draining/copying, resource request
   cancellation, double completion, and cross-thread provider completion.
+- Metal texture sessions with
+  attach/resize/render/acquire/release/detach/destroy, documented borrowed-frame
+  ownership, generation tracking, stale-frame prevention, owner-thread
+  validation, headless ABI coverage, and an SDL3 Zig sampler that imports the
+  public C header, creates a Metal window, samples acquired `MTLTexture` frames
+  using the frame's device, handles resize, and keeps ObjC/Metal host glue
+  example-local.
 
 Useful deferred items from the foundation:
 
 - Public offline-region APIs are deferred until after rendered map requests can
   validate real tile/source downloads.
-- MBTiles/PMTiles registration is present, but visible package rendering remains
-  deferred to M4 because headless tests cannot force tile package requests.
+- MBTiles/PMTiles registration is present, but visible package rendering still
+  needs a dedicated package-backed rendered-map validation path.
 - Custom provider range metadata tests are deferred until a direct resource
   harness or render-driven PMTiles path can force range requests through the
   public ABI.
@@ -39,81 +46,10 @@ Useful deferred items from the foundation:
   returns owned ABI storage.
 - Golden struct layout tests are deferred while `mln_abi_version() == 0`.
 
-Current validation: `mise run fix` and `mise run test` pass with `48/48` ABI
-tests.
-
-## M4: Metal Texture Session Core
-
-Goal: Prove the primary rendering model on Apple platforms by rendering MapLibre
-into an offscreen Metal texture through the C ABI and validating the headless
-texture lifecycle as far as possible before host-window sampling.
-
-Deliverables:
-
-- `mln_texture_attach`, `mln_texture_resize`, `mln_texture_render`,
-  `mln_texture_acquire_frame`, `mln_texture_release_frame`,
-  `mln_texture_detach`, and `mln_texture_destroy` for Metal.
-- Metal texture descriptor and frame structs.
-- Documented Metal ownership and synchronization contract.
-- Render target generation handling across resize/detach.
-- Headless ABI tests that validate render/acquire/release, owner-thread rules,
-  and stale-frame prevention.
-
-Acceptance:
-
-- A local style renders into an acquired offscreen `MTLTexture` frame.
-- Headless tests acquire a non-null `MTLTexture`/device pair after render.
-- Resize produces a new generation without use-after-free.
-- Scale-factor changes are accepted by the texture session and surfaced in
-  acquired frame metadata.
-- Acquire/release prevents stale texture use according to documented rules.
-- Detach and destroy release backend-bound resources on the correct thread.
-
-Remaining pre-M5 validation is split into M4.5 because the first texture-session
-slice should validate the C ABI and MapLibre headless Metal path before adding a
-window/input host.
-
-Out of scope:
-
-- Vulkan.
-- Compose, DVUI, or other full UI toolkit integration.
-- CPU readback as a product path.
-
-## M4.5: SDL3 Metal Window Sampler
-
-Goal: Complete the visual validation gate for M4 by sampling an acquired
-`MTLTexture` into an SDL3-created native window before starting M5, while
-keeping the host-window and input foundation suitable for the later Vulkan path.
-
-Deliverables:
-
-- Minimal SDL3 desktop host that uses C ABI calls only for MapLibre
-  runtime/map/texture operations.
-- macOS Metal host renderer that creates or obtains an SDL3 Metal view/layer and
-  samples the acquired `MTLTexture` into that window.
-- Host sampling of the acquired `MTLTexture` into a window.
-- Resize path that observes generation changes and avoids stale acquired frames.
-- Notes on how much ObjC/Metal glue is example-local versus generally useful for
-  future Zig or other native consumers.
-- Validation of whether runtime scale-factor changes need an upstream MapLibre
-  `Map::setPixelRatio` API for visually correct output.
-
-Acceptance:
-
-- A local style is visibly rendered in a window from the acquired texture.
-- Host Metal code creates compatible sampling resources from the acquired
-  frame's device.
-- Resize produces visible output from the new generation without stale use.
-- SDL3 window lifecycle and resize handling remain separated from Metal-specific
-  sampling code so the M5 input shell can evolve toward Vulkan on non-Apple
-  platforms.
-
-Out of scope:
-
-- Pointer/scroll/keyboard interaction; that remains M5.
-- Product-quality Zig SDK or full UI toolkit integration.
-- DVUI integration; it remains the later non-Compose toolkit validation and is
-  not required for the M4.5 sampler.
+Current validation: `mise run fix` and `mise run test` previously passed through
+the foundation. The ABI suite now includes 54 declared tests, including the M4
+texture-session coverage. `mise run example:zig-map` is the M4 visual sampler
+gate on macOS.
 
 ## M5: Interactive Zig Map Example
 
