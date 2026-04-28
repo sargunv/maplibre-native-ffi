@@ -1,0 +1,314 @@
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Slider
+import androidx.compose.material.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.awt.ComposeWindow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import kotlinx.coroutines.isActive
+import org.jetbrains.skia.BackendRenderTarget
+import org.jetbrains.skia.ContentChangeMode
+import org.jetbrains.skia.DirectContext
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.SamplingMode
+import org.jetbrains.skia.Surface
+import org.jetbrains.skia.SurfaceColorFormat
+import org.jetbrains.skia.SurfaceOrigin
+import org.jetbrains.skiko.SkiaLayer
+import java.awt.Component
+import java.awt.Container
+import kotlin.math.roundToInt
+
+fun main() {
+  application {
+    Window(onCloseRequest = ::exitApplication, title = "Compose GPU Texture PoC") {
+      App(window)
+    }
+  }
+}
+
+@Composable
+private fun App(window: ComposeWindow) {
+  var frame by remember { mutableIntStateOf(0) }
+  val windowReport = remember(window) { ComposeWindowReport.collect(window) }
+  val renderer = remember(window) { ExternalGpuRenderer(windowReport.skiaLayer) }
+  var status by remember { mutableStateOf("Waiting for first Compose canvas") }
+  var alpha by remember { mutableStateOf(1f) }
+  var rotation by remember { mutableStateOf(0f) }
+  var scale by remember { mutableStateOf(1f) }
+  var cornerRadius by remember { mutableStateOf(0f) }
+  var translationX by remember { mutableStateOf(0f) }
+
+  LaunchedEffect(Unit) {
+    while (isActive) {
+      withFrameMillis { frame = (frame + 1) % 3600 }
+    }
+  }
+
+  Row(
+    modifier = Modifier.fillMaxSize().background(Color(0xFF101010)).padding(24.dp),
+    horizontalArrangement = Arrangement.spacedBy(24.dp),
+  ) {
+    Column(
+      modifier = Modifier.weight(1f).fillMaxSize(),
+      verticalArrangement = Arrangement.Center,
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      val shape = RoundedCornerShape(cornerRadius.dp)
+      Box(
+        modifier = Modifier
+          .size(560.dp, 360.dp)
+          .graphicsLayer {
+            this.alpha = alpha
+            rotationZ = rotation
+            scaleX = scale
+            scaleY = scale
+            this.translationX = translationX
+            this.shape = shape
+            clip = cornerRadius > 0f
+          }
+          .background(Color.Black, shape)
+          .border(1.dp, Color(0xFF555555), shape),
+      ) {
+        Canvas(Modifier.fillMaxSize()) {
+          drawIntoCanvas { composeCanvas ->
+            val result = renderer.renderAndDraw(
+              composeCanvas.nativeCanvas,
+              targetWidth = size.width.roundToInt().coerceAtLeast(1),
+              targetHeight = size.height.roundToInt().coerceAtLeast(1),
+              frame = frame,
+            )
+            status = result
+          }
+        }
+      }
+    }
+
+    Column(
+      modifier = Modifier.width(320.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text("Native Metal texture in Compose", color = Color.White)
+      ControlSlider("alpha", alpha, 0.2f..1f) { alpha = it }
+      ControlSlider("rotationZ", rotation, -35f..35f) { rotation = it }
+      ControlSlider("scale", scale, 0.65f..1.2f) { scale = it }
+      ControlSlider("corner radius", cornerRadius, 0f..96f) { cornerRadius = it }
+      ControlSlider("translationX", translationX, -180f..180f) { translationX = it }
+      Text(status, color = Color(0xFFB8B8B8))
+      Text("Skiko: ${windowReport.summary}", color = Color(0xFF777777))
+    }
+  }
+}
+
+@Composable
+private fun ControlSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+  Column {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(label, color = Color.White)
+      Text("%.2f".format(value), color = Color(0xFFB8B8B8))
+    }
+    Slider(value = value, onValueChange = onChange, valueRange = range)
+  }
+}
+
+private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) {
+  private var surface: Surface? = null
+  private var renderTarget: BackendRenderTarget? = null
+  private var nativeTextureHandle = 0L
+  private var width = 0
+  private var height = 0
+  private var contextIdentity = 0
+  private var lastResult: String? = null
+  private val retainedImages = ArrayDeque<Image>()
+
+  fun renderAndDraw(canvas: org.jetbrains.skia.Canvas, targetWidth: Int, targetHeight: Int, frame: Int): String {
+    val owner = canvas.ownerForProbe()
+    val contextProbe = SkikoContextProbe.from(skiaLayer)
+    val context = contextProbe.context
+      ?: return report(
+        "Waiting for Skiko GPU DirectContext. Compose canvas owner=${owner?.javaClass?.name ?: "null"}; ${contextProbe.status}",
+      )
+
+    val identity = System.identityHashCode(context)
+    ensureSurface(context, identity, targetWidth, targetHeight)
+    val gpuSurface = surface ?: return report("Failed to create GPU offscreen surface")
+
+    NativeMetalBridge.render(nativeTextureHandle, frame)
+    gpuSurface.notifyContentWillChange(ContentChangeMode.DISCARD)
+    val image = gpuSurface.makeImageSnapshot()
+    retainImageForRecordedFrame(image)
+    drawImage(canvas, image, targetWidth, targetHeight)
+
+    return report(
+      "GPU path active: canvas owner=${owner?.javaClass?.simpleName}, " +
+        "renderApi=${skiaLayer?.renderApi}, native Metal texture=${targetWidth}x$targetHeight",
+    )
+  }
+
+  private fun report(result: String): String {
+    if (result != lastResult) {
+      lastResult = result
+      println(result)
+    }
+    return result
+  }
+
+  private fun ensureSurface(context: DirectContext, identity: Int, targetWidth: Int, targetHeight: Int) {
+    if (surface != null && width == targetWidth && height == targetHeight && contextIdentity == identity) return
+
+    surface?.close()
+    renderTarget?.close()
+    if (nativeTextureHandle != 0L) NativeMetalBridge.dispose(nativeTextureHandle)
+    width = targetWidth
+    height = targetHeight
+    contextIdentity = identity
+    nativeTextureHandle = NativeMetalBridge.create(targetWidth, targetHeight)
+    check(nativeTextureHandle != 0L) { "Native Metal texture creation failed" }
+    renderTarget = BackendRenderTarget.makeMetal(
+      width = targetWidth,
+      height = targetHeight,
+      texturePtr = NativeMetalBridge.texturePtr(nativeTextureHandle),
+    )
+    surface = Surface.makeFromBackendRenderTarget(
+      context = context,
+      rt = renderTarget!!,
+      origin = SurfaceOrigin.TOP_LEFT,
+      colorFormat = SurfaceColorFormat.BGRA_8888,
+      colorSpace = null,
+      surfaceProps = null,
+    ) ?: error("Skia could not wrap native Metal texture")
+  }
+
+  private fun drawImage(canvas: org.jetbrains.skia.Canvas, image: Image, targetWidth: Int, targetHeight: Int) {
+    canvas.drawImageRect(
+      image = image,
+      src = Rect.makeWH(image.width.toFloat(), image.height.toFloat()),
+      dst = Rect.makeWH(targetWidth.toFloat(), targetHeight.toFloat()),
+      samplingMode = SamplingMode.LINEAR,
+      paint = null,
+      strict = true,
+    )
+  }
+
+  private fun retainImageForRecordedFrame(image: Image) {
+    retainedImages.addLast(image)
+    while (retainedImages.size > 8) {
+      retainedImages.removeFirst().close()
+    }
+  }
+}
+
+private object NativeMetalBridge {
+  init {
+    System.loadLibrary("compose_map_metal")
+  }
+
+  external fun create(width: Int, height: Int): Long
+  external fun dispose(handle: Long)
+  external fun texturePtr(handle: Long): Long
+  external fun render(handle: Long, frame: Int)
+}
+
+private fun org.jetbrains.skia.Canvas.ownerForProbe(): Any? {
+  val field = org.jetbrains.skia.Canvas::class.java.getDeclaredField("_owner")
+  field.isAccessible = true
+  return field.get(this)
+}
+
+private data class ComposeWindowReport(val skiaLayer: SkiaLayer?, val summary: String) {
+  companion object {
+    fun collect(window: ComposeWindow): ComposeWindowReport {
+      val skiaLayer = window.findSkiaLayer()
+        ?: return ComposeWindowReport(null, "no SkiaLayer")
+      return ComposeWindowReport(skiaLayer, "renderApi=${skiaLayer.renderApi}")
+    }
+  }
+}
+
+private data class SkikoContextProbe(val context: DirectContext?, val status: String) {
+  companion object {
+    fun from(skiaLayer: SkiaLayer?): SkikoContextProbe {
+      if (skiaLayer == null) return SkikoContextProbe(null, "no SkiaLayer")
+      return runCatching {
+        val redrawer = skiaLayer.javaClass.getMethod("getRedrawer\$skiko").invoke(skiaLayer)
+          ?: return SkikoContextProbe(null, "SkiaLayer has no redrawer yet")
+        val contextHandler = redrawer.findFieldValue("contextHandler")
+          ?: return SkikoContextProbe(null, "${redrawer.javaClass.name} has no contextHandler")
+        val context = contextHandler.findFieldValue("context") as? DirectContext
+          ?: return SkikoContextProbe(null, "${contextHandler.javaClass.name} has no DirectContext yet")
+        SkikoContextProbe(context, "found ${contextHandler.javaClass.simpleName}")
+      }.getOrElse { error ->
+        SkikoContextProbe(null, "reflection failed: ${error.javaClass.simpleName}: ${error.message}")
+      }
+    }
+  }
+}
+
+private fun Any.findFieldValue(name: String): Any? {
+  var type: Class<*>? = javaClass
+  while (type != null) {
+    val field = type.declaredFields.firstOrNull { it.name == name }
+    if (field != null) {
+      field.isAccessible = true
+      return field.get(this)
+    }
+    type = type.superclass
+  }
+  return null
+}
+
+private fun ComposeWindow.findSkiaLayer(): SkiaLayer? {
+  findSkiaLayerIn(this)?.let { return it }
+
+  var type: Class<*>? = javaClass
+  while (type != null) {
+    val field = type.declaredFields.firstOrNull { SkiaLayer::class.java.isAssignableFrom(it.type) }
+    if (field != null) {
+      field.isAccessible = true
+      return field.get(this) as? SkiaLayer
+    }
+    type = type.superclass
+  }
+  return null
+}
+
+private fun findSkiaLayerIn(component: Component): SkiaLayer? {
+  if (component is SkiaLayer) return component
+  if (component is Container) {
+    component.components.forEach { child ->
+      findSkiaLayerIn(child)?.let { return it }
+    }
+  }
+  return null
+}
