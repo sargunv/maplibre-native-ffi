@@ -4,6 +4,12 @@
 #import <Metal/Metal.h>
 #include <jni.h>
 
+// Mirrors the Skiko runtime object's Metal-facing properties used by this demo.
+@interface SkikoMetalDevice : NSObject
+@property(nonatomic, strong) id<MTLDevice> adapter;
+@property(nonatomic, strong) id<MTLCommandQueue> queue;
+@end
+
 namespace {
 
 struct MetalTextureState {
@@ -61,9 +67,14 @@ auto makePipeline(id<MTLDevice> device) -> id<MTLRenderPipelineState> {
   return pipeline;
 }
 
-auto createState(uint32_t width, uint32_t height) -> MetalTextureState* {
+auto createState(void* skikoMetalDevicePtr, uint32_t width, uint32_t height)
+  -> MetalTextureState* {
   @autoreleasepool {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    SkikoMetalDevice* skikoMetalDevice =
+      (__bridge SkikoMetalDevice*)skikoMetalDevicePtr;
+    if (skikoMetalDevice == nil) return nullptr;
+
+    id<MTLDevice> device = skikoMetalDevice.adapter;
     if (device == nil) return nullptr;
 
     MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
@@ -75,7 +86,10 @@ auto createState(uint32_t width, uint32_t height) -> MetalTextureState* {
     descriptor.storageMode = MTLStorageModePrivate;
 
     id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
-    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLCommandQueue> queue = skikoMetalDevice.queue;
+    if (queue == nil) {
+      queue = [device newCommandQueue];
+    }
     id<MTLRenderPipelineState> pipeline = makePipeline(device);
     if (texture == nil || queue == nil || pipeline == nil) return nullptr;
 
@@ -94,12 +108,14 @@ auto createState(uint32_t width, uint32_t height) -> MetalTextureState* {
 
 }  // namespace
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_NativeMetalBridge_create(JNIEnv*, jclass, jint width, jint height) {
-  if (width <= 0 || height <= 0) return 0;
-  return reinterpret_cast<jlong>(
-    createState(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
-  );
+extern "C" JNIEXPORT jlong JNICALL Java_NativeMetalBridge_create(
+  JNIEnv*, jclass, jlong skikoMetalDevicePtr, jint width, jint height
+) {
+  if (skikoMetalDevicePtr == 0 || width <= 0 || height <= 0) return 0;
+  return reinterpret_cast<jlong>(createState(
+    reinterpret_cast<void*>(skikoMetalDevicePtr), static_cast<uint32_t>(width),
+    static_cast<uint32_t>(height)
+  ));
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Slider
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,10 @@ private fun App(window: ComposeWindow) {
     while (isActive) {
       withFrameMillis { frame = (frame + 1) % 3600 }
     }
+  }
+
+  DisposableEffect(renderer) {
+    onDispose { renderer.close() }
   }
 
   Row(
@@ -142,26 +147,26 @@ private fun ControlSlider(label: String, value: Float, range: ClosedFloatingPoin
   }
 }
 
-private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) {
+private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) : AutoCloseable {
   private var surface: Surface? = null
   private var renderTarget: BackendRenderTarget? = null
   private var nativeTextureHandle = 0L
   private var width = 0
   private var height = 0
   private var contextIdentity = 0
+  private var metalDevicePtr = 0L
   private var lastResult: String? = null
   private val retainedImages = ArrayDeque<Image>()
 
   fun renderAndDraw(canvas: org.jetbrains.skia.Canvas, targetWidth: Int, targetHeight: Int, frame: Int): String {
-    val owner = canvas.ownerForProbe()
-    val contextProbe = SkikoContextProbe.from(skiaLayer)
-    val context = contextProbe.context
+    val metalAccess = ComposeMetalAccess.from(skiaLayer)
+    val context = metalAccess.context
       ?: return report(
-        "Waiting for Skiko GPU DirectContext. Compose canvas owner=${owner?.javaClass?.name ?: "null"}; ${contextProbe.status}",
+        "Waiting for Skiko Metal context: ${metalAccess.status}",
       )
 
     val identity = System.identityHashCode(context)
-    ensureSurface(context, identity, targetWidth, targetHeight)
+    ensureSurface(context, identity, metalAccess.devicePtr, targetWidth, targetHeight)
     val gpuSurface = surface ?: return report("Failed to create GPU offscreen surface")
 
     NativeMetalBridge.render(nativeTextureHandle, frame)
@@ -171,8 +176,7 @@ private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) {
     drawImage(canvas, image, targetWidth, targetHeight)
 
     return report(
-      "GPU path active: canvas owner=${owner?.javaClass?.simpleName}, " +
-        "renderApi=${skiaLayer?.renderApi}, native Metal texture=${targetWidth}x$targetHeight",
+      "GPU path active: renderApi=${skiaLayer?.renderApi}, native Metal texture=${targetWidth}x$targetHeight",
     )
   }
 
@@ -184,16 +188,20 @@ private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) {
     return result
   }
 
-  private fun ensureSurface(context: DirectContext, identity: Int, targetWidth: Int, targetHeight: Int) {
-    if (surface != null && width == targetWidth && height == targetHeight && contextIdentity == identity) return
+  private fun ensureSurface(context: DirectContext, identity: Int, devicePtr: Long, targetWidth: Int, targetHeight: Int) {
+    if (surface != null &&
+      width == targetWidth &&
+      height == targetHeight &&
+      contextIdentity == identity &&
+      metalDevicePtr == devicePtr
+    ) return
 
-    surface?.close()
-    renderTarget?.close()
-    if (nativeTextureHandle != 0L) NativeMetalBridge.dispose(nativeTextureHandle)
+    closeGpuResources()
     width = targetWidth
     height = targetHeight
     contextIdentity = identity
-    nativeTextureHandle = NativeMetalBridge.create(targetWidth, targetHeight)
+    metalDevicePtr = devicePtr
+    nativeTextureHandle = NativeMetalBridge.create(devicePtr, targetWidth, targetHeight)
     check(nativeTextureHandle != 0L) { "Native Metal texture creation failed" }
     renderTarget = BackendRenderTarget.makeMetal(
       width = targetWidth,
@@ -227,6 +235,28 @@ private class ExternalGpuRenderer(private val skiaLayer: SkiaLayer?) {
       retainedImages.removeFirst().close()
     }
   }
+
+  override fun close() {
+    closeGpuResources()
+    width = 0
+    height = 0
+    contextIdentity = 0
+    metalDevicePtr = 0L
+  }
+
+  private fun closeGpuResources() {
+    while (retainedImages.isNotEmpty()) {
+      retainedImages.removeFirst().close()
+    }
+    surface?.close()
+    surface = null
+    renderTarget?.close()
+    renderTarget = null
+    if (nativeTextureHandle != 0L) {
+      NativeMetalBridge.dispose(nativeTextureHandle)
+      nativeTextureHandle = 0L
+    }
+  }
 }
 
 private object NativeMetalBridge {
@@ -234,16 +264,10 @@ private object NativeMetalBridge {
     System.loadLibrary("compose_map_metal")
   }
 
-  external fun create(width: Int, height: Int): Long
+  external fun create(skikoMetalDevicePtr: Long, width: Int, height: Int): Long
   external fun dispose(handle: Long)
   external fun texturePtr(handle: Long): Long
   external fun render(handle: Long, frame: Int)
-}
-
-private fun org.jetbrains.skia.Canvas.ownerForProbe(): Any? {
-  val field = org.jetbrains.skia.Canvas::class.java.getDeclaredField("_owner")
-  field.isAccessible = true
-  return field.get(this)
 }
 
 private data class ComposeWindowReport(val skiaLayer: SkiaLayer?, val summary: String) {
@@ -256,20 +280,28 @@ private data class ComposeWindowReport(val skiaLayer: SkiaLayer?, val summary: S
   }
 }
 
-private data class SkikoContextProbe(val context: DirectContext?, val status: String) {
+// This is the demo's only intentional Skiko gap: public access to the live Metal
+// DirectContext and device backing the current Compose scene.
+private data class ComposeMetalAccess(val context: DirectContext?, val devicePtr: Long, val status: String) {
   companion object {
-    fun from(skiaLayer: SkiaLayer?): SkikoContextProbe {
-      if (skiaLayer == null) return SkikoContextProbe(null, "no SkiaLayer")
+    fun from(skiaLayer: SkiaLayer?): ComposeMetalAccess {
+      if (skiaLayer == null) return ComposeMetalAccess(null, 0L, "no SkiaLayer")
       return runCatching {
         val redrawer = skiaLayer.javaClass.getMethod("getRedrawer\$skiko").invoke(skiaLayer)
-          ?: return SkikoContextProbe(null, "SkiaLayer has no redrawer yet")
+          ?: return ComposeMetalAccess(null, 0L, "SkiaLayer has no redrawer yet")
         val contextHandler = redrawer.findFieldValue("contextHandler")
-          ?: return SkikoContextProbe(null, "${redrawer.javaClass.name} has no contextHandler")
+          ?: return ComposeMetalAccess(null, 0L, "${redrawer.javaClass.name} has no contextHandler")
         val context = contextHandler.findFieldValue("context") as? DirectContext
-          ?: return SkikoContextProbe(null, "${contextHandler.javaClass.name} has no DirectContext yet")
-        SkikoContextProbe(context, "found ${contextHandler.javaClass.simpleName}")
+          ?: return ComposeMetalAccess(null, 0L, "${contextHandler.javaClass.name} has no DirectContext yet")
+        val device = contextHandler.findFieldValue("device")
+          ?: return ComposeMetalAccess(null, 0L, "${contextHandler.javaClass.name} has no Metal device")
+        val devicePtr = when (device) {
+          is Long -> device
+          else -> device.findFieldValue("ptr") as? Long
+        } ?: return ComposeMetalAccess(null, 0L, "${device.javaClass.name} has no native pointer")
+        ComposeMetalAccess(context, devicePtr, "found ${contextHandler.javaClass.simpleName}")
       }.getOrElse { error ->
-        SkikoContextProbe(null, "reflection failed: ${error.javaClass.simpleName}: ${error.message}")
+        ComposeMetalAccess(null, 0L, "reflection failed: ${error.javaClass.simpleName}: ${error.message}")
       }
     }
   }
@@ -289,18 +321,7 @@ private fun Any.findFieldValue(name: String): Any? {
 }
 
 private fun ComposeWindow.findSkiaLayer(): SkiaLayer? {
-  findSkiaLayerIn(this)?.let { return it }
-
-  var type: Class<*>? = javaClass
-  while (type != null) {
-    val field = type.declaredFields.firstOrNull { SkiaLayer::class.java.isAssignableFrom(it.type) }
-    if (field != null) {
-      field.isAccessible = true
-      return field.get(this) as? SkiaLayer
-    }
-    type = type.superclass
-  }
-  return null
+  return findSkiaLayerIn(this)
 }
 
 private fun findSkiaLayerIn(component: Component): SkiaLayer? {
