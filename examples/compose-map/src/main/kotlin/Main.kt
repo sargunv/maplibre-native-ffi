@@ -45,7 +45,10 @@ import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skiko.SkiaLayer
 import java.awt.Component
 import java.awt.Container
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 fun main() {
   application {
@@ -61,11 +64,11 @@ private fun App(window: ComposeWindow) {
   val windowReport = remember(window) { ComposeWindowReport.collect(window) }
   val renderer = remember(window) { ExternalGpuRenderer(windowReport.skiaLayer) }
   var status by remember { mutableStateOf("Waiting for first Compose canvas") }
-  var alpha by remember { mutableStateOf(1f) }
-  var rotation by remember { mutableStateOf(0f) }
-  var scale by remember { mutableStateOf(1f) }
-  var cornerRadius by remember { mutableStateOf(0f) }
-  var translationX by remember { mutableStateOf(0f) }
+  var minAlpha by remember { mutableStateOf(0.68f) }
+  var rotationAmplitude by remember { mutableStateOf(18f) }
+  var scaleAmplitude by remember { mutableStateOf(0.16f) }
+  var scaleXAmplitude by remember { mutableStateOf(0.12f) }
+  var cornerRadius by remember { mutableStateOf(44f) }
 
   LaunchedEffect(Unit) {
     while (isActive) {
@@ -86,18 +89,24 @@ private fun App(window: ComposeWindow) {
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      val shape = RoundedCornerShape(cornerRadius.dp)
+      val phase = frame * (2.0 * PI / 180.0)
+      val animatedAlpha = minAlpha + (1f - minAlpha) * ((sin(phase) + 1.0) / 2.0).toFloat()
+      val animatedRotation = (sin(phase * 0.7) * rotationAmplitude).toFloat()
+      val animatedScale = 1f + (cos(phase * 0.9) * scaleAmplitude).toFloat()
+      val animatedScaleX = animatedScale * (1f + (sin(phase * 1.3) * scaleXAmplitude).toFloat())
+      val animatedCornerRadius = (cornerRadius * (0.35f + 0.65f * ((cos(phase * 0.8) + 1.0) / 2.0).toFloat()))
+        .coerceAtLeast(0f)
+      val shape = RoundedCornerShape(animatedCornerRadius.dp)
       Box(
         modifier = Modifier
           .size(560.dp, 360.dp)
           .graphicsLayer {
-            this.alpha = alpha
-            rotationZ = rotation
-            scaleX = scale
-            scaleY = scale
-            this.translationX = translationX
+            this.alpha = animatedAlpha
+            rotationZ = animatedRotation
+            scaleX = animatedScaleX
+            scaleY = animatedScale
             this.shape = shape
-            clip = cornerRadius > 0f
+            clip = animatedCornerRadius > 0f
           }
           .background(Color.Black, shape)
           .border(1.dp, Color(0xFF555555), shape),
@@ -121,11 +130,11 @@ private fun App(window: ComposeWindow) {
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Text("Native Metal texture in Compose", color = Color.White)
-      ControlSlider("alpha", alpha, 0.2f..1f) { alpha = it }
-      ControlSlider("rotationZ", rotation, -35f..35f) { rotation = it }
-      ControlSlider("scale", scale, 0.65f..1.2f) { scale = it }
+      ControlSlider("min alpha", minAlpha, 0.2f..1f) { minAlpha = it }
+      ControlSlider("rotation amplitude", rotationAmplitude, 0f..35f) { rotationAmplitude = it }
+      ControlSlider("scale amplitude", scaleAmplitude, 0f..0.35f) { scaleAmplitude = it }
+      ControlSlider("scaleX amplitude", scaleXAmplitude, 0f..0.35f) { scaleXAmplitude = it }
       ControlSlider("corner radius", cornerRadius, 0f..96f) { cornerRadius = it }
-      ControlSlider("translationX", translationX, -180f..180f) { translationX = it }
       Text(status, color = Color(0xFFB8B8B8))
       Text("Skiko: ${windowReport.summary}", color = Color(0xFF777777))
     }
