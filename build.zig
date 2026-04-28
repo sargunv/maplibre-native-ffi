@@ -69,6 +69,20 @@ fn addAbiTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     return abi_tests;
 }
 
+fn addAbiFuzzTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
+    const abi_fuzz_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fuzz/main.zig"),
+            .target = options.target,
+            .optimize = options.optimize,
+            .error_tracing = false,
+        }),
+    });
+
+    linkMapLibreAbi(b, abi_fuzz_tests.root_module, options.cmake_artifact_dir);
+    return abi_fuzz_tests;
+}
+
 pub fn build(b: *std.Build) void {
     const options = BuildOptions{
         .target = b.standardTargetOptions(.{}),
@@ -78,6 +92,7 @@ pub fn build(b: *std.Build) void {
 
     const zig_map = addZigMapExample(b, options);
     const abi_tests = addAbiTests(b, options);
+    const abi_fuzz_tests = addAbiFuzzTests(b, options);
 
     const run_zig_map = b.addRunArtifact(zig_map);
     const run_step = b.step("run", "Run Zig map example");
@@ -88,4 +103,8 @@ pub fn build(b: *std.Build) void {
     const run_abi_tests = b.addRunArtifact(abi_tests);
     const test_step = b.step("test", "Run Zig ABI tests");
     test_step.dependOn(&run_abi_tests.step);
+
+    const run_abi_fuzz_tests = b.addRunArtifact(abi_fuzz_tests);
+    const fuzz_step = b.step("fuzz", "Run Zig ABI fuzz tests");
+    fuzz_step.dependOn(&run_abi_fuzz_tests.step);
 }

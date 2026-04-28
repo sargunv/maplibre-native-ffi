@@ -29,14 +29,57 @@ run = [
   "cmake --build build --parallel",
 ]
 
+[tasks."build:instrumented"]
+description = "Build core library with ASan, UBSan, and coverage instrumentation"
+run = [
+  "cmake -S . -B build-instrumented -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping' -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping' -DCMAKE_OBJC_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping' -DCMAKE_OBJCXX_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping' -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined -fprofile-instr-generate -fcoverage-mapping'",
+  "cmake --build build-instrumented --parallel",
+]
+
 [tasks.clean]
 description = "Remove generated build outputs"
 run = "rm -rf build"
+
+[tasks."clean:instrumented"]
+description = "Remove generated instrumented build outputs"
+run = "rm -rf build-instrumented"
 
 [tasks.test]
 description = "Run all tests"
 depends = ["build"]
 run = "zig build test --summary all"
+
+[tasks."test:instrumented"]
+description = "Run all tests against the instrumented build"
+depends = ["build:instrumented"]
+run = [
+  "mkdir -p build-instrumented/profiles",
+  "LLVM_PROFILE_FILE='build-instrumented/profiles/test-%p.profraw' zig build test -Dcmake-artifact-dir=build-instrumented --summary all",
+]
+
+[tasks.fuzz]
+description = "Run Zig ABI fuzz tests against the normal build"
+depends = ["build"]
+run = [
+  "zig build fuzz --summary all",
+  "zig build fuzz --fuzz=1K --summary failures",
+]
+
+[tasks."fuzz:instrumented"]
+description = "Run Zig ABI fuzz tests against the instrumented build"
+depends = ["build:instrumented"]
+run = [
+  "rm -rf build-instrumented/profiles && mkdir -p build-instrumented/profiles",
+  "LLVM_PROFILE_FILE='build-instrumented/profiles/fuzz-%p.profraw' zig build fuzz -Dcmake-artifact-dir=build-instrumented --summary all",
+  "LLVM_PROFILE_FILE='build-instrumented/profiles/fuzz-%p.profraw' zig build fuzz -Dcmake-artifact-dir=build-instrumented --fuzz=100K --summary failures",
+]
+
+[tasks."coverage:instrumented"]
+description = "Report src coverage from the latest instrumented test or fuzz run"
+run = [
+  "xcrun llvm-profdata merge -sparse build-instrumented/profiles/*.profraw -o build-instrumented/coverage.profdata",
+  "xcrun llvm-cov report build-instrumented/libmaplibre_native_abi.dylib -instr-profile=build-instrumented/coverage.profdata -ignore-filename-regex='third_party|build-instrumented|/Applications|\\.zig-cache|tests/'",
+]
 
 [tasks."example:zig-map"]
 description = "Run Zig map example"
