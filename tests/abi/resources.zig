@@ -3,6 +3,8 @@ const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
+extern fn usleep(useconds: c_uint) c_int;
+
 const HttpServerState = struct {
     server: *std.Io.net.Server,
     served: bool = false,
@@ -25,30 +27,40 @@ const TempStyle = struct {
 };
 
 const AsyncProviderState = struct {
-    called: bool = false,
-    handle: ?*c.mln_resource_request_handle = null,
-    saw_style_kind: bool = false,
-    saw_all_loading: bool = false,
-    saw_regular_priority: bool = false,
-    saw_online_usage: bool = false,
-    saw_permanent_storage: bool = false,
-    saw_no_range: bool = false,
-    saw_no_prior: bool = false,
+    handle: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+    saw_style_kind: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_all_loading: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_regular_priority: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_online_usage: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_permanent_storage: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_no_range: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_no_prior: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
     fn markRequest(self: *AsyncProviderState, request: *const c.mln_resource_request, handle: *c.mln_resource_request_handle) void {
-        self.called = true;
-        self.handle = handle;
-        self.saw_style_kind = request.kind == c.MLN_RESOURCE_KIND_STYLE;
-        self.saw_all_loading = request.loading_method == c.MLN_RESOURCE_LOADING_METHOD_ALL;
-        self.saw_regular_priority = request.priority == c.MLN_RESOURCE_PRIORITY_REGULAR;
-        self.saw_online_usage = request.usage == c.MLN_RESOURCE_USAGE_ONLINE;
-        self.saw_permanent_storage = request.storage_policy == c.MLN_RESOURCE_STORAGE_POLICY_PERMANENT;
-        self.saw_no_range = !request.has_range;
-        self.saw_no_prior = !request.has_prior_modified and !request.has_prior_expires and request.prior_etag == null and request.prior_data == null and request.prior_data_size == 0;
+        self.saw_style_kind.store(request.kind == c.MLN_RESOURCE_KIND_STYLE, .seq_cst);
+        self.saw_all_loading.store(request.loading_method == c.MLN_RESOURCE_LOADING_METHOD_ALL, .seq_cst);
+        self.saw_regular_priority.store(request.priority == c.MLN_RESOURCE_PRIORITY_REGULAR, .seq_cst);
+        self.saw_online_usage.store(request.usage == c.MLN_RESOURCE_USAGE_ONLINE, .seq_cst);
+        self.saw_permanent_storage.store(request.storage_policy == c.MLN_RESOURCE_STORAGE_POLICY_PERMANENT, .seq_cst);
+        self.saw_no_range.store(!request.has_range, .seq_cst);
+        self.saw_no_prior.store(!request.has_prior_modified and !request.has_prior_expires and request.prior_etag == null and request.prior_data == null and request.prior_data_size == 0, .seq_cst);
+        self.handle.store(@intFromPtr(handle), .seq_cst);
     }
 
     fn currentHandle(self: *AsyncProviderState) ?*c.mln_resource_request_handle {
-        return self.handle;
+        const handle = self.handle.load(.seq_cst);
+        if (handle == 0) return null;
+        return @ptrFromInt(handle);
+    }
+
+    fn checkObservedRequest(self: *AsyncProviderState) !void {
+        try testing.expect(self.saw_style_kind.load(.seq_cst));
+        try testing.expect(self.saw_all_loading.load(.seq_cst));
+        try testing.expect(self.saw_regular_priority.load(.seq_cst));
+        try testing.expect(self.saw_online_usage.load(.seq_cst));
+        try testing.expect(self.saw_permanent_storage.load(.seq_cst));
+        try testing.expect(self.saw_no_range.load(.seq_cst));
+        try testing.expect(self.saw_no_prior.load(.seq_cst));
     }
 };
 
@@ -203,6 +215,7 @@ fn waitForProviderRequest(runtime: *c.mln_runtime, state: *AsyncProviderState) !
     for (0..1000) |_| {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
         if (state.currentHandle()) |handle| return handle;
+        _ = usleep(1000);
     }
     return error.ProviderNotCalled;
 }
@@ -300,13 +313,7 @@ test "custom provider can complete style request later" {
     const handle = try waitForProviderRequest(runtime, &state);
     defer c.mln_resource_request_release(handle);
 
-    try testing.expect(state.saw_style_kind);
-    try testing.expect(state.saw_all_loading);
-    try testing.expect(state.saw_regular_priority);
-    try testing.expect(state.saw_online_usage);
-    try testing.expect(state.saw_permanent_storage);
-    try testing.expect(state.saw_no_range);
-    try testing.expect(state.saw_no_prior);
+    try state.checkObservedRequest();
 
     var cancelled = true;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_cancelled(handle, &cancelled));

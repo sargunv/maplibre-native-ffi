@@ -27,35 +27,6 @@ fn cmakeArtifactDir(b: *std.Build) std.Build.LazyPath {
     return b.path(path);
 }
 
-fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
-    const sdl = b.dependency("sdl", .{
-        .target = options.target,
-        .optimize = options.optimize,
-    });
-    const zig_objc = b.dependency("zig_objc", .{
-        .target = options.target,
-        .optimize = options.optimize,
-    });
-
-    const example = b.addExecutable(.{
-        .name = "zig-map",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/zig-map/main.zig"),
-            .target = options.target,
-            .optimize = options.optimize,
-        }),
-    });
-
-    linkMapLibreAbi(b, example.root_module, options.cmake_artifact_dir);
-    example.root_module.addImport("objc", zig_objc.module("objc"));
-    example.root_module.linkLibrary(sdl.artifact("SDL3"));
-    example.root_module.linkFramework("Foundation", .{});
-    example.root_module.linkFramework("Metal", .{});
-    example.root_module.linkFramework("QuartzCore", .{});
-    b.installArtifact(example);
-    return example;
-}
-
 fn addAbiTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     const abi_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -66,6 +37,12 @@ fn addAbiTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     });
 
     linkMapLibreAbi(b, abi_tests.root_module, options.cmake_artifact_dir);
+    if (options.target.result.os.tag == .linux) {
+        abi_tests.root_module.addIncludePath(b.path("third_party/maplibre-native/vendor/Vulkan-Headers/include"));
+        abi_tests.root_module.addLibraryPath(b.path(".pixi/envs/default/lib"));
+        abi_tests.root_module.addRPath(b.path(".pixi/envs/default/lib"));
+        abi_tests.root_module.linkSystemLibrary("vulkan", .{});
+    }
     return abi_tests;
 }
 
@@ -76,14 +53,7 @@ pub fn build(b: *std.Build) void {
         .cmake_artifact_dir = cmakeArtifactDir(b),
     };
 
-    const zig_map = addZigMapExample(b, options);
     const abi_tests = addAbiTests(b, options);
-
-    const run_zig_map = b.addRunArtifact(zig_map);
-    const run_step = b.step("run", "Run Zig map example");
-    run_step.dependOn(&run_zig_map.step);
-    const run_zig_map_step = b.step("run:zig-map", "Run Zig map example");
-    run_zig_map_step.dependOn(&run_zig_map.step);
 
     const run_abi_tests = b.addRunArtifact(abi_tests);
     const test_step = b.step("test", "Run Zig ABI tests");

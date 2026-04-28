@@ -1,52 +1,46 @@
+experimental_monorepo_root = true
+
 [settings]
 pin = true
 experimental = true
+
+[monorepo]
+config_roots = ["examples/zig-map"]
 
 [tools]
 hk = "1.40.0"
 pkl = "0.31.0"
 dprint = "0.53.2"
 "github:sargunv/jvl" = "2026.04.03"
-cmake = "3.31.6"
+pixi = "latest"
 "github:blankspruce/gersemi" = "0.27.2"
 zig = "0.16.0"
-
-[tools."github:llvm/llvm-project"]
-version = "22.1.4"
-version_prefix = "llvmorg-"
-bin_path = "bin"
-strip_components = 1
 
 [hooks]
 postinstall = [
   "hk install --mise",
+  "pixi install --locked",
 ]
+
+[tasks.configure]
+env = { _.source = "config/pixi-env.sh", CC = "clang", CXX = "clang++" }
+run = "cmake -S . -B build -G Ninja"
 
 [tasks.build]
-description = "Build core library"
-run = [
-  "cmake -S . -B build",
-  "cmake --build build --parallel",
-]
+depends = ["configure"]
+env = { _.source = "config/pixi-env.sh" }
+run = "cmake --build build --parallel"
 
 [tasks.clean]
-description = "Remove generated build outputs"
 run = "rm -rf build"
 
 [tasks.test]
-description = "Run all tests"
 depends = ["build"]
+env = { XDG_DATA_DIRS = "{{config_root}}/.pixi/envs/default/share" }
 run = "zig build test --summary all"
 
-[tasks."example:zig-map"]
-description = "Run Zig map example"
-depends = ["build"]
-run = "zig build run"
-
 [tasks.check]
-description = "Run all checks"
 run = "hk check --all"
 
 [tasks.fix]
-description = "Fix all auto-fixable issues"
 run = "hk fix --all"

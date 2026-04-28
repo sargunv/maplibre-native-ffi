@@ -7,8 +7,11 @@
 #include <unordered_map>
 
 #include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/gfx/headless_backend.hpp>
 #include <mbgl/map/map.hpp>
 #include <mbgl/mtl/headless_backend.hpp>
+#include <mbgl/mtl/renderable_resource.hpp>
+#include <mbgl/mtl/texture2d.hpp>
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/util/size.hpp>
@@ -35,7 +38,7 @@ struct mln_texture_session {
   uint64_t rendered_generation = 0;
   bool attached = true;
   bool acquired = false;
-  std::unique_ptr<mbgl::mtl::HeadlessBackend> backend;
+  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend;
   std::unique_ptr<mbgl::Renderer> renderer;
   MTL::Texture* rendered_texture = nullptr;
   MTL::Texture* acquired_texture = nullptr;
@@ -76,8 +79,120 @@ auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  if (descriptor->device == nullptr) {
+    mln::core::set_thread_error("Metal device must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
   return MLN_STATUS_OK;
 }
+
+class MetalTextureBackend final : public mbgl::mtl::RendererBackend,
+                                  public mbgl::gfx::HeadlessBackend {
+ private:
+  class MetalTextureRenderableResource;
+
+ public:
+  MetalTextureBackend(MTL::Device* host_device, mbgl::Size size_)
+      : mbgl::mtl::RendererBackend(mbgl::gfx::ContextMode::Unique),
+        mbgl::gfx::HeadlessBackend(size_) {
+    device = NS::RetainPtr(host_device);
+    commandQueue = NS::TransferPtr(device->newCommandQueue());
+  }
+
+  ~MetalTextureBackend() override {
+    auto guard = mbgl::gfx::BackendScope{
+      *this, mbgl::gfx::BackendScope::ScopeType::Implicit
+    };
+    resource.reset();
+    context.reset();
+  }
+
+  auto getDefaultRenderable() -> mbgl::gfx::Renderable& override {
+    if (!resource) {
+      resource = std::make_unique<MetalTextureRenderableResource>(
+        *this, static_cast<mbgl::mtl::Context&>(getContext()), size
+      );
+    }
+    return *this;
+  }
+
+  auto readStillImage() -> mbgl::PremultipliedImage override {
+    return getResource<MetalTextureRenderableResource>().readStillImage();
+  }
+
+  auto getRendererBackend() -> mbgl::gfx::RendererBackend* override {
+    return this;
+  }
+
+  void updateAssumedState() override {}
+
+  auto getMetalTexture() -> MTL::Texture* {
+    getDefaultRenderable();
+    return getResource<MetalTextureRenderableResource>().getMetalTexture();
+  }
+
+ private:
+  class MetalTextureRenderableResource final
+      : public mbgl::mtl::RenderableResource {
+   public:
+    MetalTextureRenderableResource(
+      MetalTextureBackend& backend_, mbgl::mtl::Context& context_,
+      mbgl::Size size_
+    )
+        : backend(backend_), context(context_) {
+      offscreenTexture = context.createOffscreenTexture(
+        size_, mbgl::gfx::TextureChannelDataType::UnsignedByte, true, true
+      );
+    }
+
+    void bind() override {
+      offscreenTexture->getResource<mbgl::mtl::RenderableResource>().bind();
+    }
+
+    void swap() override {
+      offscreenTexture->getResource<mbgl::mtl::RenderableResource>().swap();
+    }
+
+    auto readStillImage() -> mbgl::PremultipliedImage {
+      return offscreenTexture->readStillImage();
+    }
+
+    auto getMetalTexture() -> MTL::Texture* {
+      return static_cast<mbgl::mtl::Texture2D*>(
+               offscreenTexture->getTexture().get()
+      )
+        ->getMetalTexture();
+    }
+
+    [[nodiscard]] auto getBackend() const
+      -> const mbgl::mtl::RendererBackend& override {
+      return backend;
+    }
+
+    [[nodiscard]] auto getCommandBuffer() const
+      -> const mbgl::mtl::MTLCommandBufferPtr& override {
+      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
+        .getCommandBuffer();
+    }
+
+    [[nodiscard]] auto getUploadPassDescriptor() const
+      -> mbgl::mtl::MTLBlitPassDescriptorPtr override {
+      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
+        .getUploadPassDescriptor();
+    }
+
+    [[nodiscard]] auto getRenderPassDescriptor() const
+      -> const mbgl::mtl::MTLRenderPassDescriptorPtr& override {
+      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
+        .getRenderPassDescriptor();
+    }
+
+   private:
+    MetalTextureBackend& backend;
+    mbgl::mtl::Context& context;
+    std::unique_ptr<mbgl::gfx::OffscreenTexture> offscreenTexture;
+  };
+};
 
 auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t {
   return static_cast<uint32_t>(std::ceil(logical * scale_factor));
@@ -162,11 +277,12 @@ auto metal_texture_descriptor_default() noexcept
     .size = sizeof(mln_metal_texture_descriptor),
     .width = 256,
     .height = 256,
-    .scale_factor = 1.0
+    .scale_factor = 1.0,
+    .device = nullptr
   };
 }
 
-auto texture_attach(
+auto metal_texture_attach(
   mln_map* map, const mln_metal_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status {
@@ -203,10 +319,9 @@ auto texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend = std::make_unique<mbgl::mtl::HeadlessBackend>(
-    mbgl::Size{session->physical_width, session->physical_height},
-    mbgl::gfx::Renderable::SwapBehaviour::NoFlush,
-    mbgl::gfx::ContextMode::Unique
+  session->backend = std::make_unique<MetalTextureBackend>(
+    static_cast<MTL::Device*>(descriptor->device),
+    mbgl::Size{session->physical_width, session->physical_height}
   );
   auto* handle = session.get();
 
@@ -305,7 +420,9 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
   }
 
   texture->renderer->render(update);
-  texture->rendered_texture = texture->backend->getMetalTexture();
+  texture->rendered_texture =
+    static_cast<MetalTextureBackend*>(texture->backend.get())
+      ->getMetalTexture();
   if (texture->rendered_texture == nullptr) {
     set_thread_error("render did not produce a Metal texture");
     return MLN_STATUS_NATIVE_ERROR;
@@ -314,7 +431,7 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
   return MLN_STATUS_OK;
 }
 
-auto texture_acquire_frame(
+auto metal_texture_acquire_frame(
   mln_texture_session* texture, mln_metal_texture_frame* out_frame
 ) -> mln_status {
   const auto status = validate_live_attached_texture(texture);
@@ -347,7 +464,7 @@ auto texture_acquire_frame(
   return MLN_STATUS_OK;
 }
 
-auto texture_release_frame(
+auto metal_texture_release_frame(
   mln_texture_session* texture, const mln_metal_texture_frame* frame
 ) -> mln_status {
   const auto status = validate_texture(texture);
@@ -424,6 +541,52 @@ auto texture_destroy(mln_texture_session* texture) -> mln_status {
   }
   owned_texture.reset();
   return MLN_STATUS_OK;
+}
+
+auto vulkan_texture_descriptor_default() noexcept
+  -> mln_vulkan_texture_descriptor {
+  return mln_vulkan_texture_descriptor{
+    .size = sizeof(mln_vulkan_texture_descriptor),
+    .width = 256,
+    .height = 256,
+    .scale_factor = 1.0,
+    .instance = nullptr,
+    .physical_device = nullptr,
+    .device = nullptr,
+    .graphics_queue = nullptr,
+    .graphics_queue_family_index = 0,
+  };
+}
+
+auto vulkan_texture_attach(
+  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) -> mln_status {
+  (void)map;
+  (void)descriptor;
+  if (out_texture != nullptr) {
+    *out_texture = nullptr;
+  }
+  set_thread_error("Vulkan texture sessions are not supported by this build");
+  return MLN_STATUS_UNSUPPORTED;
+}
+
+auto vulkan_texture_acquire_frame(
+  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
+) -> mln_status {
+  (void)texture;
+  (void)out_frame;
+  set_thread_error("Vulkan texture sessions are not supported by this build");
+  return MLN_STATUS_UNSUPPORTED;
+}
+
+auto vulkan_texture_release_frame(
+  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
+) -> mln_status {
+  (void)texture;
+  (void)frame;
+  set_thread_error("Vulkan texture sessions are not supported by this build");
+  return MLN_STATUS_UNSUPPORTED;
 }
 
 }  // namespace mln::core

@@ -17,6 +17,7 @@
 #define MAPLIBRE_NATIVE_ABI_H
 
 // NOLINTBEGIN(cppcoreguidelines-use-enum-class)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
 // NOLINTBEGIN(modernize-deprecated-headers)
 // NOLINTBEGIN(modernize-use-trailing-return-type)
 // NOLINTBEGIN(modernize-use-using)
@@ -25,6 +26,7 @@
 #ifndef __cplusplus
 #include <stdbool.h>
 #endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -803,7 +805,12 @@ MLN_API mln_status mln_map_poll_event(
 
 #pragma endregion
 
-#pragma region Metal texture sessions
+#pragma region Texture sessions
+
+typedef enum mln_texture_backend {
+  MLN_TEXTURE_BACKEND_METAL = 1,
+  MLN_TEXTURE_BACKEND_VULKAN = 2,
+} mln_texture_backend;
 
 typedef struct mln_metal_texture_descriptor {
   uint32_t size;
@@ -814,6 +821,8 @@ typedef struct mln_metal_texture_descriptor {
    * scale_factor. */
   uint32_t height;
   double scale_factor;
+  /** Borrowed id<MTLDevice> / MTL::Device*. Required. */
+  void* device;
 } mln_metal_texture_descriptor;
 
 typedef struct mln_metal_texture_frame {
@@ -834,16 +843,63 @@ typedef struct mln_metal_texture_frame {
   uint64_t pixel_format;
 } mln_metal_texture_frame;
 
+typedef struct mln_vulkan_texture_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. Physical image width is width *
+   * scale_factor. */
+  uint32_t width;
+  /** Logical map height in UI pixels. Physical image height is height *
+   * scale_factor. */
+  uint32_t height;
+  double scale_factor;
+  /** Borrowed VkInstance. Required. */
+  void* instance;
+  /** Borrowed VkPhysicalDevice. Required. */
+  void* physical_device;
+  /** Borrowed VkDevice. Required. */
+  void* device;
+  /** Borrowed graphics VkQueue. Required. */
+  void* graphics_queue;
+  uint32_t graphics_queue_family_index;
+} mln_vulkan_texture_descriptor;
+
+typedef struct mln_vulkan_texture_frame {
+  uint32_t size;
+  uint64_t generation;
+  /** Physical Vulkan image width in device pixels. */
+  uint32_t width;
+  /** Physical Vulkan image height in device pixels. */
+  uint32_t height;
+  double scale_factor;
+  /** Opaque frame identity used to reject stale releases. */
+  uint64_t frame_id;
+  /** Borrowed VkImage. Valid until release only. */
+  void* image;
+  /** Borrowed VkImageView. Valid until release only. */
+  void* image_view;
+  /** Borrowed VkDevice. Valid until release only. */
+  void* device;
+  /** Backend-native VkFormat value. */
+  uint32_t format;
+  /** Backend-native VkImageLayout value; Vulkan frames are host-sampleable. */
+  uint32_t layout;
+} mln_vulkan_texture_frame;
+
 /** Returns default Metal texture descriptor values. */
 MLN_API mln_metal_texture_descriptor
 mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/** Returns default Vulkan texture descriptor values. */
+MLN_API mln_vulkan_texture_descriptor
+mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
 
 /**
  * Attaches a Metal offscreen texture render target to a map.
  *
  * The map may have at most one live texture session. The session and every
  * texture-session call are owner-thread affine to the map owner thread. The
- * wrapper owns the Metal backend/device used by MapLibre's headless renderer.
+ * wrapper renders into a wrapper-owned texture created on the caller-provided
+ * Metal device.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -852,18 +908,45 @@ mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
  * - MLN_STATUS_INVALID_STATE when the map already has a texture session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
+ * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
+ * this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_attach(
+MLN_API mln_status mln_metal_texture_attach(
   mln_map* map, const mln_metal_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) MLN_NOEXCEPT;
 
 /**
- * Resizes a Metal texture session and advances its generation.
+ * Attaches a Vulkan offscreen texture render target to a map.
+ *
+ * The map may have at most one live texture session. The session and every
+ * texture-session call are owner-thread affine to the map owner thread. The
+ * wrapper renders into a wrapper-owned image created on the caller-provided
+ * Vulkan device.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_texture is null, or *out_texture is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a texture session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
+ *   this build.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_vulkan_texture_attach(
+  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) MLN_NOEXCEPT;
+
+/**
+ * Resizes a texture session and advances its generation.
  *
  * Width and height are logical map dimensions. The session renders into a
- * physical Metal texture sized from the logical dimensions and scale_factor.
+ * physical backend texture/image sized from the logical dimensions and
+ * scale_factor.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -881,7 +964,7 @@ MLN_API mln_status mln_texture_resize(
 ) MLN_NOEXCEPT;
 
 /**
- * Renders the latest map update into the offscreen Metal texture.
+ * Renders the latest map update into the offscreen texture session.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -899,8 +982,8 @@ mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
  * Acquires the most recently rendered Metal texture frame.
  *
  * The returned texture and device pointers are borrowed and remain valid only
- * until mln_texture_release_frame is called for the same frame. While acquired,
- * resize, render, detach, destroy, and a second acquire return
+ * until mln_metal_texture_release_frame is called for the same frame. While
+ * acquired, resize, render, detach, destroy, and a second acquire return
  * MLN_STATUS_INVALID_STATE.
  *
  * Returns:
@@ -913,8 +996,35 @@ mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_acquire_frame(
+MLN_API mln_status mln_metal_texture_acquire_frame(
   mln_texture_session* texture, mln_metal_texture_frame* out_frame
+) MLN_NOEXCEPT;
+
+/**
+ * Acquires the most recently rendered Vulkan texture frame.
+ *
+ * The returned image, image view, and device pointers are borrowed and remain
+ * valid only until mln_vulkan_texture_release_frame is called for the same
+ * frame. While acquired, resize, render, detach, destroy, and a second acquire
+ * return MLN_STATUS_INVALID_STATE.
+ *
+ * On success, the image has been rendered and made available in the returned
+ * layout for host sampling through the returned image view until release.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, out_frame is
+ *   null, or out_frame->size is too small.
+ * - MLN_STATUS_INVALID_STATE when no rendered frame is available, the session
+ *   is detached, or another frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when texture is not a Vulkan texture session or this
+ *   build does not support Vulkan texture sessions.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_vulkan_texture_acquire_frame(
+  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
 ) MLN_NOEXCEPT;
 
 /**
@@ -930,12 +1040,31 @@ MLN_API mln_status mln_texture_acquire_frame(
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_release_frame(
+MLN_API mln_status mln_metal_texture_release_frame(
   mln_texture_session* texture, const mln_metal_texture_frame* frame
 ) MLN_NOEXCEPT;
 
 /**
- * Detaches backend-bound Metal resources from the map while keeping the session
+ * Releases a previously acquired Vulkan texture frame.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
+ *   null, frame->size is too small, or the frame generation does not match the
+ *   active acquired frame.
+ * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when texture is not a Vulkan texture session or this
+ *   build does not support Vulkan texture sessions.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_vulkan_texture_release_frame(
+  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
+) MLN_NOEXCEPT;
+
+/**
+ * Detaches backend-bound resources from the map while keeping the session
  * handle live for destruction.
  *
  * Returns:
@@ -950,7 +1079,7 @@ MLN_API mln_status
 mln_texture_detach(mln_texture_session* texture) MLN_NOEXCEPT;
 
 /**
- * Destroys a Metal texture session handle.
+ * Destroys a texture session handle.
  *
  * If still attached, destroy detaches first. Destroy is rejected while a frame
  * is acquired so borrowed texture pointers cannot outlive their session.
@@ -976,6 +1105,7 @@ mln_texture_destroy(mln_texture_session* texture) MLN_NOEXCEPT;
 // NOLINTEND(modernize-use-using)
 // NOLINTEND(modernize-use-trailing-return-type)
 // NOLINTEND(modernize-deprecated-headers)
+// NOLINTEND(cppcoreguidelines-pro-type-member-init)
 // NOLINTEND(cppcoreguidelines-use-enum-class)
 
 #endif

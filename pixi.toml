@@ -1,0 +1,35 @@
+[workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+
+[dependencies]
+c-compiler = "*"
+clang = "*"
+clangdev = "*"
+glslang = "*"
+cmake = "*"
+cxx-compiler = "*"
+clang-tools = "*"
+icu = "*"
+libcurl = "*"
+libjpeg-turbo = "*"
+libpng = "*"
+libuv = "*"
+libwebp = "*"
+ninja = "*"
+pkg-config = "*"
+libvulkan-loader = "*"
+zlib = "*"
+
+[target.linux-64.dependencies]
+mesalib = ">=26.0.3,<27"
+sysroot_linux-64 = "*"
+vulkan-tools = ">=1.4.341.0,<2"
+
+[target.linux-aarch64.dependencies]
+mesalib = ">=26.0.3,<27"
+sysroot_linux-aarch64 = "*"
+vulkan-tools = ">=1.4.341.0,<2"
+
+[target.linux.activation.env]
+XDG_DATA_DIRS = "$CONDA_PREFIX/share:$XDG_DATA_DIRS"
