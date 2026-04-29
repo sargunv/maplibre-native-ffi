@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://json.schemastore.org/dependabot-2.0.json
+#
+# Not yet supported:
+# - mise tool versions: https://github.com/dependabot/dependabot-core/issues/12320
+# - pixi/conda dependencies
+# - git submodules pinned to a branch (third_party/maplibre-native)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns: ["*"]

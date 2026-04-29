@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/setup
+
+      - run: mise run fix
+      - run: mise run _verify-clean-worktree
+      - run: mise run test
+      - run: mise run //examples/zig-map:build
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats | tee sccache-stats.txt
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-linux-x64-${{ github.run_id }}
+          path: |
+            build/CMakeCache.txt
+            build/compile_commands.json
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+            sccache-stats.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/setup
+
+      - run: mise run fix
+      - run: mise run _verify-clean-worktree
+      - run: mise run test
+      - run: mise run //examples/zig-map:build
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats | tee sccache-stats.txt
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-linux-arm64-${{ github.run_id }}
+          path: |
+            build/CMakeCache.txt
+            build/compile_commands.json
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+            sccache-stats.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  macos-arm64:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/setup
+
+      - run: mise run fix
+      - run: mise run _verify-clean-worktree
+      - run: mise run test
+      - run: mise run //examples/zig-map:build
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats | tee sccache-stats.txt
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-macos-arm64-${{ github.run_id }}
+          path: |
+            build/CMakeCache.txt
+            build/compile_commands.json
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+            sccache-stats.txt
+          if-no-files-found: ignore
+          retention-days: 14
