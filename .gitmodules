@@ -1,4 +1,4 @@
 [submodule "third_party/maplibre-native"]
 	path = third_party/maplibre-native
-	url = https://github.com/sargunv/maplibre-native.git
-	branch = metal-headless-texture-accessor
+	url = https://github.com/maplibre/maplibre-native.git
+	branch = main
