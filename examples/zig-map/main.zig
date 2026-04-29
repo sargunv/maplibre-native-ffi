@@ -4,6 +4,7 @@ const objc = if (builtin.os.tag == .macos) @import("objc") else struct {};
 
 const c = @import("c.zig").c;
 const diagnostics = @import("diagnostics.zig");
+const input = @import("input.zig");
 const map_state = @import("map_state.zig");
 const render = @import("render/mod.zig");
 const types = @import("types.zig");
@@ -41,6 +42,7 @@ pub fn main(init_args: std.process.Init) !void {
     const window_handle = window.?;
     var current_viewport = viewport.get(window_handle);
     viewport.log("initial viewport", current_viewport);
+    input.logControls();
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -55,6 +57,7 @@ pub fn main(init_args: std.process.Init) !void {
     var running = true;
     var has_presented_frame = false;
     var render_pending = true;
+    var input_controller = input.Controller{};
     while (running) {
         const pool = if (builtin.os.tag == .macos) objc.AutoreleasePool.init() else {};
         defer if (builtin.os.tag == .macos) pool.deinit();
@@ -76,7 +79,14 @@ pub fn main(init_args: std.process.Init) !void {
                     try map.resize(current_viewport);
                     render_pending = true;
                 },
-                else => {},
+                else => {
+                    const input_result = try input_controller.handleEvent(
+                        &event,
+                        map.map,
+                        current_viewport,
+                    );
+                    render_pending = render_pending or input_result.camera_changed;
+                },
             }
         }
 

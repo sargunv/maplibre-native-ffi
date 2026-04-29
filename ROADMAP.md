@@ -51,6 +51,8 @@ for the SDL3 texture-rendered example on the current host backend.
 
 ## M5: Interactive Zig Map Example
 
+Status: Complete.
+
 Goal: Use Zig as a real non-C++ ABI consumer for an interactive texture-rendered
 map.
 
@@ -71,12 +73,20 @@ Delivered so far:
   texture-session output into the SDL window.
 - Example source organized into app/map/viewport/render backend modules, with
   backend-specific shaders colocated under `render/metal` and `render/vulkan`.
+- Shared SDL3 input controller translating pointer drag, wheel, and keyboard
+  controls into public ABI camera commands.
 
 Remaining deliverables:
 
-- Pointer drag, scroll, and keyboard controls translated into ABI camera
-  commands.
-- Interactive acceptance pass for pan, zoom, rotate, and pitch.
+- None.
+
+Interactive acceptance evidence:
+
+- Pointer drag, scroll, and keyboard controls are translated into public ABI
+  camera commands in the shared SDL3 input controller.
+- `mise run //examples/zig-map:run` builds and launches the texture-rendered
+  SDL3 app on the current host backend; pan, zoom, rotate, and pitch controls
+  are printed at startup for manual verification.
 
 Acceptance:
 

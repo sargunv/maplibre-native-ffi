@@ -6,6 +6,7 @@ pub const AppError = error{
     TextureAttachFailed,
     StyleLoadFailed,
     CameraJumpFailed,
+    CameraCommandFailed,
     TextureResizeFailed,
     TextureRenderFailed,
     BackendSetupFailed,
