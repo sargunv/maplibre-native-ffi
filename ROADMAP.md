@@ -25,13 +25,11 @@ The implemented foundation includes:
 - ABI contract tests for invalid arguments, stale handles, lifecycle state,
   wrong-thread calls, diagnostics, event draining/copying, resource request
   cancellation, double completion, and cross-thread provider completion.
-- Metal texture sessions with
-  attach/resize/render/acquire/release/detach/destroy, documented borrowed-frame
-  ownership, generation tracking, stale-frame prevention, owner-thread
-  validation, headless ABI coverage, and an SDL3 Zig sampler that imports the
-  public C header, creates a Metal window, samples acquired `MTLTexture` frames
-  using the frame's device, handles resize, and keeps ObjC/Metal host glue
-  example-local.
+- Texture sessions with backend-specific attach/acquire/release and common
+  resize/render/detach/destroy lifecycle, documented borrowed-frame ownership,
+  generation tracking, stale-frame prevention, owner-thread validation, Metal
+  support on Apple, and Vulkan support on Linux builds using host-provided
+  Vulkan device/queue handles.
 
 Useful deferred items from the foundation:
 
@@ -48,8 +46,8 @@ Useful deferred items from the foundation:
 
 Current validation: `mise run fix` and `mise run test` previously passed through
 the foundation. The ABI suite now includes 54 declared tests, including the M4
-texture-session coverage. `mise run example:zig-map` is the M4 visual sampler
-gate on macOS.
+texture-session coverage. `mise run example:zig-map` is the visual sampler gate
+for the SDL3 texture-rendered example on the current host backend.
 
 ## M5: Interactive Zig Map Example
 
@@ -63,7 +61,22 @@ Deliverables:
 - Pointer drag, scroll, and keyboard controls translated into ABI camera
   commands.
 - Event drain loop.
-- Metal texture-session rendering and sampling on macOS.
+- Texture session rendering and sampling.
+
+Delivered so far:
+
+- Shared SDL3 app shell, map/event loop, diagnostics, and viewport/system-scale
+  handling using only C ABI calls.
+- Backend-isolated Metal and Vulkan host compositors that sample the
+  texture-session output into the SDL window.
+- Example source organized into app/map/viewport/render backend modules, with
+  backend-specific shaders colocated under `render/metal` and `render/vulkan`.
+
+Remaining deliverables:
+
+- Pointer drag, scroll, and keyboard controls translated into ABI camera
+  commands.
+- Interactive acceptance pass for pan, zoom, rotate, and pitch.
 
 Acceptance:
 
@@ -71,8 +84,8 @@ Acceptance:
 - The example uses C ABI calls only; it does not call C++ directly.
 - Rendering remains texture-session based, not direct native-surface rendering.
 - Lifecycle, events, and diagnostics remain visible enough to debug failures.
-- The SDL3 shell keeps backend-specific rendering isolated so Metal on Apple can
-  later be paired with Vulkan on non-Apple platforms.
+- The SDL3 shell keeps backend-specific rendering isolated so Metal on Apple and
+  Vulkan on Linux share the same map/event loop without sharing graphics code.
 
 Out of scope:
 
@@ -147,20 +160,39 @@ Out of scope:
 
 Goal: Validate that the texture-session model generalizes beyond Metal.
 
-Deliverables:
+Status: Complete. This was implemented before the remaining M5 interactive
+controls and before M6 because Linux host-device rendering was needed to prove
+the texture-session ABI beyond Metal.
 
-- Vulkan texture descriptor and frame structs.
-- Vulkan attach/resize/render/acquire/release/detach/destroy implementation.
-- Documented Vulkan ownership and synchronization contract: device/queue, image
-  ownership, layouts, semaphores/fences, and in-flight frames.
-- Minimal host renderer that samples the produced Vulkan image.
+Delivered:
+
+- Public Vulkan texture descriptor and frame structs.
+- Vulkan attach plus common resize/render/detach/destroy implementation.
+- Vulkan acquire/release frame APIs exposing borrowed `VkImage`, `VkImageView`,
+  device, format, and `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL` layout metadata
+  for host sampling.
+- Host-provided Vulkan instance, physical device, logical device, graphics
+  queue, and queue-family ownership model.
+- Linux `zig-map` host renderer that samples the produced Vulkan image into an
+  SDL Vulkan swapchain.
+- Conservative frame lifetime management: the previous borrowed Vulkan frame is
+  released only after the host submit fence completes.
+- Vulkan compositor code split by object lifetime (`context`, `swapchain`,
+  `pipeline`, `commands`, `util`) so future Windows surface/device integration
+  can share the Vulkan renderer path where practical.
+
+Deferred follow-up:
+
+- Further synchronization refinement if future hosts need explicit semaphores or
+  fences instead of the current render-completes-before-acquire plus host submit
+  fence contract.
 
 Acceptance:
 
 - A visible local style renders through the Vulkan texture path.
 - Host Vulkan code samples the produced image correctly.
-- Metal-specific assumptions are either removed from the common ABI or
-  documented as backend-specific.
+- Metal-specific assumptions are removed from the common ABI or documented as
+  backend-specific.
 
 Out of scope:
 

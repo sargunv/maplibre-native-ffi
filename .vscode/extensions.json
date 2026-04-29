@@ -1,1 +1,9 @@
-{ "recommendations": ["dprint.dprint", "hverlin.mise-vscode"] }
+{
+  "recommendations": [
+    "dprint.dprint",
+    "hverlin.mise-vscode",
+    "okerew.shader-with-metal",
+    "ziglang.vscode-zig",
+    "llvm-vs-code-extensions.vscode-clangd"
+  ]
+}

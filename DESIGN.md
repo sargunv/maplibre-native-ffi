@@ -176,8 +176,9 @@ OS glue that is not already provided by directly linked MapLibre platform
 sources and is not specific to a render backend or UI adapter.
 
 `examples/zig-map` validates the primary rendering path from a non-C++ consumer:
-import the public C header with `@cImport`, render into an offscreen Metal
-texture, and sample that texture in an SDL3-created native window.
+import the public C header with `@cImport`, render into an offscreen backend
+texture, and sample that texture in an SDL3-created native window using Metal on
+macOS or Vulkan on Linux.
 
 `third_party/maplibre-native` is the initial development source for MapLibre
 Native. Keeping it as a pinned submodule makes it possible to inspect, debug,
@@ -322,21 +323,29 @@ mln_surface_session
   surface loss, teardown
 ```
 
-Representative texture API:
+Representative texture API uses backend-specific attach/frame calls and a common
+session lifecycle:
 
 ```c
-mln_status mln_texture_attach(mln_map* map,
-                              const mln_texture_descriptor* descriptor,
-                              mln_texture_session** out_texture);
+mln_status mln_metal_texture_attach(mln_map* map,
+                                    const mln_metal_texture_descriptor* descriptor,
+                                    mln_texture_session** out_texture);
+mln_status mln_vulkan_texture_attach(mln_map* map,
+                                     const mln_vulkan_texture_descriptor* descriptor,
+                                     mln_texture_session** out_texture);
 mln_status mln_texture_resize(mln_texture_session* texture,
                               uint32_t width,
                               uint32_t height,
                               double scale_factor);
 mln_status mln_texture_render(mln_texture_session* texture);
-mln_status mln_texture_acquire_frame(mln_texture_session* texture,
-                                     mln_texture_frame* out_frame);
-mln_status mln_texture_release_frame(mln_texture_session* texture,
-                                     const mln_texture_frame* frame);
+mln_status mln_metal_texture_acquire_frame(mln_texture_session* texture,
+                                           mln_metal_texture_frame* out_frame);
+mln_status mln_metal_texture_release_frame(mln_texture_session* texture,
+                                           const mln_metal_texture_frame* frame);
+mln_status mln_vulkan_texture_acquire_frame(mln_texture_session* texture,
+                                            mln_vulkan_texture_frame* out_frame);
+mln_status mln_vulkan_texture_release_frame(mln_texture_session* texture,
+                                            const mln_vulkan_texture_frame* frame);
 mln_status mln_texture_detach(mln_texture_session* texture);
 mln_status mln_texture_destroy(mln_texture_session* texture);
 ```
@@ -357,9 +366,10 @@ mln_status mln_surface_destroy(mln_surface_session* surface);
 ```
 
 All render target integrations should follow the same lifecycle shape: attach,
-resize, render, detach, destroy. Backend-specific native handles and GPU
-synchronization rules must still be documented per integration because Metal,
-Vulkan, and native surfaces do not share identical ownership rules.
+resize, render, detach, destroy. Texture sessions share resize/render/detach and
+destroy calls, but attach, acquire, and release are backend-specific because
+Metal, Vulkan, and future backends do not share native handles or
+synchronization rules.
 
 Each surface integration must document:
 
@@ -631,7 +641,7 @@ GPU-rendered or declarative UI systems.
 The ABI should make texture rendering explicit instead of treating it as a
 special case of native surfaces.
 
-## Metal Texture Rendering
+## Metal and Vulkan Texture Rendering
 
 MapLibre Native already has a Metal offscreen rendering path through
 `mbgl::mtl::HeadlessBackend` and `mbgl::gfx::OffscreenTexture`. The Metal
@@ -640,31 +650,33 @@ render-target and shader-read usage. The initial Metal texture-session design
 should build on this existing headless/offscreen path rather than modifying the
 view-oriented `MLNMapView+Metal` path.
 
-The ABI should expose acquired texture frames from this offscreen render target,
+The ABI should expose acquired texture frames from offscreen render targets,
 with explicit lifetime and synchronization rules. CPU readback remains a debug
 and test tool only.
 
 Design assumptions:
 
-- The offscreen Metal texture can be exposed as a sampleable `MTLTexture` or
-  equivalent Objective-C Metal object.
+- The host supplies the Metal `MTLDevice` or Vulkan instance/device/queue.
+- The wrapper owns the rendered `MTLTexture` or `VkImage` allocation created on
+  the host-provided device.
 - Texture lifetime can be modeled with acquire/release semantics.
 - Resize creates a new texture generation.
 - Initial synchronization can be conservative; optimized synchronization can
   evolve without changing the high-level texture-session model.
-- The same texture-session concept can later be evaluated for Vulkan, even if
-  Vulkan requires different ownership or synchronization details.
+
+Vulkan acquired frames expose a wrapper-owned `VkImage` plus `VkImageView` in a
+host-sampleable layout, currently `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`.
+`mln_texture_render` completes the render work before acquire returns, so the
+initial host contract is synchronous: the host may sample the borrowed image
+view until `mln_vulkan_texture_release_frame` and remains responsible for
+composing that sampled image into its own swapchain or platform surface.
 
 Risks:
 
-- MapLibre Native may need a small public or wrapper-private accessor for the
-  internal offscreen Metal texture.
+- MapLibre Native may need small public or wrapper-private accessors for
+  backend-native offscreen textures/images.
 - Host UI frameworks may not accept externally produced GPU textures directly.
 - Synchronization may require backend-specific frame metadata.
-- Vulkan may require a different ownership model than Metal.
-
-Vulkan texture support should be designed after the Metal texture path clarifies
-the common ABI shape and which parts must remain backend-specific.
 
 ## Resource Loading and Cache
 

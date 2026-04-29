@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/gfx/headless_backend.hpp>
@@ -12,14 +13,13 @@
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/util/size.hpp>
 
-#include <Metal/MTLDevice.hpp>
-#include <Metal/MTLPixelFormat.hpp>
-#include <Metal/MTLTexture.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
-#include "render/metal/metal_texture_backend.inc"
+#include "maplibre_native_abi.h"
 #include "render/texture_session.hpp"
+#include "render/vulkan/vulkan_texture_backend.hpp"
 
 struct mln_texture_session {
   mln_map* map = nullptr;
@@ -35,13 +35,12 @@ struct mln_texture_session {
   uint64_t rendered_generation = 0;
   bool attached = true;
   bool acquired = false;
-  std::unique_ptr<mln::core::MetalTextureBackend> backend;
-  std::unique_ptr<mbgl::Renderer> renderer;
-  MTL::Texture* rendered_texture = nullptr;
-  MTL::Texture* acquired_texture = nullptr;
+  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend = nullptr;
+  std::unique_ptr<mbgl::Renderer> renderer = nullptr;
 };
 
 namespace {
+
 using TextureRegistry = std::unordered_map<
   mln_texture_session*, std::unique_ptr<mln_texture_session>>;
 
@@ -55,15 +54,15 @@ auto texture_registry() -> TextureRegistry& {
   return registry;
 }
 
-auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
+auto validate_descriptor(const mln_vulkan_texture_descriptor* descriptor)
   -> mln_status {
   if (descriptor == nullptr) {
     mln::core::set_thread_error("texture descriptor must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (descriptor->size < sizeof(mln_metal_texture_descriptor)) {
+  if (descriptor->size < sizeof(mln_vulkan_texture_descriptor)) {
     mln::core::set_thread_error(
-      "mln_metal_texture_descriptor.size is too small"
+      "mln_vulkan_texture_descriptor.size is too small"
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -76,10 +75,83 @@ auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (descriptor->device == nullptr) {
-    mln::core::set_thread_error("Metal device must not be null");
+  if (
+    descriptor->instance == nullptr || descriptor->physical_device == nullptr ||
+    descriptor->device == nullptr || descriptor->graphics_queue == nullptr
+  ) {
+    mln::core::set_thread_error("Vulkan handles must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  return MLN_STATUS_OK;
+}
+
+auto validate_vulkan_handles(const mln_vulkan_texture_descriptor& descriptor)
+  -> mln_status {
+  auto* const instance = static_cast<VkInstance>(descriptor.instance);
+  auto* const physical_device =
+    static_cast<VkPhysicalDevice>(descriptor.physical_device);
+
+  auto physical_device_count = uint32_t{};
+  auto result =
+    ::vkEnumeratePhysicalDevices(instance, &physical_device_count, nullptr);
+  if (result != VK_SUCCESS || physical_device_count == 0) {
+    mln::core::set_thread_error(
+      "Vulkan instance must expose at least one physical device"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto physical_devices = std::vector<VkPhysicalDevice>(physical_device_count);
+  result = ::vkEnumeratePhysicalDevices(
+    instance, &physical_device_count, physical_devices.data()
+  );
+  if (result != VK_SUCCESS) {
+    mln::core::set_thread_error("failed to enumerate Vulkan physical devices");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto found_physical_device = false;
+  for (auto* const candidate : physical_devices) {
+    if (candidate == physical_device) {
+      found_physical_device = true;
+      break;
+    }
+  }
+  if (!found_physical_device) {
+    mln::core::set_thread_error(
+      "Vulkan physical_device must belong to instance"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto queue_family_count = uint32_t{};
+  ::vkGetPhysicalDeviceQueueFamilyProperties(
+    physical_device, &queue_family_count, nullptr
+  );
+  if (descriptor.graphics_queue_family_index >= queue_family_count) {
+    mln::core::set_thread_error(
+      "Vulkan graphics_queue_family_index is out of range"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto queue_families =
+    std::vector<VkQueueFamilyProperties>(queue_family_count);
+  ::vkGetPhysicalDeviceQueueFamilyProperties(
+    physical_device, &queue_family_count, queue_families.data()
+  );
+  const auto& queue_family =
+    queue_families.at(descriptor.graphics_queue_family_index);
+  if (
+    (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ||
+    queue_family.queueCount == 0
+  ) {
+    mln::core::set_thread_error(
+      "Vulkan graphics_queue_family_index must support graphics"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
   return MLN_STATUS_OK;
 }
 
@@ -134,45 +206,27 @@ auto validate_live_attached_texture(mln_texture_session* texture)
   return MLN_STATUS_OK;
 }
 
-auto fill_frame(
-  mln_texture_session* texture, mln_metal_texture_frame* out_frame
-) -> mln_status {
-  auto* metal_texture = texture->rendered_texture;
-  if (metal_texture == nullptr) {
-    mln::core::set_thread_error("rendered Metal texture is not available");
-    return MLN_STATUS_INVALID_STATE;
-  }
-
-  *out_frame = mln_metal_texture_frame{
-    .size = sizeof(mln_metal_texture_frame),
-    .generation = texture->generation,
-    .width = texture->physical_width,
-    .height = texture->physical_height,
-    .scale_factor = texture->scale_factor,
-    .frame_id = texture->next_frame_id,
-    .texture = metal_texture,
-    .device = metal_texture->device(),
-    .pixel_format = static_cast<uint64_t>(metal_texture->pixelFormat())
-  };
-  return MLN_STATUS_OK;
-}
 }  // namespace
 
 namespace mln::core {
 
-auto metal_texture_descriptor_default() noexcept
-  -> mln_metal_texture_descriptor {
-  return mln_metal_texture_descriptor{
-    .size = sizeof(mln_metal_texture_descriptor),
+auto vulkan_texture_descriptor_default() noexcept
+  -> mln_vulkan_texture_descriptor {
+  return mln_vulkan_texture_descriptor{
+    .size = sizeof(mln_vulkan_texture_descriptor),
     .width = 256,
     .height = 256,
     .scale_factor = 1.0,
-    .device = nullptr
+    .instance = nullptr,
+    .physical_device = nullptr,
+    .device = nullptr,
+    .graphics_queue = nullptr,
+    .graphics_queue_family_index = 0,
   };
 }
 
-auto metal_texture_attach(
-  mln_map* map, const mln_metal_texture_descriptor* descriptor,
+auto vulkan_texture_attach(
+  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status {
   const auto map_status = validate_map(map);
@@ -191,6 +245,16 @@ auto metal_texture_attach(
     set_thread_error("out_texture must point to a null handle");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
+  }
+  const auto vulkan_status = validate_vulkan_handles(*descriptor);
+  if (vulkan_status != MLN_STATUS_OK) {
+    return vulkan_status;
+  }
 
   auto session = std::make_unique<mln_texture_session>();
   session->map = map;
@@ -198,19 +262,12 @@ auto metal_texture_attach(
   session->width = descriptor->width;
   session->height = descriptor->height;
   session->scale_factor = descriptor->scale_factor;
-  const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
-  );
-  if (physical_status != MLN_STATUS_OK) {
-    return physical_status;
-  }
   session->physical_width =
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend = std::make_unique<MetalTextureBackend>(
-    static_cast<MTL::Device*>(descriptor->device),
-    mbgl::Size{session->physical_width, session->physical_height}
+  session->backend = std::make_unique<VulkanTextureBackend>(
+    *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
   auto* handle = session.get();
 
@@ -260,17 +317,11 @@ auto texture_resize(
   const auto physical_width = physical_dimension(width, scale_factor);
   const auto physical_height = physical_dimension(height, scale_factor);
 
-  // Map::setSize receives the logical UI viewport, while the render backend
-  // owns the physical pixel target. MapLibre Native's map pixelRatio is fixed
-  // at map construction, so runtime scale changes are represented here by
-  // resizing the backend texture and recreating the renderer with the new scale
-  // factor.
   texture->backend->setSize(mbgl::Size{physical_width, physical_height});
   if (auto* map = map_native(texture->map); map != nullptr) {
     map->setSize(mbgl::Size{width, height});
   }
   texture->renderer.reset();
-  texture->rendered_texture = nullptr;
   texture->rendered_generation = 0;
   texture->width = width;
   texture->height = height;
@@ -297,36 +348,38 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
     return MLN_STATUS_INVALID_STATE;
   }
 
+  // Renderer::render creates the Vulkan context before requesting the default
+  // renderable, so shared-device resources must be ready first.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+  static_cast<VulkanTextureBackend&>(*texture->backend)
+    .prepareRenderResources();
   auto guard = mbgl::gfx::BackendScope{
-    *texture->backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+    *texture->backend->getRendererBackend(),
+    mbgl::gfx::BackendScope::ScopeType::Implicit
   };
   map_run_render_jobs(texture->map);
   if (texture->renderer == nullptr) {
     texture->renderer = std::make_unique<mbgl::Renderer>(
-      *texture->backend, static_cast<float>(texture->scale_factor)
+      *texture->backend->getRendererBackend(),
+      static_cast<float>(texture->scale_factor)
     );
     texture->renderer->setObserver(map_renderer_observer(texture->map));
   }
 
   texture->renderer->render(update);
-  texture->rendered_texture = texture->backend->metal_texture();
-  if (texture->rendered_texture == nullptr) {
-    set_thread_error("render did not produce a Metal texture");
-    return MLN_STATUS_NATIVE_ERROR;
-  }
   texture->rendered_generation = texture->generation;
   return MLN_STATUS_OK;
 }
 
-auto metal_texture_acquire_frame(
-  mln_texture_session* texture, mln_metal_texture_frame* out_frame
+auto vulkan_texture_acquire_frame(
+  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
 ) -> mln_status {
   const auto status = validate_live_attached_texture(texture);
   if (status != MLN_STATUS_OK) {
     return status;
   }
   if (
-    out_frame == nullptr || out_frame->size < sizeof(mln_metal_texture_frame)
+    out_frame == nullptr || out_frame->size < sizeof(mln_vulkan_texture_frame)
   ) {
     set_thread_error("out_frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
@@ -340,25 +393,38 @@ auto metal_texture_acquire_frame(
     return MLN_STATUS_INVALID_STATE;
   }
 
-  const auto frame_status = fill_frame(texture, out_frame);
-  if (frame_status != MLN_STATUS_OK) {
-    return frame_status;
-  }
-  texture->acquired_texture = texture->rendered_texture;
+  // The Vulkan acquire path is only valid for sessions created by
+  // vulkan_texture_attach, and this Linux build only creates Vulkan sessions.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+  auto& backend = static_cast<VulkanTextureBackend&>(*texture->backend);
+  const auto resources = backend.frame_resources();
+  *out_frame = mln_vulkan_texture_frame{
+    .size = sizeof(mln_vulkan_texture_frame),
+    .generation = texture->generation,
+    .width = texture->physical_width,
+    .height = texture->physical_height,
+    .scale_factor = texture->scale_factor,
+    .frame_id = texture->next_frame_id,
+    .image = resources.image,
+    .image_view = resources.image_view,
+    .device = resources.device,
+    .format = static_cast<uint32_t>(resources.format),
+    .layout = static_cast<uint32_t>(vk::ImageLayout::eShaderReadOnlyOptimal),
+  };
   texture->acquired = true;
   texture->acquired_frame_id = out_frame->frame_id;
   ++texture->next_frame_id;
   return MLN_STATUS_OK;
 }
 
-auto metal_texture_release_frame(
-  mln_texture_session* texture, const mln_metal_texture_frame* frame
+auto vulkan_texture_release_frame(
+  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
 ) -> mln_status {
   const auto status = validate_texture(texture);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (frame == nullptr || frame->size < sizeof(mln_metal_texture_frame)) {
+  if (frame == nullptr || frame->size < sizeof(mln_vulkan_texture_frame)) {
     set_thread_error("frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -376,7 +442,6 @@ auto metal_texture_release_frame(
   }
   texture->acquired = false;
   texture->acquired_frame_id = 0;
-  texture->acquired_texture = nullptr;
   return MLN_STATUS_OK;
 }
 
@@ -395,7 +460,6 @@ auto texture_detach(mln_texture_session* texture) -> mln_status {
     return detach_status;
   }
   texture->renderer.reset();
-  texture->rendered_texture = nullptr;
   texture->backend.reset();
   texture->attached = false;
   texture->rendered_generation = 0;
@@ -430,23 +494,19 @@ auto texture_destroy(mln_texture_session* texture) -> mln_status {
   return MLN_STATUS_OK;
 }
 
-auto vulkan_texture_descriptor_default() noexcept
-  -> mln_vulkan_texture_descriptor {
-  return mln_vulkan_texture_descriptor{
-    .size = sizeof(mln_vulkan_texture_descriptor),
+auto metal_texture_descriptor_default() noexcept
+  -> mln_metal_texture_descriptor {
+  return mln_metal_texture_descriptor{
+    .size = sizeof(mln_metal_texture_descriptor),
     .width = 256,
     .height = 256,
     .scale_factor = 1.0,
-    .instance = nullptr,
-    .physical_device = nullptr,
     .device = nullptr,
-    .graphics_queue = nullptr,
-    .graphics_queue_family_index = 0,
   };
 }
 
-auto vulkan_texture_attach(
-  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+auto metal_texture_attach(
+  mln_map* map, const mln_metal_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status {
   (void)map;
@@ -454,25 +514,25 @@ auto vulkan_texture_attach(
   if (out_texture != nullptr) {
     *out_texture = nullptr;
   }
-  set_thread_error("Vulkan texture sessions are not supported by this build");
+  set_thread_error("Metal texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
 }
 
-auto vulkan_texture_acquire_frame(
-  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
+auto metal_texture_acquire_frame(
+  mln_texture_session* texture, mln_metal_texture_frame* out_frame
 ) -> mln_status {
   (void)texture;
   (void)out_frame;
-  set_thread_error("Vulkan texture sessions are not supported by this build");
+  set_thread_error("Metal texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
 }
 
-auto vulkan_texture_release_frame(
-  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
+auto metal_texture_release_frame(
+  mln_texture_session* texture, const mln_metal_texture_frame* frame
 ) -> mln_status {
   (void)texture;
   (void)frame;
-  set_thread_error("Vulkan texture sessions are not supported by this build");
+  set_thread_error("Metal texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
 }
 

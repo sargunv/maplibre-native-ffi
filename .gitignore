@@ -2,4 +2,5 @@ build*/
 .zig-cache/
 zig-out/
 zig-pkg/
+*.spv
 workpad.md

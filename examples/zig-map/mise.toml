@@ -1,0 +1,9 @@
+[tasks.build]
+depends = ["//:build", ":compile-shaders"]
+env = { XDG_DATA_DIRS = "{{config_root}}/../../.pixi/envs/default/share" }
+run = "zig build"
+
+[tasks.run]
+depends = ["//:build", ":compile-shaders"]
+env = { XDG_DATA_DIRS = "{{config_root}}/../../.pixi/envs/default/share" }
+run = "zig build run"

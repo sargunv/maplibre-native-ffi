@@ -6,12 +6,19 @@ local allSteps = new Mapping<String, Step> {
   ["dprint"] = Builtins.dprint
   ["cmake-configure"] {
     glob = List("CMakeLists.txt", "**/*.cmake", "**/*.cmake.in")
-    check = "cmake -S . -B build"
+    check = "mise run configure"
   }
   ["clang-tidy"] {
     glob = List("include/**/*.h", "include/**/*.hpp", "src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx", "src/**/*.hpp")
+    exclude = List("src/render/vulkan/**")
     depends = List("cmake-configure")
-    check = "clang-tidy --quiet -p build {{files}}"
+    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
+  }
+  ["clang-tidy-vulkan"] {
+    glob = List("src/render/vulkan/**/*.cpp", "src/render/vulkan/**/*.hpp")
+    depends = List("cmake-configure")
+    step_condition = "exec('uname -s') == 'Linux'"
+    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
   }
   ["jvl"] {
     glob = List("**/*.json", "**/*.jsonc")

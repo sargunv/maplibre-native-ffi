@@ -3,6 +3,8 @@ const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
+extern fn usleep(useconds: c_uint) c_int;
+
 test "event polling reports empty queues" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
@@ -53,6 +55,7 @@ test "event message storage is copied into caller output" {
         var has_event = false;
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
         if (has_event and event.type == c.MLN_MAP_EVENT_MAP_LOADING_FAILED) break;
+        _ = usleep(1000);
     } else return error.EventNotFound;
 
     const message = std.mem.sliceTo(&event.message, 0);

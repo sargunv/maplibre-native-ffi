@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
 project(maplibre_native_experiments VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -31,7 +33,7 @@ set(
 )
 if(APPLE)
   set(MLN_WITH_METAL ON CACHE BOOL "Build MapLibre Native Metal backend" FORCE)
-else()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(
     MLN_WITH_VULKAN
     ON
@@ -48,13 +50,14 @@ set(
   FORCE
 )
 add_subdirectory("${MLN_SOURCE_DIR}" "${PROJECT_BINARY_DIR}/maplibre-native")
+include("${MLN_SOURCE_DIR}/vendor/nunicode.cmake")
+include("${MLN_SOURCE_DIR}/vendor/sqlite.cmake")
 
 set(
   MLN_PLATFORM_SUPPORT_SOURCES
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/monotonic_timer.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/thread_local.cpp
-  ${MLN_SOURCE_DIR}/platform/qt/src/mbgl/bidi.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/gfx/headless_backend.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/layermanager/layer_manager.cpp
   ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/asset_file_source.cpp
@@ -97,6 +100,7 @@ if(APPLE)
   list(
     APPEND MLN_PLATFORM_SUPPORT_SOURCES
     ${MLN_SOURCE_DIR}/platform/default/src/mbgl/mtl/headless_backend.cpp
+    ${MLN_SOURCE_DIR}/platform/qt/src/mbgl/bidi.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/async_task.cpp
     ${MLN_SOURCE_DIR}/platform/darwin/core/collator.mm
     ${MLN_SOURCE_DIR}/platform/darwin/core/http_file_source.mm
@@ -118,15 +122,58 @@ if(APPLE)
     "-framework ImageIO"
     "-framework Metal"
   )
-  set_source_files_properties(
-    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/mtl/headless_backend.cpp
-    PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+  set(
+    MLN_TEXTURE_SESSION_SOURCE
+    src/render/metal/metal_texture_session.mm
+    src/render/metal/metal_texture_backend.mm
+  )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(CURL REQUIRED)
+  find_package(JPEG REQUIRED)
+  find_package(PNG REQUIRED)
+  find_package(PkgConfig REQUIRED)
+  find_package(Threads REQUIRED)
+  pkg_search_module(WEBP libwebp REQUIRED)
+  pkg_search_module(LIBUV libuv REQUIRED)
+  pkg_search_module(ICUUC icu-uc REQUIRED)
+  pkg_search_module(ICUI18N icu-i18n REQUIRED)
+  list(
+    APPEND MLN_PLATFORM_SUPPORT_SOURCES
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/vulkan/headless_backend.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/i18n/collator.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/i18n/number_format.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/storage/http_file_source.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/text/bidi.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/text/local_glyph_rasterizer.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/async_task.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/image.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/jpeg_reader.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/png_reader.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/png_writer.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/run_loop.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/string_stdlib.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/thread.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/timer.cpp
+    ${MLN_SOURCE_DIR}/platform/default/src/mbgl/util/webp_reader.cpp
+  )
+  list(
+    APPEND MLN_PLATFORM_SUPPORT_LIBRARIES
+    ${CURL_LIBRARIES}
+    ${JPEG_LIBRARIES}
+    ${LIBUV_LIBRARIES}
+    ${WEBP_LIBRARIES}
+    ${ICUUC_LIBRARIES}
+    ${ICUI18N_LIBRARIES}
+    PNG::PNG
+    Threads::Threads
+  )
+  set(
+    MLN_TEXTURE_SESSION_SOURCE
+    src/render/vulkan/vulkan_texture_session.cpp
+    src/render/vulkan/vulkan_texture_backend.cpp
   )
 else()
-  message(
-    FATAL_ERROR
-    "maplibre_native_abi platform support is currently wired for Apple targets only"
-  )
+  message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 add_library(
@@ -146,7 +193,7 @@ add_library(
   src/resources/file_source_manager.cpp
   src/resources/network_status.cpp
   src/resources/resource_loader.cpp
-  src/render/metal/metal_texture_session.mm
+  ${MLN_TEXTURE_SESSION_SOURCE}
   src/runtime/runtime.cpp
   ${MLN_PLATFORM_SUPPORT_SOURCES}
 )
@@ -164,26 +211,41 @@ target_include_directories(
   SYSTEM
   PRIVATE
     ${MLN_SOURCE_DIR}/src
-    ${MLN_SOURCE_DIR}/platform/darwin/core
-    ${MLN_SOURCE_DIR}/platform/darwin/include
-    ${MLN_SOURCE_DIR}/platform/darwin/src
     ${MLN_SOURCE_DIR}/platform/default/include
-    ${MLN_SOURCE_DIR}/vendor/icu/include
     ${MLN_SOURCE_DIR}/vendor/PMTiles/cpp
+    ${MLN_SOURCE_DIR}/vendor/boost/include
+    $<$<BOOL:${APPLE}>:${MLN_SOURCE_DIR}/platform/darwin/core>
+    $<$<BOOL:${APPLE}>:${MLN_SOURCE_DIR}/platform/darwin/include>
+    $<$<BOOL:${APPLE}>:${MLN_SOURCE_DIR}/platform/darwin/src>
+    $<$<BOOL:${APPLE}>:${MLN_SOURCE_DIR}/vendor/icu/include>
+    $<$<NOT:$<BOOL:${APPLE}>>:${CURL_INCLUDE_DIRS}>
+    $<$<NOT:$<BOOL:${APPLE}>>:${JPEG_INCLUDE_DIRS}>
+    $<$<NOT:$<BOOL:${APPLE}>>:${LIBUV_INCLUDE_DIRS}>
+    $<$<NOT:$<BOOL:${APPLE}>>:${WEBP_INCLUDE_DIRS}>
+    $<$<NOT:$<BOOL:${APPLE}>>:${ICUUC_INCLUDE_DIRS}>
+    $<$<NOT:$<BOOL:${APPLE}>>:${ICUI18N_INCLUDE_DIRS}>
 )
 target_link_libraries(
   maplibre_native_abi
   PRIVATE
     Mapbox::Map
-    mbgl-vendor-metal-cpp
+    mbgl-vendor-boost
+    mbgl-vendor-nunicode
     mbgl-vendor-pmtiles
-    sqlite3
+    mbgl-vendor-sqlite
     z
+    $<$<BOOL:${APPLE}>:mbgl-vendor-metal-cpp>
     ${MLN_PLATFORM_SUPPORT_LIBRARIES}
 )
 target_compile_options(
   maplibre_native_abi
-  PRIVATE $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>
+  PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-rtti>
+    $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>
+)
+target_compile_definitions(
+  maplibre_native_abi
+  PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:NDEBUG>
 )
 
 set_target_properties(

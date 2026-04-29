@@ -75,7 +75,10 @@ auto database_source_for_runtime(mln_runtime* runtime)
     mbgl::FileSourceType::Database, resource_options_for_runtime(runtime),
     mbgl::ClientOptions()
   );
-  auto database = std::dynamic_pointer_cast<mbgl::DatabaseFileSource>(source);
+  // The Database FileSourceManager factory is registered by this wrapper and
+  // always returns DatabaseFileSource for FileSourceType::Database. MapLibre is
+  // built without RTTI, so keep this path non-RTTI as well.
+  auto database = std::static_pointer_cast<mbgl::DatabaseFileSource>(source);
   if (database != nullptr && runtime->has_maximum_cache_size) {
     database->setMaximumAmbientCacheSize(
       runtime->maximum_cache_size, [](std::exception_ptr) -> void {}
