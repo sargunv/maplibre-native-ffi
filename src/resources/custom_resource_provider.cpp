@@ -161,8 +161,10 @@ auto response_from_abi(const mln_resource_response& provider_response)
 
   if (provider_response.status == MLN_RESOURCE_RESPONSE_STATUS_ERROR) {
     auto message = std::string{"resource provider failed"};
-    if (provider_response.error_message != nullptr &&
-        *provider_response.error_message != '\0') {
+    if (
+      provider_response.error_message != nullptr &&
+      *provider_response.error_message != '\0'
+    ) {
       message = provider_response.error_message;
     }
     auto retry_after = std::optional<mbgl::Timestamp>{};
@@ -286,7 +288,8 @@ auto invoke_custom_provider(CustomProviderInvocation invocation) noexcept
         .has_retry_after = false,
         .retry_after_unix_ms = 0,
       };
-      static_cast<void>(complete_resource_request(invocation.handle, &response)
+      static_cast<void>(
+        complete_resource_request(invocation.handle, &response)
       );
       release(invocation.handle);
     }
@@ -309,7 +312,8 @@ auto invoke_custom_provider(CustomProviderInvocation invocation) noexcept
       .retry_after_unix_ms = 0,
     };
     try {
-      static_cast<void>(complete_resource_request(invocation.handle, &response)
+      static_cast<void>(
+        complete_resource_request(invocation.handle, &response)
       );
     } catch (...) {
       static_cast<void>(response);
@@ -337,12 +341,14 @@ auto request_custom_resource(
     release(handle);
   });
   try {
-    const auto handled = invoke_custom_provider(CustomProviderInvocation{
-      .handle = handle,
-      .resource = resource,
-      .callback = provider_callback,
-      .user_data = user_data,
-    });
+    const auto handled = invoke_custom_provider(
+      CustomProviderInvocation{
+        .handle = handle,
+        .resource = resource,
+        .callback = provider_callback,
+        .user_data = user_data,
+      }
+    );
     return handled ? std::move(request) : nullptr;
   } catch (...) {
     auto response = mln_resource_response{

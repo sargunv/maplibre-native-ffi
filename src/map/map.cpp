@@ -141,8 +141,9 @@ class HeadlessObserver final : public mbgl::MapObserver {
     events_->push(MLN_MAP_EVENT_MAP_LOADING_FINISHED);
   }
 
-  void onDidFailLoadingMap(mbgl::MapLoadError error, const std::string& message)
-    override {
+  void onDidFailLoadingMap(
+    mbgl::MapLoadError error, const std::string& message
+  ) override {
     events_->push(
       MLN_MAP_EVENT_MAP_LOADING_FAILED, static_cast<int32_t>(error),
       message.c_str()
@@ -230,8 +231,10 @@ auto validate_map_options(const mln_map_options* options) -> mln_status {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  if (options->width == 0 || options->height == 0 ||
-      !std::isfinite(options->scale_factor) || options->scale_factor <= 0) {
+  if (
+    options->width == 0 || options->height == 0 ||
+    !std::isfinite(options->scale_factor) || options->scale_factor <= 0
+  ) {
     mln::core::set_thread_error(
       "map dimensions and scale_factor must be positive"
     );
@@ -647,8 +650,10 @@ auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (out_event == nullptr || out_has_event == nullptr ||
-      out_event->size < sizeof(mln_map_event)) {
+  if (
+    out_event == nullptr || out_has_event == nullptr ||
+    out_event->size < sizeof(mln_map_event)
+  ) {
     set_thread_error(
       "out_event and out_has_event must not be null, and out_event must have a "
       "valid size"
