@@ -162,14 +162,12 @@ auto create_runtime(
   const auto owner_thread = std::this_thread::get_id();
   {
     const std::scoped_lock lock(runtime_registry_mutex());
-    if (
-      std::any_of(
-        runtime_registry().begin(), runtime_registry().end(),
-        [&](const auto& entry) -> bool {
-          return entry.second->owner_thread == owner_thread;
-        }
-      )
-    ) {
+    if (std::any_of(
+          runtime_registry().begin(), runtime_registry().end(),
+          [&](const auto& entry) -> bool {
+            return entry.second->owner_thread == owner_thread;
+          }
+        )) {
       set_thread_error("owner thread already has a live runtime");
       return MLN_STATUS_INVALID_STATE;
     }
@@ -226,8 +224,7 @@ auto set_resource_transform(
 
   const std::scoped_lock lock(runtime_registry_mutex());
   if (runtime->live_maps != 0) {
-    set_thread_error(
-      "resource transform must be registered before map creation"
+    set_thread_error("resource transform must be registered before map creation"
     );
     return MLN_STATUS_INVALID_STATE;
   }

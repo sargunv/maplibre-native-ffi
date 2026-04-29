@@ -64,19 +64,17 @@ auto validate_descriptor(const mln_vulkan_texture_descriptor* descriptor)
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (
-    descriptor->width == 0 || descriptor->height == 0 ||
-    !std::isfinite(descriptor->scale_factor) || descriptor->scale_factor <= 0.0
-  ) {
+  if (descriptor->width == 0 || descriptor->height == 0 ||
+      !std::isfinite(descriptor->scale_factor) ||
+      descriptor->scale_factor <= 0.0) {
     mln::core::set_thread_error(
       "texture dimensions and scale_factor must be positive"
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (
-    descriptor->instance == nullptr || descriptor->physical_device == nullptr ||
-    descriptor->device == nullptr || descriptor->graphics_queue == nullptr
-  ) {
+  if (descriptor->instance == nullptr ||
+      descriptor->physical_device == nullptr || descriptor->device == nullptr ||
+      descriptor->graphics_queue == nullptr) {
     mln::core::set_thread_error("Vulkan handles must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -116,8 +114,7 @@ auto validate_vulkan_handles(const mln_vulkan_texture_descriptor& descriptor)
     }
   }
   if (!found_physical_device) {
-    mln::core::set_thread_error(
-      "Vulkan physical_device must belong to instance"
+    mln::core::set_thread_error("Vulkan physical_device must belong to instance"
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -140,10 +137,8 @@ auto validate_vulkan_handles(const mln_vulkan_texture_descriptor& descriptor)
   );
   const auto& queue_family =
     queue_families.at(descriptor.graphics_queue_family_index);
-  if (
-    (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ||
-    queue_family.queueCount == 0
-  ) {
+  if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ||
+      queue_family.queueCount == 0) {
     mln::core::set_thread_error(
       "Vulkan graphics_queue_family_index must support graphics"
     );
@@ -162,10 +157,8 @@ auto validate_physical_size(
 ) -> mln_status {
   constexpr auto max_dimension =
     static_cast<double>(std::numeric_limits<uint32_t>::max());
-  if (
-    std::ceil(width * scale_factor) > max_dimension ||
-    std::ceil(height * scale_factor) > max_dimension
-  ) {
+  if (std::ceil(width * scale_factor) > max_dimension ||
+      std::ceil(height * scale_factor) > max_dimension) {
     mln::core::set_thread_error("scaled texture dimensions are too large");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -296,10 +289,8 @@ auto texture_resize(
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (
-    width == 0 || height == 0 || !std::isfinite(scale_factor) ||
-    scale_factor <= 0.0
-  ) {
+  if (width == 0 || height == 0 || !std::isfinite(scale_factor) ||
+      scale_factor <= 0.0) {
     set_thread_error("texture dimensions and scale_factor must be positive");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -376,9 +367,8 @@ auto vulkan_texture_acquire_frame(
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (
-    out_frame == nullptr || out_frame->size < sizeof(mln_vulkan_texture_frame)
-  ) {
+  if (out_frame == nullptr ||
+      out_frame->size < sizeof(mln_vulkan_texture_frame)) {
     set_thread_error("out_frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }

@@ -77,10 +77,8 @@ auto make_resource_transform(void* platform_context)
         const auto status = callback(
           user_data, resource_kind_to_abi(kind), url.c_str(), &response
         );
-        if (
-          status == MLN_STATUS_OK && response.url != nullptr &&
-          *response.url != '\0'
-        ) {
+        if (status == MLN_STATUS_OK && response.url != nullptr &&
+            *response.url != '\0') {
           finished(std::string{response.url});
           return;
         }
@@ -101,14 +99,11 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
   )
       : resource_options_(resource_options.clone()),
         client_options_(client_options.clone()),
-        provider_(
-          runtime_resource_provider(resource_options.platformContext())
+        provider_(runtime_resource_provider(resource_options.platformContext())
         ),
-        native_(
-          std::make_unique<mbgl::OnlineFileSource>(
-            resource_options, client_options
-          )
-        ) {
+        native_(std::make_unique<mbgl::OnlineFileSource>(
+          resource_options, client_options
+        )) {
     apply_resource_transform();
   }
 
@@ -226,7 +221,8 @@ auto make_database_file_source(
       find_runtime_for_platform_context(resource_options.platformContext());
     if (runtime != nullptr && runtime->has_maximum_cache_size) {
       source->setMaximumAmbientCacheSize(
-        runtime->maximum_cache_size, [](std::exception_ptr exception) -> void {
+        runtime->maximum_cache_size,
+        [](std::exception_ptr exception) -> void {
           if (exception != nullptr) {
             mbgl::Log::Error(
               mbgl::Event::Database,
