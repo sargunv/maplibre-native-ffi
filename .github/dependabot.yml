@@ -3,7 +3,7 @@
 # Not yet supported:
 # - mise tool versions: https://github.com/dependabot/dependabot-core/issues/12320
 # - pixi/conda dependencies
-# - git submodules pinned to a branch (third_party/maplibre-native)
+# - the MapLibre Native pin in cmake/mln_version.cmake (manual bumps)
 version: 2
 updates:
   - package-ecosystem: github-actions

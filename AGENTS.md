@@ -17,7 +17,8 @@
 - If sequencing or acceptance criteria change, update `ROADMAP.md` in the same
   change.
 - Treat local MapLibre Native behavior as evidence; inspect
-  `third_party/maplibre-native` or `MLN_SOURCE_DIR` before guessing.
+  `third_party/maplibre-native` (fetched on demand by CMake — see
+  `cmake/mln_version.cmake`) or `MLN_SOURCE_DIR` before guessing.
 
 ## Implementation Notes
 

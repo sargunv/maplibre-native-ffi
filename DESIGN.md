@@ -147,7 +147,8 @@ cmake/
   toolchains/
 
 third_party/
-  maplibre-native/  # git submodule pinned to a known MapLibre Native commit
+  maplibre-native/  # fetched on demand by CMake from the SHA pinned in
+                    # cmake/mln_version.cmake; gitignored
 ```
 
 `include/maplibre_native_abi.h` is the product boundary. It should contain only
@@ -181,9 +182,11 @@ texture, and sample that texture in an SDL3-created native window using Metal on
 macOS or Vulkan on Linux.
 
 `third_party/maplibre-native` is the initial development source for MapLibre
-Native. Keeping it as a pinned submodule makes it possible to inspect, debug,
-and patch backend internals such as Metal `HeadlessBackend` and
-`OffscreenTexture` while the texture-session API is being designed.
+Native. CMake fetches it on demand from the SHA pinned in
+`cmake/mln_version.cmake`, making it possible to inspect, debug, and patch
+backend internals such as Metal `HeadlessBackend` and `OffscreenTexture` while
+the texture-session API is being designed. Set `MLN_SOURCE_DIR` to a local
+checkout to override the fetch.
 
 Do not add JNI, Kotlin/Native, Swift, Rust, Flutter, React Native, or DVUI
 adapters to the core layout until the C ABI and texture-session model are
@@ -843,9 +846,9 @@ proves the C ABI and texture-session contract.
 ## Build Policy
 
 The wrapper should build against a known MapLibre Native source revision. During
-development, that source is `third_party/maplibre-native`, a pinned git
-submodule. A local `MLN_SOURCE_DIR` override may point at a sibling checkout for
-MapLibre Native development.
+development, CMake fetches that source into `third_party/maplibre-native` from
+the SHA pinned in `cmake/mln_version.cmake`. A local `MLN_SOURCE_DIR` override
+may point at a sibling checkout for MapLibre Native development.
 
 Backend selection is explicit per build. Initial targets follow the rendering
 design: Metal on Apple platforms and Vulkan elsewhere. OpenGL is not a primary

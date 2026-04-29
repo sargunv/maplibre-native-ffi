@@ -31,18 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # Order matters: run setup-ci-deps BEFORE fetching submodules.
-      # jdx/mise-action's cache key derivation globs **/mise.toml (and 24
-      # similar patterns) across the workspace; with submodules present that's
-      # a multi-second walk through ~1.3GB of vendored files. With submodules
-      # absent the same walk is near-instant.
       - uses: ./.github/actions/setup-ci-deps
 
-      # actions/checkout fetches submodules sequentially. The MapLibre Native
-      # submodule has ~60 nested submodules; doing them one-at-a-time costs ~2
-      # minutes. Fetch in parallel instead.
-      - name: Fetch submodules in parallel
-        run: git submodule update --init --recursive --depth=1 --jobs=8
+      # CMake fetches MapLibre Native into third_party/maplibre-native on
+      # first configure (see cmake/mln_version.cmake). Cache the populated
+      # tree so subsequent runs skip the ~60 git clones. Key on the version
+      # file alone so unrelated changes don't invalidate.
+      - name: Cache MapLibre Native source
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: third_party/maplibre-native
+          key: mln-src-v1-${{ hashFiles('cmake/mln_version.cmake') }}
 
       - run: mise run fix
       - run: mise run _verify-clean-worktree

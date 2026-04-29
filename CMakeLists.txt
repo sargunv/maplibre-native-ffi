@@ -10,12 +10,35 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(MLN_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/maplibre-native"
-    CACHE PATH "MapLibre Native source directory")
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/mln_version.cmake)
+
+# MLN_SOURCE_DIR can be set externally to point at a local MapLibre Native
+# checkout (useful for development against an unreleased branch). When unset,
+# we default to third_party/maplibre-native and fetch into it on demand.
+if(NOT DEFINED MLN_SOURCE_DIR
+   OR MLN_SOURCE_DIR STREQUAL "")
+  set(MLN_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/maplibre-native")
+endif()
+
 if(NOT EXISTS "${MLN_SOURCE_DIR}/CMakeLists.txt")
-  message(
-    FATAL_ERROR
-      "MLN_SOURCE_DIR must point to a MapLibre Native checkout: ${MLN_SOURCE_DIR}")
+  message(STATUS "Fetching MapLibre Native ${MLN_GIT_TAG}")
+  include(FetchContent)
+  if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD) # allow FetchContent_Populate
+  endif()
+  fetchcontent_declare(
+    maplibre_native
+    GIT_REPOSITORY
+    https://github.com/maplibre/maplibre-native.git
+    GIT_TAG
+    ${MLN_GIT_TAG}
+    GIT_SHALLOW
+    TRUE
+    GIT_SUBMODULES_RECURSE
+    TRUE
+    SOURCE_DIR
+    ${MLN_SOURCE_DIR})
+  fetchcontent_populate(maplibre_native)
 endif()
 
 set(MLN_WITH_CORE_ONLY ON CACHE BOOL "Build only MapLibre Native core" FORCE)
