@@ -1,0 +1,6 @@
+[tasks.build]
+run = "swift build"
+
+[tasks.run]
+depends = ["build"]
+run = "swift run"

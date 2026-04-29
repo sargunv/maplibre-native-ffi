@@ -43,6 +43,8 @@ jobs:
       - run: mise run _verify-clean-worktree
       - run: mise run test
       - run: mise run //examples/zig-map:build
+      - if: matrix.id == 'macos-arm64'
+        run: mise run //examples/swift-map:build
 
       - name: Upload diagnostics on failure
         if: failure()
