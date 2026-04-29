@@ -44,9 +44,11 @@ jobs:
       - run: mise run test
       - run: mise run //examples/zig-map:build
 
-      - name: Show sccache stats
+      # mozilla-actions/sccache-action prints stats to the log on its own
+      # post-step. We just need the file for the failure-artifact upload.
+      - name: Capture sccache stats for failure artifact
         if: always()
-        run: sccache --show-stats | tee sccache-stats.txt
+        run: sccache --show-stats > sccache-stats.txt
 
       - name: Upload diagnostics on failure
         if: failure()
