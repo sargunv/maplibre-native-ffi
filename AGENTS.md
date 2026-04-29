@@ -3,6 +3,8 @@
 ## Workflow
 
 - `mise run fix` -- run formatters and linters
+  - clang-tidy is slow -- pre-commit hooks will run this for you on changed
+    files. You don't need to run it yourself during a task.
 - `mise run test` -- build project and run tests
 - `mise run //examples/zig-map:run` -- run the example map app
   - always run this with a brief timeout
