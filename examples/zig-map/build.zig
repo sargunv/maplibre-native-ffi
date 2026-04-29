@@ -36,11 +36,6 @@ fn failUnsupportedTarget() noreturn {
 }
 
 fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
-    const sdl = b.dependency("sdl", .{
-        .target = options.target,
-        .optimize = options.optimize,
-    });
-
     const example = b.addExecutable(.{
         .name = "zig-map",
         .root_module = b.createModule(.{
@@ -51,7 +46,10 @@ fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compil
     });
 
     linkMapLibreAbi(b, example.root_module, options.cmake_artifact_dir);
-    example.root_module.linkLibrary(sdl.artifact("SDL3"));
+    example.root_module.addIncludePath(b.path("../../.pixi/envs/default/include"));
+    example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
+    example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));
+    example.root_module.linkSystemLibrary("SDL3", .{});
     if (options.target.result.os.tag == .macos) {
         const zig_objc = b.dependency("zig_objc", .{
             .target = options.target,
@@ -63,8 +61,6 @@ fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compil
         example.root_module.linkFramework("QuartzCore", .{});
     } else if (options.target.result.os.tag == .linux) {
         example.root_module.addIncludePath(b.path("../../third_party/maplibre-native/vendor/Vulkan-Headers/include"));
-        example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
-        example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));
         example.root_module.linkSystemLibrary("vulkan", .{});
     } else {
         failUnsupportedTarget();
