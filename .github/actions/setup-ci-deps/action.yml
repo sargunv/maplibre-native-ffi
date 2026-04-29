@@ -1,5 +1,5 @@
 name: Setup CI deps
-description: Install sccache and mise toolchain (mise postinstall handles pixi install --locked)
+description: Install sccache and mise toolchain
 
 runs:
   using: composite
