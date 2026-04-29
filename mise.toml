@@ -5,14 +5,14 @@ pin = true
 experimental = true
 
 [monorepo]
-config_roots = ["examples/zig-map"]
+config_roots = ["examples/*"]
 
 [tools]
 hk = "1.40.0"
 pkl = "0.31.0"
 dprint = "0.53.2"
 "github:sargunv/jvl" = "2026.04.03"
-pixi = "latest"
+pixi = "0.67.2"
 "github:blankspruce/gersemi" = "0.27.2"
 zig = "0.16.0"
 
@@ -23,13 +23,12 @@ postinstall = [
 ]
 
 [tasks.configure]
-env = { _.source = "config/pixi-env.sh", CC = "clang", CXX = "clang++" }
-run = "cmake -S . -B build -G Ninja"
+env = { CC = "clang", CXX = "clang++" }
+run = "pixi run cmake -S . -B build -G Ninja"
 
 [tasks.build]
 depends = ["configure"]
-env = { _.source = "config/pixi-env.sh" }
-run = "cmake --build build --parallel"
+run = "pixi run cmake --build build --parallel"
 
 [tasks.clean]
 run = "rm -rf build"

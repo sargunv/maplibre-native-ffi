@@ -807,11 +807,6 @@ MLN_API mln_status mln_map_poll_event(
 
 #pragma region Texture sessions
 
-typedef enum mln_texture_backend {
-  MLN_TEXTURE_BACKEND_METAL = 1,
-  MLN_TEXTURE_BACKEND_VULKAN = 2,
-} mln_texture_backend;
-
 typedef struct mln_metal_texture_descriptor {
   uint32_t size;
   /** Logical map width in UI pixels. Physical texture width is width *
@@ -991,9 +986,11 @@ mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, out_frame is
  *   null, or out_frame->size is too small.
  * - MLN_STATUS_INVALID_STATE when no rendered frame is available, the session
- * is detached, or another frame is currently acquired.
+ *   is detached, or another frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
+ *   this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_metal_texture_acquire_frame(
@@ -1009,7 +1006,7 @@ MLN_API mln_status mln_metal_texture_acquire_frame(
  * return MLN_STATUS_INVALID_STATE.
  *
  * On success, the image has been rendered and made available in the returned
- * layout for host sampling through the returned image view until release.
+ * layout for shader sampling through the returned image view until release.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1019,8 +1016,8 @@ MLN_API mln_status mln_metal_texture_acquire_frame(
  *   is detached, or another frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when texture is not a Vulkan texture session or this
- *   build does not support Vulkan texture sessions.
+ * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
+ *   this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_vulkan_texture_acquire_frame(
@@ -1033,11 +1030,13 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
- * null, frame->size is too small, or the frame generation does not match the
- * active acquired frame.
+ *   null, frame->size is too small, or the frame generation does not match the
+ *   active acquired frame.
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
+ *   this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_metal_texture_release_frame(
@@ -1055,8 +1054,8 @@ MLN_API mln_status mln_metal_texture_release_frame(
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when texture is not a Vulkan texture session or this
- *   build does not support Vulkan texture sessions.
+ * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
+ *   this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_vulkan_texture_release_frame(

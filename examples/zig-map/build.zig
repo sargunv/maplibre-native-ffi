@@ -27,6 +27,14 @@ fn linkMapLibreAbi(b: *std.Build, module: *std.Build.Module, cmake_artifact_dir:
     module.link_libc = true;
 }
 
+fn isSupportedTarget(target: std.Build.ResolvedTarget) bool {
+    return target.result.os.tag == .macos or target.result.os.tag == .linux;
+}
+
+fn failUnsupportedTarget() noreturn {
+    @panic("zig-map does not support this target platform");
+}
+
 fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     const sdl = b.dependency("sdl", .{
         .target = options.target,
@@ -58,6 +66,8 @@ fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compil
         example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
         example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));
         example.root_module.linkSystemLibrary("vulkan", .{});
+    } else {
+        failUnsupportedTarget();
     }
     b.installArtifact(example);
     return example;
@@ -71,9 +81,10 @@ pub fn build(b: *std.Build) void {
     };
 
     const run_step = b.step("run", "Run Zig map example");
-    if (options.target.result.os.tag == .macos or options.target.result.os.tag == .linux) {
-        const zig_map = addZigMapExample(b, options);
-        const run_zig_map = b.addRunArtifact(zig_map);
-        run_step.dependOn(&run_zig_map.step);
+    if (!isSupportedTarget(options.target)) {
+        failUnsupportedTarget();
     }
+    const zig_map = addZigMapExample(b, options);
+    const run_zig_map = b.addRunArtifact(zig_map);
+    run_step.dependOn(&run_zig_map.step);
 }

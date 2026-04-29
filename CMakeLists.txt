@@ -33,7 +33,7 @@ set(
 )
 if(APPLE)
   set(MLN_WITH_METAL ON CACHE BOOL "Build MapLibre Native Metal backend" FORCE)
-else()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(
     MLN_WITH_VULKAN
     ON
@@ -122,8 +122,12 @@ if(APPLE)
     "-framework ImageIO"
     "-framework Metal"
   )
-  set(MLN_TEXTURE_SESSION_SOURCE src/render/metal/metal_texture_session.mm)
-else()
+  set(
+    MLN_TEXTURE_SESSION_SOURCE
+    src/render/metal/metal_texture_session.mm
+    src/render/metal/metal_texture_backend.mm
+  )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(CURL REQUIRED)
   find_package(JPEG REQUIRED)
   find_package(PNG REQUIRED)
@@ -163,7 +167,13 @@ else()
     PNG::PNG
     Threads::Threads
   )
-  set(MLN_TEXTURE_SESSION_SOURCE src/render/vulkan/vulkan_texture_session.cpp)
+  set(
+    MLN_TEXTURE_SESSION_SOURCE
+    src/render/vulkan/vulkan_texture_session.cpp
+    src/render/vulkan/vulkan_texture_backend.cpp
+  )
+else()
+  message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 add_library(

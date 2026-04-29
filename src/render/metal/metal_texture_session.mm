@@ -9,11 +9,7 @@
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/gfx/headless_backend.hpp>
 #include <mbgl/map/map.hpp>
-#include <mbgl/mtl/headless_backend.hpp>
-#include <mbgl/mtl/renderable_resource.hpp>
-#include <mbgl/mtl/texture2d.hpp>
 #include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/util/size.hpp>
 
 #include <Metal/MTLDevice.hpp>
@@ -22,6 +18,7 @@
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
+#include "render/metal/metal_texture_backend.inc"
 #include "render/texture_session.hpp"
 
 struct mln_texture_session {
@@ -85,114 +82,6 @@ auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
   }
   return MLN_STATUS_OK;
 }
-
-class MetalTextureBackend final : public mbgl::mtl::RendererBackend,
-                                  public mbgl::gfx::HeadlessBackend {
- private:
-  class MetalTextureRenderableResource;
-
- public:
-  MetalTextureBackend(MTL::Device* host_device, mbgl::Size size_)
-      : mbgl::mtl::RendererBackend(mbgl::gfx::ContextMode::Unique),
-        mbgl::gfx::HeadlessBackend(size_) {
-    device = NS::RetainPtr(host_device);
-    commandQueue = NS::TransferPtr(device->newCommandQueue());
-  }
-
-  ~MetalTextureBackend() override {
-    auto guard = mbgl::gfx::BackendScope{
-      *this, mbgl::gfx::BackendScope::ScopeType::Implicit
-    };
-    resource.reset();
-    context.reset();
-  }
-
-  auto getDefaultRenderable() -> mbgl::gfx::Renderable& override {
-    if (!resource) {
-      resource = std::make_unique<MetalTextureRenderableResource>(
-        *this, static_cast<mbgl::mtl::Context&>(getContext()), size
-      );
-    }
-    return *this;
-  }
-
-  auto readStillImage() -> mbgl::PremultipliedImage override {
-    return getResource<MetalTextureRenderableResource>().readStillImage();
-  }
-
-  auto getRendererBackend() -> mbgl::gfx::RendererBackend* override {
-    return this;
-  }
-
-  void updateAssumedState() override {}
-
-  auto getMetalTexture() -> MTL::Texture* {
-    getDefaultRenderable();
-    return getResource<MetalTextureRenderableResource>().getMetalTexture();
-  }
-
- private:
-  class MetalTextureRenderableResource final
-      : public mbgl::mtl::RenderableResource {
-   public:
-    MetalTextureRenderableResource(
-      MetalTextureBackend& backend_, mbgl::mtl::Context& context_,
-      mbgl::Size size_
-    )
-        : backend(backend_), context(context_) {
-      offscreenTexture = context.createOffscreenTexture(
-        size_, mbgl::gfx::TextureChannelDataType::UnsignedByte, true, true
-      );
-    }
-
-    void bind() override {
-      offscreenTexture->getResource<mbgl::mtl::RenderableResource>().bind();
-    }
-
-    void swap() override {
-      offscreenTexture->getResource<mbgl::mtl::RenderableResource>().swap();
-    }
-
-    auto readStillImage() -> mbgl::PremultipliedImage {
-      return offscreenTexture->readStillImage();
-    }
-
-    auto getMetalTexture() -> MTL::Texture* {
-      return static_cast<mbgl::mtl::Texture2D*>(
-               offscreenTexture->getTexture().get()
-      )
-        ->getMetalTexture();
-    }
-
-    [[nodiscard]] auto getBackend() const
-      -> const mbgl::mtl::RendererBackend& override {
-      return backend;
-    }
-
-    [[nodiscard]] auto getCommandBuffer() const
-      -> const mbgl::mtl::MTLCommandBufferPtr& override {
-      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
-        .getCommandBuffer();
-    }
-
-    [[nodiscard]] auto getUploadPassDescriptor() const
-      -> mbgl::mtl::MTLBlitPassDescriptorPtr override {
-      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
-        .getUploadPassDescriptor();
-    }
-
-    [[nodiscard]] auto getRenderPassDescriptor() const
-      -> const mbgl::mtl::MTLRenderPassDescriptorPtr& override {
-      return offscreenTexture->getResource<mbgl::mtl::RenderableResource>()
-        .getRenderPassDescriptor();
-    }
-
-   private:
-    MetalTextureBackend& backend;
-    mbgl::mtl::Context& context;
-    std::unique_ptr<mbgl::gfx::OffscreenTexture> offscreenTexture;
-  };
-};
 
 auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t {
   return static_cast<uint32_t>(std::ceil(logical * scale_factor));
@@ -421,8 +310,7 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
 
   texture->renderer->render(update);
   texture->rendered_texture =
-    static_cast<MetalTextureBackend*>(texture->backend.get())
-      ->getMetalTexture();
+    static_cast<MetalTextureBackend*>(texture->backend.get())->metal_texture();
   if (texture->rendered_texture == nullptr) {
     set_thread_error("render did not produce a Metal texture");
     return MLN_STATUS_NATIVE_ERROR;
