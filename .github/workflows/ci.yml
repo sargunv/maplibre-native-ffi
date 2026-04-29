@@ -29,9 +29,8 @@ jobs:
       - run: mise run test
       - run: mise run //examples/zig-map:build
 
-      - name: sccache stats
+      - name: Show sccache stats
         if: always()
-        shell: bash
         run: sccache --show-stats | tee sccache-stats.txt
 
       - name: Upload diagnostics on failure
@@ -63,9 +62,8 @@ jobs:
       - run: mise run test
       - run: mise run //examples/zig-map:build
 
-      - name: sccache stats
+      - name: Show sccache stats
         if: always()
-        shell: bash
         run: sccache --show-stats | tee sccache-stats.txt
 
       - name: Upload diagnostics on failure
@@ -97,9 +95,8 @@ jobs:
       - run: mise run test
       - run: mise run //examples/zig-map:build
 
-      - name: sccache stats
+      - name: Show sccache stats
         if: always()
-        shell: bash
         run: sccache --show-stats | tee sccache-stats.txt
 
       - name: Upload diagnostics on failure
