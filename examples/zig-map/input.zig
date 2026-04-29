@@ -116,8 +116,9 @@ pub fn logControls() void {
 }
 
 fn handleMouseWheel(wheel: c.SDL_MouseWheelEvent, map: *c.mln_map) !Result {
-    var delta: f64 = -wheel.y;
-    if (wheel.direction == c.SDL_MOUSEWHEEL_FLIPPED) delta = -delta;
+    // Use SDL's OS-adjusted value directly. Undoing FLIPPED converts natural
+    // scrolling back to physical wheel direction, which is backwards on Wayland.
+    const delta: f64 = -wheel.y;
     if (delta == 0) return .{ .handled = true };
 
     const anchor = point(wheel.mouse_x, wheel.mouse_y);
