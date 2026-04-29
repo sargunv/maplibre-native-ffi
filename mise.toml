@@ -45,6 +45,6 @@ run = "hk check --all"
 run = "hk fix --all"
 
 [tasks._verify-clean-worktree]
-description = "Fail if tracked files changed during the task run"
+description = "Verify the worktree is clean after the task run"
 hide = true
 run = "git update-index -q --refresh && git diff --exit-code && git diff --cached --exit-code"
