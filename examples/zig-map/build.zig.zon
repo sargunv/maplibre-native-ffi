@@ -6,10 +6,6 @@
             .url = "git+https://github.com/mitchellh/zig-objc.git#c8de82ff80281215ad92900866dab7103a8efa8b",
             .hash = "zig_objc-0.0.0-Ir_Sp9gsAQCPAJc0oF5xoWePHWP6Y6tCphDeyNUThJoi",
         },
-        .sdl = .{
-            .url = "git+https://github.com/allyourcodebase/SDL3.git#5cc90328e8828459d8afe081e0f816a34fc119a8",
-            .hash = "sdl-1.0.1+3.4.4-i4QD0QyGqQDgZygQmcCsv4heYJ2hxall1DeBJ8yyJndm",
-        },
     },
     .paths = .{""},
     .fingerprint = 0x2e1fc989e1e5656a,

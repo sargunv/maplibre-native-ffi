@@ -481,7 +481,8 @@ MLN_API mln_status mln_resource_request_cancelled(
  * complete it. Passing null is a no-op. Using a handle after release is
  * invalid.
  */
-MLN_API void mln_resource_request_release(mln_resource_request_handle* handle
+MLN_API void mln_resource_request_release(
+  mln_resource_request_handle* handle
 ) MLN_NOEXCEPT;
 
 /**
@@ -662,8 +663,8 @@ MLN_API mln_status mln_map_destroy(mln_map* map) MLN_NOEXCEPT;
  * - MLN_STATUS_NATIVE_ERROR when a synchronous native error is reported or an
  *   internal exception is converted to status.
  */
-MLN_API mln_status mln_map_set_style_url(mln_map* map, const char* url)
-  MLN_NOEXCEPT;
+MLN_API mln_status
+mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
 
 /**
  * Loads inline style JSON through MapLibre Native style APIs.
@@ -680,8 +681,8 @@ MLN_API mln_status mln_map_set_style_url(mln_map* map, const char* url)
  * - MLN_STATUS_NATIVE_ERROR when a synchronous native error is reported or an
  *   internal exception is converted to status.
  */
-MLN_API mln_status mln_map_set_style_json(mln_map* map, const char* json)
-  MLN_NOEXCEPT;
+MLN_API mln_status
+mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
 
 /**
  * Returns the current camera snapshot.
@@ -725,8 +726,8 @@ mln_map_jump_to(mln_map* map, const mln_camera_options* camera) MLN_NOEXCEPT;
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_map_move_by(mln_map* map, double delta_x, double delta_y)
-  MLN_NOEXCEPT;
+MLN_API mln_status
+mln_map_move_by(mln_map* map, double delta_x, double delta_y) MLN_NOEXCEPT;
 
 /**
  * Applies a screen-space zoom command.
@@ -880,12 +881,12 @@ typedef struct mln_vulkan_texture_frame {
 } mln_vulkan_texture_frame;
 
 /** Returns default Metal texture descriptor values. */
-MLN_API mln_metal_texture_descriptor mln_metal_texture_descriptor_default(void
-) MLN_NOEXCEPT;
+MLN_API mln_metal_texture_descriptor
+mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
 
 /** Returns default Vulkan texture descriptor values. */
-MLN_API mln_vulkan_texture_descriptor mln_vulkan_texture_descriptor_default(void
-) MLN_NOEXCEPT;
+MLN_API mln_vulkan_texture_descriptor
+mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
 
 /**
  * Attaches a Metal offscreen texture render target to a map.
@@ -969,8 +970,8 @@ MLN_API mln_status mln_texture_resize(
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_render(mln_texture_session* texture
-) MLN_NOEXCEPT;
+MLN_API mln_status
+mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
 
 /**
  * Acquires the most recently rendered Metal texture frame.
@@ -1073,8 +1074,8 @@ MLN_API mln_status mln_vulkan_texture_release_frame(
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_detach(mln_texture_session* texture
-) MLN_NOEXCEPT;
+MLN_API mln_status
+mln_texture_detach(mln_texture_session* texture) MLN_NOEXCEPT;
 
 /**
  * Destroys a texture session handle.
@@ -1090,8 +1091,8 @@ MLN_API mln_status mln_texture_detach(mln_texture_session* texture
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_texture_destroy(mln_texture_session* texture
-) MLN_NOEXCEPT;
+MLN_API mln_status
+mln_texture_destroy(mln_texture_session* texture) MLN_NOEXCEPT;
 
 #pragma endregion
 

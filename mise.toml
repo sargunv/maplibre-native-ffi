@@ -11,9 +11,9 @@ config_roots = ["examples/*"]
 hk = "1.40.0"
 pkl = "0.31.0"
 dprint = "0.53.2"
-"github:sargunv/jvl" = "2026.04.03"
+"github:sargunv/jvl" = "2026.04.29"
 pixi = "0.67.2"
-"github:blankspruce/gersemi" = "0.27.2"
+"github:cmakefmt/cmakefmt" = "1.3.0"
 zig = "0.16.0"
 
 [hooks]
@@ -43,3 +43,8 @@ run = "hk check --all"
 
 [tasks.fix]
 run = "hk fix --all"
+
+[tasks._verify-clean-worktree]
+description = "Verify the worktree is clean after the task run"
+hide = true
+run = "git update-index -q --refresh && git diff --exit-code && git diff --cached --exit-code"
