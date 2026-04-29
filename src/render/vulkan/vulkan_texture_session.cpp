@@ -13,8 +13,6 @@
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/util/size.hpp>
 
-#include <vulkan/vulkan.hpp>
-
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
 #include "maplibre_native_abi.h"
