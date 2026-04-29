@@ -33,10 +33,6 @@ jobs:
 
       - uses: ./.github/actions/setup-ci-deps
 
-      # CMake fetches MapLibre Native into third_party/maplibre-native on
-      # first configure (see cmake/mln_version.cmake). Cache the populated
-      # tree so subsequent runs skip the ~60 git clones. Key on the version
-      # file alone so unrelated changes don't invalidate.
       - name: Cache MapLibre Native source
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
