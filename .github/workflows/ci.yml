@@ -30,8 +30,12 @@ jobs:
             runner: macos-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          submodules: recursive
+
+      # actions/checkout fetches submodules sequentially. The MapLibre Native
+      # submodule has ~60 nested submodules; doing them one-at-a-time costs ~2
+      # minutes. Fetch in parallel instead.
+      - name: Fetch submodules in parallel
+        run: git submodule update --init --recursive --depth=1 --jobs=8
 
       - uses: ./.github/actions/setup-ci-deps
 
