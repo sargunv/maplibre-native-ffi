@@ -3,13 +3,13 @@
 #include <vector>
 
 #include <mbgl/gfx/headless_backend.hpp>
+#include <mbgl/util/image.hpp>
+#include <mbgl/util/size.hpp>
 #include <mbgl/vulkan/renderer_backend.hpp>
 
-#include <vulkan/vulkan.hpp>  // NOLINT(misc-include-cleaner)
+#include <vulkan/vulkan.hpp>
 
 #include "maplibre_native_abi.h"
-
-// NOLINTBEGIN(misc-include-cleaner)
 
 namespace mln::core {
 
@@ -60,5 +60,3 @@ class VulkanTextureBackend final : public mbgl::vulkan::RendererBackend,
 };
 
 }  // namespace mln::core
-
-// NOLINTEND(misc-include-cleaner)

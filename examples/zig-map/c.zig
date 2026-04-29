@@ -5,7 +5,6 @@ pub const c = switch (builtin.os.tag) {
         @cInclude("maplibre_native_abi.h");
         @cInclude("SDL3/SDL.h");
         @cInclude("SDL3/SDL_metal.h");
-        @cInclude("Metal/Metal.h");
     }),
     .linux => @cImport({
         @cInclude("maplibre_native_abi.h");

@@ -37,7 +37,9 @@ fn addAbiTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
     });
 
     linkMapLibreAbi(b, abi_tests.root_module, options.cmake_artifact_dir);
-    if (options.target.result.os.tag == .linux) {
+    if (options.target.result.os.tag == .macos) {
+        abi_tests.root_module.linkFramework("Metal", .{});
+    } else if (options.target.result.os.tag == .linux) {
         abi_tests.root_module.addIncludePath(b.path("third_party/maplibre-native/vendor/Vulkan-Headers/include"));
         abi_tests.root_module.addLibraryPath(b.path(".pixi/envs/default/lib"));
         abi_tests.root_module.addRPath(b.path(".pixi/envs/default/lib"));

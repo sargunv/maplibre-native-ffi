@@ -20,5 +20,5 @@ CheckOptions:
 WarningsAsErrors: "*"
 FormatStyle: file
 SystemHeaders: false
-HeaderFilterRegex: "^(.*/)?(src|include)/"
-ExcludeHeaderFilterRegex: "^(.*/)?third_party/"
+HeaderFilterRegex: "^(src|include)/|^.*/maplibre-native-ffi/(src|include)/"
+ExcludeHeaderFilterRegex: "^.*/maplibre-native-ffi/third_party/"

@@ -24,6 +24,8 @@ class MetalTextureBackend final : public mbgl::mtl::RendererBackend,
   auto getDefaultRenderable() -> mbgl::gfx::Renderable& override;
   auto readStillImage() -> mbgl::PremultipliedImage override;
   auto getRendererBackend() -> mbgl::gfx::RendererBackend* override;
+  void activate() override;
+  void deactivate() override;
   void updateAssumedState() override;
 
   auto metal_texture() -> MTL::Texture*;

@@ -35,7 +35,7 @@ struct mln_texture_session {
   uint64_t rendered_generation = 0;
   bool attached = true;
   bool acquired = false;
-  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend;
+  std::unique_ptr<mln::core::MetalTextureBackend> backend;
   std::unique_ptr<mbgl::Renderer> renderer;
   MTL::Texture* rendered_texture = nullptr;
   MTL::Texture* acquired_texture = nullptr;
@@ -62,15 +62,13 @@ auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   if (descriptor->size < sizeof(mln_metal_texture_descriptor)) {
-    mln::core::set_thread_error(
-      "mln_metal_texture_descriptor.size is too small"
+    mln::core::set_thread_error("mln_metal_texture_descriptor.size is too small"
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (
-    descriptor->width == 0 || descriptor->height == 0 ||
-    !std::isfinite(descriptor->scale_factor) || descriptor->scale_factor <= 0.0
-  ) {
+  if (descriptor->width == 0 || descriptor->height == 0 ||
+      !std::isfinite(descriptor->scale_factor) ||
+      descriptor->scale_factor <= 0.0) {
     mln::core::set_thread_error(
       "texture dimensions and scale_factor must be positive"
     );
@@ -92,10 +90,8 @@ auto validate_physical_size(
 ) -> mln_status {
   constexpr auto max_dimension =
     static_cast<double>(std::numeric_limits<uint32_t>::max());
-  if (
-    std::ceil(width * scale_factor) > max_dimension ||
-    std::ceil(height * scale_factor) > max_dimension
-  ) {
+  if (std::ceil(width * scale_factor) > max_dimension ||
+      std::ceil(height * scale_factor) > max_dimension) {
     mln::core::set_thread_error("scaled texture dimensions are too large");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -241,10 +237,8 @@ auto texture_resize(
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (
-    width == 0 || height == 0 || !std::isfinite(scale_factor) ||
-    scale_factor <= 0.0
-  ) {
+  if (width == 0 || height == 0 || !std::isfinite(scale_factor) ||
+      scale_factor <= 0.0) {
     set_thread_error("texture dimensions and scale_factor must be positive");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -309,8 +303,7 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
   }
 
   texture->renderer->render(update);
-  texture->rendered_texture =
-    static_cast<MetalTextureBackend*>(texture->backend.get())->metal_texture();
+  texture->rendered_texture = texture->backend->metal_texture();
   if (texture->rendered_texture == nullptr) {
     set_thread_error("render did not produce a Metal texture");
     return MLN_STATUS_NATIVE_ERROR;
@@ -326,9 +319,8 @@ auto metal_texture_acquire_frame(
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (
-    out_frame == nullptr || out_frame->size < sizeof(mln_metal_texture_frame)
-  ) {
+  if (out_frame == nullptr ||
+      out_frame->size < sizeof(mln_metal_texture_frame)) {
     set_thread_error("out_frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }

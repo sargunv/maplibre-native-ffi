@@ -5,6 +5,8 @@ const c = @import("../../c.zig").c;
 const diagnostics = @import("../../diagnostics.zig");
 const types = @import("../../types.zig");
 
+extern "c" fn MTLCreateSystemDefaultDevice() objc.c.id;
+
 pub const MetalBackend = struct {
     pub const window_flags = c.SDL_WINDOW_METAL;
     const MTLPixelFormatBGRA8Unorm: u64 = 80;
@@ -35,10 +37,9 @@ pub const MetalBackend = struct {
         if (view == null) return types.AppError.BackendSetupFailed;
         errdefer c.SDL_Metal_DestroyView(view);
 
-        const device = objc.Object.fromId(
-            c.MTLCreateSystemDefaultDevice() orelse
-                return types.AppError.BackendSetupFailed,
-        );
+        const device_id = MTLCreateSystemDefaultDevice();
+        if (device_id == null) return types.AppError.BackendSetupFailed;
+        const device = objc.Object.fromId(device_id);
         errdefer device.release();
 
         const layer_ptr = c.SDL_Metal_GetLayer(view) orelse

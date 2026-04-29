@@ -11,8 +11,6 @@
 
 #include "render/vulkan/vulkan_texture_backend.hpp"
 
-// NOLINTBEGIN(misc-include-cleaner)
-
 namespace {
 
 auto vulkan_loader_library_name() noexcept -> const char* {
@@ -59,6 +57,7 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
   }
 
  private:
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   void init_sampled_color(uint32_t width, uint32_t height) {
     const auto image_count = backend.getMaxFrames();
     colorAllocations.reserve(image_count);
@@ -279,6 +278,7 @@ void VulkanTextureBackend::activate() {}
 
 void VulkanTextureBackend::deactivate() {}
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto VulkanTextureBackend::rendered_resource()
   -> VulkanTextureRenderableResource& {
   return getResource<VulkanTextureRenderableResource>();
@@ -364,10 +364,9 @@ void VulkanTextureBackend::initSwapchain() {
   renderable_resource.init_sampled(size.width, size.height);
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto VulkanTextureBackend::getDeviceExtensions() -> std::vector<const char*> {
   return {};
 }
 
 }  // namespace mln::core
-
-// NOLINTEND(misc-include-cleaner)

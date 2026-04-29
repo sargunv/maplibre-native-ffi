@@ -4,7 +4,8 @@
 
 - `mise run fix` -- run formatters and linters
 - `mise run test` -- build project and run tests
-- `mise run //examples/zig-map:run` -- build and run the Zig example map
+- `mise run //examples/zig-map:run` -- run the example map app
+  - always run this with a brief timeout
 
 ## Source Of Truth
 

@@ -6,6 +6,7 @@
 #include <mbgl/mtl/renderable_resource.hpp>
 #include <mbgl/mtl/texture2d.hpp>
 
+#include <Metal/MTLBlitPass.hpp>
 #include <Metal/MTLCommandQueue.hpp>
 
 #include "render/metal/metal_texture_backend.inc"
@@ -106,6 +107,10 @@ auto MetalTextureBackend::readStillImage() -> mbgl::PremultipliedImage {
 auto MetalTextureBackend::getRendererBackend() -> mbgl::gfx::RendererBackend* {
   return this;
 }
+
+void MetalTextureBackend::activate() {}
+
+void MetalTextureBackend::deactivate() {}
 
 void MetalTextureBackend::updateAssumedState() {}
 
