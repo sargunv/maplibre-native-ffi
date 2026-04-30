@@ -2,45 +2,30 @@
 
 ## Product Boundary
 
-The project wraps MapLibre Native's C++ core with a C ABI.
+The project exposes MapLibre Native through two layers.
 
-In scope:
+The C API wraps core MapLibre Native features on supported MapLibre Native
+platforms. It includes runtime, resource, map, camera, event, diagnostics,
+logging, render target primitives, and low-level extension points such as
+resource providers and URL transforms. It excludes convenience APIs such as
+snapshotting and platform integrations such as gestures and device sensors.
 
-- direct C wrapper for core MapLibre Native functionality;
-- safe, low-level language bindings over the C API.
-
-Out of scope:
-
-- convenience wrappers such as a snapshotter;
-- batteries-included platform integrations;
-- gesture recognition, declarative state, sensor integrations.
-
-Language and UI bindings translate this low-level model into idiomatic host
-APIs.
+Language bindings sit directly above the C API. They manage C handles, struct
+initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
+events, threading, and event draining in the target language. They do not aim to
+provide fully idiomatic APIs, higher-level async models over map events, view
+lifecycle integrations, convenience workflows, or new abstractions beyond the C
+API's concepts.
 
 ## C API Shape
 
 Keep the C API C-shaped:
 
 - handles are opaque forward-declared structs;
-- handles use explicit create/destroy calls;
 - option and output structs start with a `size` field;
-- structs, enums, bitmasks, and status returns stay plain C;
-- optional struct fields use explicit field masks or presence booleans so zero
-  remains a valid value;
-- strings and byte buffers are borrowed for the documented duration unless a
-  function copies or returns owned storage;
-- borrowed return pointers use the documented lifetime;
-- backend-native handles are `void*` plus documented backend types, ownership,
-  and lifetime;
-- runtime, resource, map, camera, event, diagnostics, logging, and render target
-  primitives document ownership, lifetime, thread-affinity, and async event
-  semantics.
-
-The ABI is unstable while `mln_c_version()` returns `0`.
-
-Default constructors such as `mln_runtime_options_default()` return initialized
-structs with `size` populated.
+- optional struct fields use field masks or presence booleans so zero remains a
+  valid value;
+- backend-native handles are `void*` plus documented backend types.
 
 ## Status And Diagnostics
 
@@ -65,31 +50,27 @@ Every exported `MLN_API` C++ definition must be `noexcept`. Status-returning
 entry points use the C API boundary helper to clear thread-local diagnostics on
 entry and convert exceptions to `MLN_STATUS_NATIVE_ERROR`.
 
-Set thread-local diagnostics for synchronous non-OK returns. Diagnostic strings
-serve humans and tests. Report asynchronous native failures through copied map
-events.
-
-Keep diagnostics paths non-throwing. Prefer a fallback diagnostic to an error
-reporting path that violates the C ABI boundary.
+Set thread-local diagnostic strings for synchronous non-OK returns. Report
+asynchronous native failures through copied map events.
 
 ## Ownership And Lifetime
 
 Make ownership explicit at every boundary.
 
-- Host-provided strings, buffers, callbacks, and `user_data` are borrowed unless
-  a function documents that it copies them.
-- Copy retained inputs before the function or native callback returns.
-- ABI-owned handles are released through explicit destroy or release functions.
-- Passing null to a void release function may be a no-op if documented.
-- Status functions reject null handles.
-- Output handle parameters reject non-null `*out_handle` values, preserving live
-  host-owned handles on failure.
-- Add release APIs only for public functions that return owned ABI storage.
+Borrow host-provided strings and buffers for call-duration inputs. Copy
+host-provided strings and buffers that outlive the function or native callback.
 
-Resource request handles have async ownership. A provider owns a releasable
-handle after choosing to handle the request. It may complete the request inline
-or later. It releases the handle exactly once after completion or cancellation
-observation.
+Store host-provided callbacks and `user_data` by reference. Document how long
+they must remain valid on the registering function. Document the invalidation
+point for returned borrowed pointers.
+
+Give owned handles and scoped resources explicit destroy or release functions.
+Status-returning functions reject null handles. Void release functions accept
+null as a no-op.
+
+Output handle parameters reject non-null `*out_handle` values, preserving live
+host-owned handles on failure. Document when scoped resource ownership begins,
+when it ends, and whether completion may happen inline or later.
 
 ## Threading
 
