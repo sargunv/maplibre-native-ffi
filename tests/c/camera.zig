@@ -26,6 +26,10 @@ test "camera rejects invalid arguments" {
     var camera = support.testCamera();
     camera.size = @sizeOf(c.mln_camera_options) - 1;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_jump_to(map, &camera));
+
+    camera = support.testCamera();
+    camera.fields |= @as(u32, 1) << 31;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_jump_to(map, &camera));
 }
 
 test "camera jump updates snapshot fields" {

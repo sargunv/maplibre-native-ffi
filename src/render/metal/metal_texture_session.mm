@@ -83,6 +83,49 @@ auto validate_descriptor(const mln_metal_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
+auto validate_vulkan_descriptor(const mln_vulkan_texture_descriptor* descriptor)
+  -> mln_status {
+  if (descriptor == nullptr) {
+    mln::core::set_thread_error("texture descriptor must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (descriptor->size < sizeof(mln_vulkan_texture_descriptor)) {
+    mln::core::set_thread_error(
+      "mln_vulkan_texture_descriptor.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    descriptor->width == 0 || descriptor->height == 0 ||
+    !std::isfinite(descriptor->scale_factor) || descriptor->scale_factor <= 0.0
+  ) {
+    mln::core::set_thread_error(
+      "texture dimensions and scale_factor must be positive"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    descriptor->instance == nullptr || descriptor->physical_device == nullptr ||
+    descriptor->device == nullptr || descriptor->graphics_queue == nullptr
+  ) {
+    mln::core::set_thread_error("Vulkan handles must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_attach_output(mln_texture_session** out_texture) -> mln_status {
+  if (out_texture == nullptr) {
+    mln::core::set_thread_error("out_texture must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (*out_texture != nullptr) {
+    mln::core::set_thread_error("out_texture must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
 auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t {
   return static_cast<uint32_t>(std::ceil(logical * scale_factor));
 }
@@ -449,10 +492,23 @@ auto vulkan_texture_attach(
   mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status {
-  (void)map;
-  (void)descriptor;
-  if (out_texture != nullptr) {
-    *out_texture = nullptr;
+  const auto map_status = validate_map(map);
+  if (map_status != MLN_STATUS_OK) {
+    return map_status;
+  }
+  const auto descriptor_status = validate_vulkan_descriptor(descriptor);
+  if (descriptor_status != MLN_STATUS_OK) {
+    return descriptor_status;
+  }
+  const auto output_status = validate_attach_output(out_texture);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
   }
   set_thread_error("Vulkan texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
@@ -461,8 +517,16 @@ auto vulkan_texture_attach(
 auto vulkan_texture_acquire_frame(
   mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
 ) -> mln_status {
-  (void)texture;
-  (void)out_frame;
+  const auto status = validate_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    out_frame == nullptr || out_frame->size < sizeof(mln_vulkan_texture_frame)
+  ) {
+    set_thread_error("out_frame must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
   set_thread_error("Vulkan texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
 }
@@ -470,8 +534,14 @@ auto vulkan_texture_acquire_frame(
 auto vulkan_texture_release_frame(
   mln_texture_session* texture, const mln_vulkan_texture_frame* frame
 ) -> mln_status {
-  (void)texture;
-  (void)frame;
+  const auto status = validate_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (frame == nullptr || frame->size < sizeof(mln_vulkan_texture_frame)) {
+    set_thread_error("frame must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
   set_thread_error("Vulkan texture sessions are not supported by this build");
   return MLN_STATUS_UNSUPPORTED;
 }

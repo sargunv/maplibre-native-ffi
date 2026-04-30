@@ -255,6 +255,16 @@ auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_CAMERA_OPTION_CENTER) | MLN_CAMERA_OPTION_ZOOM |
+    MLN_CAMERA_OPTION_BEARING | MLN_CAMERA_OPTION_PITCH;
+  if ((camera->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_camera_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
   return MLN_STATUS_OK;
 }
 

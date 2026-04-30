@@ -384,6 +384,7 @@ auto complete_resource_request(
   {
     const std::scoped_lock lock(handle->mutex);
     if (handle->cancelled) {
+      set_thread_error("resource request is cancelled");
       return MLN_STATUS_INVALID_STATE;
     }
     if (handle->completed) {

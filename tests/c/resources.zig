@@ -397,6 +397,7 @@ test "custom provider observes cancellation before late completion" {
 
     var response = styleResponse();
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_resource_request_complete(handle, &response));
+    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
 }
 
 test "custom provider error response fails style load" {

@@ -399,9 +399,11 @@ typedef struct mln_resource_response {
  * - After returning PASS_THROUGH, the provider must not retain, complete, or
  *   release the handle.
  * - MLN_RESOURCE_PROVIDER_DECISION_HANDLE lets the provider complete the
- * request through the handle inline or later.
+ *   request through the handle inline or later.
+ * - Unknown decision values produce a provider error response. The C API
+ *   releases the provided handle and does not pass the request through.
  * - The C API copies completion data, and mln_resource_request_complete() may
- * be called from any thread.
+ *   be called from any thread.
  * - Providers must release handled request handles after they no longer need to
  *   complete or observe cancellation.
  * - The callback must be thread-safe, return quickly, and must not call map or
@@ -600,9 +602,8 @@ typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_PITCH = 1u << 3u,
 } mln_camera_option_field;
 
-/** Map event types emitted through mln_map_poll_event(). */
+/** Map event types returned by mln_map_poll_event(). */
 typedef enum mln_map_event_type {
-  MLN_MAP_EVENT_NONE = 0,
   MLN_MAP_EVENT_CAMERA_WILL_CHANGE = 1,
   MLN_MAP_EVENT_CAMERA_IS_CHANGING = 2,
   MLN_MAP_EVENT_CAMERA_DID_CHANGE = 3,
@@ -750,7 +751,7 @@ mln_map_get_camera(mln_map* map, mln_camera_options* out_camera) MLN_NOEXCEPT;
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, camera is null,
- *   or camera->size is too small.
+ *   camera->size is too small, or camera->fields contains unknown bits.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -1091,8 +1092,8 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
- *   null, frame->size is too small, or the frame generation does not match the
- *   active acquired frame.
+ *   null, frame->size is too small, or the frame generation or frame_id does
+ *   not match the active acquired frame.
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
@@ -1114,8 +1115,8 @@ MLN_API mln_status mln_metal_texture_release_frame(
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
- *   null, frame->size is too small, or the frame generation does not match the
- *   active acquired frame.
+ *   null, frame->size is too small, or the frame generation or frame_id does
+ *   not match the active acquired frame.
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
