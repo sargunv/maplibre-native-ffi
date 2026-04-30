@@ -26,6 +26,25 @@ const TempStyle = struct {
     style_url: [:0]u8,
 };
 
+const pmtiles_style_json =
+    \\{
+    \\  "version": 8,
+    \\  "name": "zig-pmtiles-range-test",
+    \\  "sources": {
+    \\    "archive": {
+    \\      "type": "vector",
+    \\      "url": "pmtiles://http://example.invalid/test.pmtiles"
+    \\    }
+    \\  },
+    \\  "layers": [
+    \\    {"id":"archive-fill","type":"fill","source":"archive","source-layer":"land","paint":{"fill-color":"#8dd3c7"}}
+    \\  ]
+    \\}
+;
+
+const pmtiles_style_url = "custom://pmtiles-range-style.json";
+const pmtiles_archive_url = "http://example.invalid/test.pmtiles";
+
 const AsyncProviderState = struct {
     handle: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     saw_style_kind: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -67,6 +86,43 @@ const AsyncProviderState = struct {
 const PassThroughProviderState = struct {
     called: bool = false,
     saw_style_kind: bool = false,
+};
+
+const PmtilesRangeProviderState = struct {
+    saw_style_absent_range: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_pmtiles_request: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_source_kind: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_network_only_loading: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    saw_range: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    range_start: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    range_end: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+
+    fn markStyle(self: *PmtilesRangeProviderState, request: *const c.mln_resource_request) void {
+        self.saw_style_absent_range.store(!request.has_range and request.range_start == 0 and request.range_end == 0, .seq_cst);
+    }
+
+    fn markPmtilesRequest(self: *PmtilesRangeProviderState, request: *const c.mln_resource_request) void {
+        self.saw_pmtiles_request.store(true, .seq_cst);
+        self.saw_source_kind.store(request.kind == c.MLN_RESOURCE_KIND_SOURCE, .seq_cst);
+        self.saw_network_only_loading.store(request.loading_method == c.MLN_RESOURCE_LOADING_METHOD_NETWORK_ONLY, .seq_cst);
+        self.saw_range.store(request.has_range, .seq_cst);
+        self.range_start.store(request.range_start, .seq_cst);
+        self.range_end.store(request.range_end, .seq_cst);
+    }
+
+    fn checkObservedRequest(self: *PmtilesRangeProviderState) !void {
+        const start = self.range_start.load(.seq_cst);
+        const end = self.range_end.load(.seq_cst);
+
+        try testing.expect(self.saw_style_absent_range.load(.seq_cst));
+        try testing.expect(self.saw_pmtiles_request.load(.seq_cst));
+        try testing.expect(self.saw_source_kind.load(.seq_cst));
+        try testing.expect(self.saw_network_only_loading.load(.seq_cst));
+        try testing.expect(self.saw_range.load(.seq_cst));
+        try testing.expectEqual(@as(u64, 0), start);
+        try testing.expectEqual(@as(u64, 126), end);
+        try testing.expectEqual(@as(u64, 127), end - start + 1);
+    }
 };
 
 fn writeTempStyle() !TempStyle {
@@ -170,6 +226,13 @@ fn styleResponse() c.mln_resource_response {
     };
 }
 
+fn pmtilesStyleResponse() c.mln_resource_response {
+    var response = styleResponse();
+    response.bytes = pmtiles_style_json.ptr;
+    response.byte_count = pmtiles_style_json.len;
+    return response;
+}
+
 fn errorResponse(message: [*:0]const u8) c.mln_resource_response {
     var response = styleResponse();
     response.status = c.MLN_RESOURCE_RESPONSE_STATUS_ERROR;
@@ -206,6 +269,31 @@ fn passThroughStyleProvider(user_data: ?*anyopaque, request: [*c]const c.mln_res
     return c.MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH;
 }
 
+fn pmtilesRangeProvider(user_data: ?*anyopaque, request: [*c]const c.mln_resource_request, handle: ?*c.mln_resource_request_handle) callconv(.c) u32 {
+    if (user_data == null or request == null or handle == null) return c.MLN_RESOURCE_PROVIDER_DECISION_HANDLE;
+
+    const state: *PmtilesRangeProviderState = @ptrCast(@alignCast(user_data.?));
+    const url = std.mem.span(request.*.url);
+
+    if (std.mem.eql(u8, url, pmtiles_style_url)) {
+        state.markStyle(request);
+        defer c.mln_resource_request_release(handle);
+        var response = pmtilesStyleResponse();
+        _ = c.mln_resource_request_complete(handle, &response);
+        return c.MLN_RESOURCE_PROVIDER_DECISION_HANDLE;
+    }
+
+    if (std.mem.eql(u8, url, pmtiles_archive_url)) {
+        state.markPmtilesRequest(request);
+        defer c.mln_resource_request_release(handle);
+        var response = errorResponse("pmtiles archive intentionally unavailable");
+        _ = c.mln_resource_request_complete(handle, &response);
+        return c.MLN_RESOURCE_PROVIDER_DECISION_HANDLE;
+    }
+
+    return c.MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH;
+}
+
 fn completeRequestOnThread(handle: *c.mln_resource_request_handle, out_status: *c.mln_status) void {
     var response = styleResponse();
     out_status.* = c.mln_resource_request_complete(handle, &response);
@@ -215,6 +303,15 @@ fn waitForProviderRequest(runtime: *c.mln_runtime, state: *AsyncProviderState) !
     for (0..1000) |_| {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
         if (state.currentHandle()) |handle| return handle;
+        _ = usleep(1000);
+    }
+    return error.ProviderNotCalled;
+}
+
+fn waitForPmtilesRangeRequest(runtime: *c.mln_runtime, state: *PmtilesRangeProviderState) !void {
+    for (0..1000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+        if (state.saw_pmtiles_request.load(.seq_cst)) return;
         _ = usleep(1000);
     }
     return error.ProviderNotCalled;
@@ -325,6 +422,29 @@ test "custom provider can complete style request later" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_complete(handle, &response));
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_resource_request_complete(handle, &response));
     try pumpAndExpectStyleLoaded(runtime, map);
+}
+
+test "custom provider observes PMTiles range metadata" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var state = PmtilesRangeProviderState{};
+    var provider = c.mln_resource_provider{
+        .size = @sizeOf(c.mln_resource_provider),
+        .callback = pmtilesRangeProvider,
+        .user_data = &state,
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_set_resource_provider(runtime, &provider));
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, pmtiles_style_url));
+    try waitForPmtilesRangeRequest(runtime, &state);
+    try state.checkObservedRequest();
 }
 
 test "custom provider request handles validate lifecycle" {
