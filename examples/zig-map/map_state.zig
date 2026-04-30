@@ -64,7 +64,8 @@ pub fn drainEvents(map: *c.mln_map) !bool {
             .size = @sizeOf(c.mln_map_event),
             .type = 0,
             .code = 0,
-            .message = [_:0]u8{0} ** 512,
+            .message = null,
+            .message_size = 0,
         };
         var has_event = false;
         if (c.mln_map_poll_event(map, &event, &has_event) != c.MLN_STATUS_OK) {

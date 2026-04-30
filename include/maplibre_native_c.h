@@ -10,6 +10,8 @@
  * synchronous failure status is returned, read
  * mln_thread_last_error_message() on the same thread before making another C
  * API call. Asynchronous native failures are reported through map events.
+ *
+ * This header targets C23.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_H
@@ -51,7 +53,7 @@ extern "C" {
 
 #pragma region Common C API contract
 /** Status values returned by status-returning functions. */
-typedef enum mln_status {
+typedef enum mln_status : int32_t {
   MLN_STATUS_OK = 0,
   /** A pointer, size field, mask, or handle argument was invalid. */
   MLN_STATUS_INVALID_ARGUMENT = -1,
@@ -95,14 +97,14 @@ MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
 #pragma region Logging
 /** Log severity values emitted by MapLibre Native. */
-typedef enum mln_log_severity {
+typedef enum mln_log_severity : uint32_t {
   MLN_LOG_SEVERITY_INFO = 1,
   MLN_LOG_SEVERITY_WARNING = 2,
   MLN_LOG_SEVERITY_ERROR = 3,
 } mln_log_severity;
 
 /** Bitmask values for log severities dispatched asynchronously. */
-typedef enum mln_log_severity_mask {
+typedef enum mln_log_severity_mask : uint32_t {
   MLN_LOG_SEVERITY_MASK_INFO = 1u << MLN_LOG_SEVERITY_INFO,
   MLN_LOG_SEVERITY_MASK_WARNING = 1u << MLN_LOG_SEVERITY_WARNING,
   MLN_LOG_SEVERITY_MASK_ERROR = 1u << MLN_LOG_SEVERITY_ERROR,
@@ -114,7 +116,7 @@ typedef enum mln_log_severity_mask {
 } mln_log_severity_mask;
 
 /** Log event categories emitted by MapLibre Native. */
-typedef enum mln_log_event {
+typedef enum mln_log_event : uint32_t {
   MLN_LOG_EVENT_GENERAL = 0,
   MLN_LOG_EVENT_SETUP = 1,
   MLN_LOG_EVENT_SHADER = 2,
@@ -200,23 +202,23 @@ MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
 #pragma endregion
 
 #pragma region Runtime and resources
-typedef enum mln_network_status {
+typedef enum mln_network_status : uint32_t {
   MLN_NETWORK_STATUS_ONLINE = 1,
   MLN_NETWORK_STATUS_OFFLINE = 2,
 } mln_network_status;
 
-typedef enum mln_runtime_option_flag {
+typedef enum mln_runtime_option_flag : uint32_t {
   MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1u << 0u,
 } mln_runtime_option_flag;
 
-typedef enum mln_ambient_cache_operation {
+typedef enum mln_ambient_cache_operation : uint32_t {
   MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE = 1,
   MLN_AMBIENT_CACHE_OPERATION_PACK_DATABASE = 2,
   MLN_AMBIENT_CACHE_OPERATION_INVALIDATE = 3,
   MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
 } mln_ambient_cache_operation;
 
-typedef enum mln_resource_kind {
+typedef enum mln_resource_kind : uint32_t {
   MLN_RESOURCE_KIND_UNKNOWN = 0,
   MLN_RESOURCE_KIND_STYLE = 1,
   MLN_RESOURCE_KIND_SOURCE = 2,
@@ -227,35 +229,35 @@ typedef enum mln_resource_kind {
   MLN_RESOURCE_KIND_IMAGE = 7,
 } mln_resource_kind;
 
-typedef enum mln_resource_loading_method {
+typedef enum mln_resource_loading_method : uint32_t {
   MLN_RESOURCE_LOADING_METHOD_ALL = 0,
   MLN_RESOURCE_LOADING_METHOD_CACHE_ONLY = 1,
   MLN_RESOURCE_LOADING_METHOD_NETWORK_ONLY = 2,
 } mln_resource_loading_method;
 
-typedef enum mln_resource_priority {
+typedef enum mln_resource_priority : uint32_t {
   MLN_RESOURCE_PRIORITY_REGULAR = 0,
   MLN_RESOURCE_PRIORITY_LOW = 1,
 } mln_resource_priority;
 
-typedef enum mln_resource_usage {
+typedef enum mln_resource_usage : uint32_t {
   MLN_RESOURCE_USAGE_ONLINE = 0,
   MLN_RESOURCE_USAGE_OFFLINE = 1,
 } mln_resource_usage;
 
-typedef enum mln_resource_storage_policy {
+typedef enum mln_resource_storage_policy : uint32_t {
   MLN_RESOURCE_STORAGE_POLICY_PERMANENT = 0,
   MLN_RESOURCE_STORAGE_POLICY_VOLATILE = 1,
 } mln_resource_storage_policy;
 
-typedef enum mln_resource_response_status {
+typedef enum mln_resource_response_status : uint32_t {
   MLN_RESOURCE_RESPONSE_STATUS_OK = 0,
   MLN_RESOURCE_RESPONSE_STATUS_ERROR = 1,
   MLN_RESOURCE_RESPONSE_STATUS_NO_CONTENT = 2,
   MLN_RESOURCE_RESPONSE_STATUS_NOT_MODIFIED = 3,
 } mln_resource_response_status;
 
-typedef enum mln_resource_error_reason {
+typedef enum mln_resource_error_reason : uint32_t {
   MLN_RESOURCE_ERROR_REASON_NONE = 0,
   MLN_RESOURCE_ERROR_REASON_NOT_FOUND = 1,
   MLN_RESOURCE_ERROR_REASON_SERVER = 2,
@@ -264,7 +266,7 @@ typedef enum mln_resource_error_reason {
   MLN_RESOURCE_ERROR_REASON_OTHER = 5,
 } mln_resource_error_reason;
 
-typedef enum mln_resource_provider_decision {
+typedef enum mln_resource_provider_decision : uint32_t {
   MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH = 0,
   MLN_RESOURCE_PROVIDER_DECISION_HANDLE = 1,
 } mln_resource_provider_decision;
@@ -595,7 +597,7 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 
 #pragma region Map, camera, and events
 /** Field mask values for mln_camera_options. */
-typedef enum mln_camera_option_field {
+typedef enum mln_camera_option_field : uint32_t {
   MLN_CAMERA_OPTION_CENTER = 1u << 0u,
   MLN_CAMERA_OPTION_ZOOM = 1u << 1u,
   MLN_CAMERA_OPTION_BEARING = 1u << 2u,
@@ -603,7 +605,7 @@ typedef enum mln_camera_option_field {
 } mln_camera_option_field;
 
 /** Map rendering modes used when creating a map. */
-typedef enum mln_map_mode {
+typedef enum mln_map_mode : uint32_t {
   /** Continuously updates as data arrives and map state changes. */
   MLN_MAP_MODE_CONTINUOUS = 0,
   /** Produces one-off still renders of an arbitrary viewport. */
@@ -613,7 +615,7 @@ typedef enum mln_map_mode {
 } mln_map_mode;
 
 /** Map event types returned by mln_map_poll_event(). */
-typedef enum mln_map_event_type {
+typedef enum mln_map_event_type : uint32_t {
   MLN_MAP_EVENT_CAMERA_WILL_CHANGE = 1,
   MLN_MAP_EVENT_CAMERA_IS_CHANGING = 2,
   MLN_MAP_EVENT_CAMERA_DID_CHANGE = 3,
@@ -655,12 +657,15 @@ typedef struct mln_screen_point {
   double y;
 } mln_screen_point;
 
-/** Copied map event payload returned by mln_map_poll_event(). */
+/** Map event payload returned by mln_map_poll_event(). */
 typedef struct mln_map_event {
   uint32_t size;
   uint32_t type;
   int32_t code;
-  char message[512];
+  /** Borrowed event message bytes. Null when message_size is 0. */
+  const char* message;
+  /** Number of bytes in message, excluding the trailing null terminator. */
+  size_t message_size;
 } mln_map_event;
 
 /**
@@ -867,9 +872,11 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 /**
  * Pops the next queued map event.
  *
- * On success, *out_has_event indicates whether an event was available. When an
- * event is available, *out_event is overwritten. Event message storage is
- * copied into out_event and remains valid after later C API calls.
+ * On success, *out_event is overwritten and *out_has_event indicates whether an
+ * event was available. When an event is available, out_event->message points to
+ * map-owned storage that remains valid until the next mln_map_poll_event() call
+ * for the same map or until the map is destroyed. Copy message bytes before
+ * then when they must outlive that window.
  *
  * Returns:
  * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an

@@ -58,11 +58,13 @@ test "event message storage is copied into caller output" {
         _ = usleep(1000);
     } else return error.EventNotFound;
 
-    const message = std.mem.sliceTo(&event.message, 0);
+    try testing.expect(event.message != null);
+    const message = event.message[0..event.message_size];
     try testing.expect(message.len > 0);
-    var copied_message: [512]u8 = undefined;
-    @memcpy(copied_message[0..message.len], message);
+    const copied_message = try testing.allocator.dupe(u8, message);
+    defer testing.allocator.free(copied_message);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
-    try testing.expectEqualSlices(u8, copied_message[0..message.len], std.mem.sliceTo(&event.message, 0));
+    try testing.expect(event.message != null);
+    try testing.expectEqualSlices(u8, copied_message, event.message[0..event.message_size]);
 }

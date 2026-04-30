@@ -102,7 +102,7 @@ pub fn waitForEvent(runtime: *c.mln_runtime, map: *c.mln_map, event_type: u32) !
 }
 
 pub fn emptyEvent() c.mln_map_event {
-    return .{ .size = @sizeOf(c.mln_map_event), .type = 0, .code = 0, .message = [_:0]u8{0} ** 512 };
+    return .{ .size = @sizeOf(c.mln_map_event), .type = 0, .code = 0, .message = null, .message_size = 0 };
 }
 
 pub fn testCamera() c.mln_camera_options {
