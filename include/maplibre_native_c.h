@@ -602,6 +602,16 @@ typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_PITCH = 1u << 3u,
 } mln_camera_option_field;
 
+/** Map rendering modes used when creating a map. */
+typedef enum mln_map_mode {
+  /** Continuously updates as data arrives and map state changes. */
+  MLN_MAP_MODE_CONTINUOUS = 0,
+  /** Produces one-off still renders of an arbitrary viewport. */
+  MLN_MAP_MODE_STATIC = 1,
+  /** Produces one-off still renders for a single tile. */
+  MLN_MAP_MODE_TILE = 2,
+} mln_map_mode;
+
 /** Map event types returned by mln_map_poll_event(). */
 typedef enum mln_map_event_type {
   MLN_MAP_EVENT_CAMERA_WILL_CHANGE = 1,
@@ -614,6 +624,8 @@ typedef enum mln_map_event_type {
   MLN_MAP_EVENT_MAP_IDLE = 8,
   MLN_MAP_EVENT_RENDER_INVALIDATED = 9,
   MLN_MAP_EVENT_RENDER_ERROR = 10,
+  MLN_MAP_EVENT_RENDER_REQUEST_FINISHED = 11,
+  MLN_MAP_EVENT_RENDER_REQUEST_FAILED = 12,
 } mln_map_event_type;
 
 /** Options used when creating a map. */
@@ -622,6 +634,8 @@ typedef struct mln_map_options {
   uint32_t width;
   uint32_t height;
   double scale_factor;
+  /** One of mln_map_mode. Defaults to MLN_MAP_MODE_CONTINUOUS. */
+  uint32_t map_mode;
 } mln_map_options;
 
 /** Camera fields used for snapshots and camera commands. */
@@ -675,6 +689,30 @@ MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
 MLN_API mln_status mln_map_create(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) MLN_NOEXCEPT;
+
+/**
+ * Requests a render update for a map.
+ *
+ * In MLN_MAP_MODE_CONTINUOUS, this forces a repaint. Continuous maps also
+ * invalidate automatically when style data, resources, camera, and transitions
+ * change.
+ *
+ * In MLN_MAP_MODE_STATIC and MLN_MAP_MODE_TILE, this starts one still-render
+ * request. After calling it, pump the runtime, render invalidated updates into
+ * an attached render target, and poll events until
+ * MLN_MAP_EVENT_RENDER_REQUEST_FINISHED or MLN_MAP_EVENT_RENDER_REQUEST_FAILED
+ * is reported.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the request was accepted.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
+ * - MLN_STATUS_INVALID_STATE when a static or tile render request is already
+ *   pending.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_request_render(mln_map* map) MLN_NOEXCEPT;
 
 /**
  * Destroys a map handle on its owner thread.
@@ -1023,8 +1061,9 @@ MLN_API mln_status mln_texture_resize(
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
- * - MLN_STATUS_INVALID_STATE when no render update is available, the session is
- *   detached, or a frame is currently acquired.
+ * - MLN_STATUS_INVALID_STATE when no render update is available, the current
+ *   update does not produce a frame, the session is detached, or a frame is
+ *   currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.

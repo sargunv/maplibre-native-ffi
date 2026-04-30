@@ -354,8 +354,8 @@ auto texture_render(mln_texture_session* texture) -> mln_status {
   texture->renderer->render(update);
   texture->rendered_texture = texture->backend->metal_texture();
   if (texture->rendered_texture == nullptr) {
-    set_thread_error("render did not produce a Metal texture");
-    return MLN_STATUS_NATIVE_ERROR;
+    set_thread_error("render update did not produce a Metal texture");
+    return MLN_STATUS_INVALID_STATE;
   }
   texture->rendered_generation = texture->generation;
   return MLN_STATUS_OK;

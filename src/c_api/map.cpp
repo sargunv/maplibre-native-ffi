@@ -27,6 +27,12 @@ auto mln_map_destroy(mln_map* map) noexcept -> mln_status {
   });
 }
 
+auto mln_map_request_render(mln_map* map) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_request_render(map);
+  });
+}
+
 auto mln_map_set_style_url(mln_map* map, const char* url) noexcept
   -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {

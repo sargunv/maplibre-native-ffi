@@ -19,6 +19,7 @@ auto create_map(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) -> mln_status;
 auto destroy_map(mln_map* map) -> mln_status;
+auto map_request_render(mln_map* map) -> mln_status;
 auto map_set_style_url(mln_map* map, const char* url) -> mln_status;
 auto map_set_style_json(mln_map* map, const char* json) -> mln_status;
 auto map_get_camera(mln_map* map, mln_camera_options* out_camera) -> mln_status;

@@ -95,7 +95,8 @@ final class MapState {
     mapOptions.width = viewport.logicalWidth
     mapOptions.height = viewport.logicalHeight
     mapOptions.scale_factor = viewport.scaleFactor
-      try checkCAPI(mln_map_create(runtime, &mapOptions, &outMap), "map create failed")
+    mapOptions.map_mode = MLN_MAP_MODE_CONTINUOUS.rawValue
+    try checkCAPI(mln_map_create(runtime, &mapOptions, &outMap), "map create failed")
   }
 
   private static func loadStyle(map: OpaquePointer?) throws {

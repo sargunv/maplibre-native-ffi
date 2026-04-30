@@ -24,6 +24,7 @@ pub const MapState = struct {
         map_options.width = viewport.logical_width;
         map_options.height = viewport.logical_height;
         map_options.scale_factor = viewport.scale_factor;
+        map_options.map_mode = c.MLN_MAP_MODE_CONTINUOUS;
         if (c.mln_map_create(runtime.?, &map_options, &map) != c.MLN_STATUS_OK or map == null) {
             diagnostics.logAbiError("map create failed");
             return types.AppError.MapCreateFailed;

@@ -4,6 +4,7 @@
     "hverlin.mise-vscode",
     "okerew.shader-with-metal",
     "ziglang.vscode-zig",
-    "llvm-vs-code-extensions.vscode-clangd"
+    "llvm-vs-code-extensions.vscode-clangd",
+    "bierner.markdown-mermaid"
   ]
 }
