@@ -1,14 +1,13 @@
 /**
  * @file maplibre_native_c.h
- * Public C ABI for the MapLibre Native wrapper.
+ * Public C API for low-level MapLibre Native bindings.
  *
- * All functions are memory-safe to call from any thread. Functions that operate
- * on thread-affine handles validate the caller thread and return
- * MLN_STATUS_WRONG_THREAD rather than causing undefined behavior. Functions
+ * Functions that operate on thread-affine handles validate the caller thread
+ * and return MLN_STATUS_WRONG_THREAD for owner-thread mismatches. Functions
  * without an explicit owner-thread requirement may be called from any thread.
  *
- * Status-returning functions clear thread-local diagnostics on entry. When a
- * synchronous failure status is returned, callers should read
+ * Status-returning functions clear thread-local diagnostics on entry. After a
+ * synchronous failure status is returned, read
  * mln_thread_last_error_message() on the same thread before making another C
  * API call. Asynchronous native failures are reported through map events.
  */
@@ -51,7 +50,7 @@ extern "C" {
 #endif
 
 #pragma region Common C API contract
-/** Status values returned by status-returning C API functions. */
+/** Status values returned by status-returning functions. */
 typedef enum mln_status {
   MLN_STATUS_OK = 0,
   /** A pointer, size field, mask, or handle argument was invalid. */
@@ -61,9 +60,7 @@ typedef enum mln_status {
   /** The handle is thread-affine and the call was made from the wrong thread.
    */
   MLN_STATUS_WRONG_THREAD = -3,
-  /** The C API entry point or requested behavior is not supported on this
-   * build.
-   */
+  /** The entry point or requested behavior is unavailable in this build. */
   MLN_STATUS_UNSUPPORTED = -4,
   /** A native MapLibre error or C++ exception was converted to status. */
   MLN_STATUS_NATIVE_ERROR = -5,
@@ -75,10 +72,10 @@ typedef struct mln_resource_request_handle mln_resource_request_handle;
 typedef struct mln_texture_session mln_texture_session;
 
 /**
- * Returns the C ABI contract version.
+ * Reports the C ABI contract version.
  *
- * Returns 0 while the C ABI is unstable. Stable C ABI contract editions use
- * YYYYMM and only change when the C ABI contract changes.
+ * The value is 0 while the ABI is unstable. Stable ABI contract editions use
+ * YYYYMMDD and change only when the ABI contract changes.
  */
 MLN_API uint32_t mln_c_version(void) MLN_NOEXCEPT;
 
@@ -86,16 +83,18 @@ MLN_API uint32_t mln_c_version(void) MLN_NOEXCEPT;
 
 #pragma region Diagnostics
 /**
- * Returns the last thread-local diagnostic message, or an empty string.
+ * Returns the last thread-local diagnostic message.
  *
- * The returned pointer is owned by the C API and remains valid until the next C
- * API call on the same thread that writes a thread-local diagnostic.
+ * The returned string is empty when no diagnostic is available. The pointer is
+ * owned by the C API and remains valid until the next C API call on the same
+ * thread that writes a thread-local diagnostic.
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
 #pragma endregion
 
 #pragma region Logging
+/** Log severity values emitted by MapLibre Native. */
 typedef enum mln_log_severity {
   MLN_LOG_SEVERITY_INFO = 1,
   MLN_LOG_SEVERITY_WARNING = 2,
@@ -114,8 +113,7 @@ typedef enum mln_log_severity_mask {
                               MLN_LOG_SEVERITY_MASK_ERROR,
 } mln_log_severity_mask;
 
-/** MapLibre Native log event categories exposed as C ABI-stable integer values.
- */
+/** Log event categories emitted by MapLibre Native. */
 typedef enum mln_log_event {
   MLN_LOG_EVENT_GENERAL = 0,
   MLN_LOG_EVENT_SETUP = 1,
@@ -136,27 +134,35 @@ typedef enum mln_log_event {
   MLN_LOG_EVENT_TIMING = 16,
 } mln_log_event;
 
+/**
+ * Receives a MapLibre Native log record.
+ *
+ * The message pointer is borrowed for the callback duration. Returning non-zero
+ * consumes the record. Returning zero lets MapLibre Native's platform logger
+ * handle it.
+ */
 typedef uint32_t (*mln_log_callback)(
   void* user_data, uint32_t severity, uint32_t event, int64_t code,
   const char* message
 );
 
 /**
- * Installs a process-global MapLibre Native log callback. Passing a null
- * callback clears the current callback.
+ * Installs a process-global MapLibre Native log callback.
  *
- * Returning a non-zero value from the callback consumes the message. Returning
- * zero lets it fall through to MapLibre Native's platform logger. The callback
- * and user_data must remain valid until the callback is replaced or cleared.
- * The message is borrowed and valid only for the duration of the callback.
+ * Passing null clears the current callback. The callback and user_data are
+ * stored by reference and must remain valid until the callback is replaced or
+ * cleared.
  *
- * This is a low-level native callback. It may be invoked from MapLibre logging
- * or worker threads depending on the async severity mask, and it may be invoked
- * while MapLibre holds internal logging locks. The callback must be
- * thread-safe, return quickly, and must not call any MapLibre Native API.
- * Language adapters for runtimes that restrict native-thread callbacks should
- * marshal records into host-managed logging facilities before invoking user
- * code.
+ * The callback is a low-level native callback:
+ *
+ * - MapLibre may invoke it from logging or worker threads selected by the async
+ *   severity mask.
+ * - MapLibre may invoke it while holding internal logging locks.
+ * - The callback must be thread-safe, return quickly, and must not call this C
+ *   API or MapLibre Native APIs.
+ * - Language adapters for runtimes that restrict native-thread callbacks can
+ *   marshal records into host-managed logging facilities before invoking user
+ *   code.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -168,6 +174,9 @@ mln_log_set_callback(mln_log_callback callback, void* user_data) MLN_NOEXCEPT;
 /**
  * Clears the process-global log callback.
  *
+ * After this call succeeds, future log dispatches no longer use the callback
+ * that was previously registered through mln_log_set_callback().
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -175,10 +184,11 @@ mln_log_set_callback(mln_log_callback callback, void* user_data) MLN_NOEXCEPT;
 MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
 
 /**
- * Sets which severities are dispatched asynchronously by MapLibre Native.
+ * Controls which log severities MapLibre Native may dispatch asynchronously.
  *
- * Pass MLN_LOG_SEVERITY_MASK_DEFAULT to restore MapLibre Native's default of
- * asynchronous info/warning logs and synchronous error logs.
+ * MLN_LOG_SEVERITY_MASK_DEFAULT restores MapLibre Native's default behavior:
+ * info and warning records may be asynchronous, while error records remain
+ * synchronous.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -262,6 +272,8 @@ typedef enum mln_resource_provider_decision {
 /**
  * Reads MapLibre Native's process-global network status.
  *
+ * On success, out_status receives a mln_network_status value.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when out_status is null.
@@ -272,10 +284,10 @@ MLN_API mln_status mln_network_status_get(uint32_t* out_status) MLN_NOEXCEPT;
 /**
  * Sets MapLibre Native's process-global network status.
  *
- * Set ONLINE to allow HTTP/HTTPS requests and wake native subscribers when
- * transitioning from offline. Set OFFLINE to make MapLibre's online source stop
- * starting network requests until reachability returns, without touching
- * runtime-scoped resource configuration.
+ * MLN_NETWORK_STATUS_ONLINE allows HTTP and HTTPS requests and wakes native
+ * subscribers when transitioning from offline. MLN_NETWORK_STATUS_OFFLINE makes
+ * MapLibre's online source stop starting network requests until reachability
+ * returns. Runtime-scoped resource configuration is unchanged.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -287,10 +299,9 @@ MLN_API mln_status mln_network_status_set(uint32_t status) MLN_NOEXCEPT;
 typedef struct mln_runtime_options {
   uint32_t size;
   uint32_t flags;
-  /** Filesystem root used to resolve asset:// URLs. Copied during create. */
+  /** Filesystem root for asset:// URLs. Copied during runtime creation. */
   const char* asset_path;
-  /** Cache database path forwarded to MapLibre options. Copied during create.
-   */
+  /** Cache database path. Copied during runtime creation. */
   const char* cache_path;
   /** Maximum ambient cache size in bytes when the matching flag is set. */
   uint64_t maximum_cache_size;
@@ -298,24 +309,31 @@ typedef struct mln_runtime_options {
 
 typedef struct mln_resource_transform_response {
   uint32_t size;
-  /** Replacement URL. Null or empty keeps the original URL. */
+  /** Replacement URL. Null or empty keeps the original URL. Copied on return.
+   */
   const char* url;
 } mln_resource_transform_response;
 
 /**
  * Rewrites a network resource URL.
  *
- * This callback maps directly to MapLibre Native's ResourceTransform behavior:
- * it can only return a replacement URL string. It cannot mutate headers,
- * bodies, cache policy, or convert a request into an error. Returning a non-OK
- * status is treated as no rewrite and does not fail the resource request. The
- * callback may run on a MapLibre worker/network thread, not the runtime owner
- * thread; it must be thread-safe, return quickly, and must not call back into
- * the C API. url and out_response are valid only during the callback and must
- * not be retained. When out_response->url is set, the C API copies it before
- * the callback returns. The callback and user_data must remain valid until no
- * live maps or in-flight requests can invoke the transform, normally until
- * runtime teardown.
+ * This callback can only replace the request URL. It cannot mutate headers,
+ * bodies, cache policy, or convert a request into an error.
+ *
+ * Callback invocations follow these rules:
+ *
+ * - MapLibre may invoke the callback on a worker or network thread instead of
+ *   the runtime owner thread.
+ * - The callback must be thread-safe, return quickly, and must not call this C
+ *   API.
+ * - url and out_response are borrowed for the callback duration.
+ * - The C API copies out_response->url before the callback returns when a
+ *   replacement URL is set.
+ * - A non-OK return status is treated as no rewrite and does not fail the
+ *   resource request.
+ * - The callback and user_data must remain valid until no live maps or
+ *   in-flight requests can invoke the transform, normally until runtime
+ *   teardown.
  */
 typedef mln_status (*mln_resource_transform_callback)(
   void* user_data, uint32_t kind, const char* url,
@@ -369,20 +387,29 @@ typedef struct mln_resource_response {
 /**
  * Intercepts a network resource request.
  *
- * request and its pointed-to fields are valid only during the callback. The
- * callback returns MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH to let native
- * OnlineFileSource handle the request, or MLN_RESOURCE_PROVIDER_DECISION_HANDLE
- * to complete it through the request handle. When returning PASS_THROUGH, the
- * provider must not retain, complete, or release the handle. When returning
- * HANDLE, the provider may complete inline or later; completion is copied by
- * the C API and may be called from any thread. Providers should release the
- * handle after they no longer need to complete or observe cancellation.
- *
  * The callback runs synchronously on the thread that reaches the C API network
- * file source, which may be a MapLibre worker or network thread rather than the
- * runtime owner thread. It must be thread-safe, return quickly, and must not
- * call back into map/runtime C API functions. It may call resource request
- * handle functions for the handle provided to this callback.
+ * file source. That thread may be a MapLibre worker or network thread instead
+ * of the runtime owner thread.
+ *
+ * Request handling follows these rules:
+ *
+ * - request and its pointed-to fields are borrowed for the callback duration.
+ * - MLN_RESOURCE_PROVIDER_DECISION_PASS_THROUGH lets native OnlineFileSource
+ *   handle the request.
+ * - After returning PASS_THROUGH, the provider must not retain, complete, or
+ *   release the handle.
+ * - MLN_RESOURCE_PROVIDER_DECISION_HANDLE lets the provider complete the
+ *   request through the handle inline or later.
+ * - Unknown decision values produce a provider error response. The C API
+ *   releases the provided handle and does not pass the request through.
+ * - The C API copies completion data, and mln_resource_request_complete() may
+ *   be called from any thread.
+ * - Providers must release handled request handles after they no longer need to
+ *   complete or observe cancellation.
+ * - The callback must be thread-safe, return quickly, and must not call map or
+ *   runtime C API functions.
+ * - The callback may call resource request handle functions for the provided
+ *   handle.
  */
 typedef uint32_t (*mln_resource_provider_callback)(
   void* user_data, const mln_resource_request* request,
@@ -396,12 +423,15 @@ typedef struct mln_resource_provider {
 } mln_resource_provider;
 
 /**
- * Returns default runtime options with the C API size field populated.
+ * Returns runtime options initialized for this C API version.
  */
 MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
 
 /**
  * Creates a runtime handle.
+ *
+ * The creating thread becomes the runtime owner thread. Each owner thread may
+ * hold one live runtime.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -419,10 +449,11 @@ MLN_API mln_status mln_runtime_create(
  * Sets a runtime-scoped network resource provider.
  *
  * The provider must be set before any map is created from the runtime. It is
- * invoked for requests that reach the C API network file source; built-in
+ * invoked for requests that reach the C API network file source. Built-in
  * non-network schemes such as file, asset, mbtiles, and pmtiles are handled by
  * native MainResourceLoader before this extension point. The callback and
- * user_data must remain valid until the runtime is destroyed.
+ * user_data are stored by reference and must remain valid until the runtime is
+ * destroyed.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -440,12 +471,13 @@ MLN_API mln_status mln_runtime_set_resource_provider(
 /**
  * Completes a C API resource provider request.
  *
- * May be called inline from the provider callback or later from any thread.
- * The C API copies all response bytes and strings before returning. Completion
- * is one-shot: a second completion, completion after cancellation, or
- * completion with null arguments returns a non-OK status and does not invoke
+ * This function may be called inline from the provider callback or later from
+ * any thread. The C API copies all response bytes and strings before returning.
+ *
+ * Completion is one-shot. A second completion, completion after cancellation,
+ * or completion with null arguments returns a non-OK status and does not invoke
  * MapLibre's resource callback. Malformed response contents are converted to
- * provider error responses and still consume the one-shot completion.
+ * provider error responses and still consume the completion.
  *
  * Returns:
  * - MLN_STATUS_OK when the response was accepted for asynchronous delivery.
@@ -461,9 +493,9 @@ MLN_API mln_status mln_resource_request_complete(
 /**
  * Reports whether MapLibre has cancelled a C API resource provider request.
  *
- * May be called from any thread while the provider still owns the handle. A
- * cancelled request no longer wants a response; later completion is ignored
- * with MLN_STATUS_INVALID_STATE.
+ * This function may be called from any thread while the provider still owns the
+ * handle. A cancelled request no longer wants a response; later completion is
+ * ignored with MLN_STATUS_INVALID_STATE.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -477,10 +509,9 @@ MLN_API mln_status mln_resource_request_cancelled(
  * Releases the provider's reference to a resource request handle.
  *
  * Providers own a releasable handle only after returning
- * MLN_RESOURCE_PROVIDER_DECISION_HANDLE from the callback. They must release
- * that handle exactly once after completing the request or deciding not to
- * complete it. Passing null is a no-op. Using a handle after release is
- * invalid.
+ * MLN_RESOURCE_PROVIDER_DECISION_HANDLE from the callback. Release the handle
+ * exactly once after completing the request or deciding not to complete it.
+ * Passing null is a no-op. A released handle must not be used again.
  */
 MLN_API void mln_resource_request_release(
   mln_resource_request_handle* handle
@@ -490,10 +521,10 @@ MLN_API void mln_resource_request_release(
  * Registers a runtime-scoped URL transform for network resources.
  *
  * The transform must be registered before any map is created from the runtime.
- * It is forwarded to MapLibre's OnlineFileSource and therefore applies wherever
- * native OnlineFileSource applies transforms, including nested PMTiles network
- * range requests. It does not apply to file, asset, database, MBTiles, or
- * registered C API provider responses intercepted before OnlineFileSource.
+ * It is forwarded to MapLibre's OnlineFileSource, so it applies wherever native
+ * OnlineFileSource applies transforms, including nested PMTiles network range
+ * requests. It does not apply to file, asset, database, MBTiles, or registered
+ * C API provider responses intercepted before OnlineFileSource.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -513,9 +544,9 @@ MLN_API mln_status mln_runtime_set_resource_transform(
  *
  * When runtime options omit cache_path, this operates on MapLibre's default
  * in-memory database and its effects are not durable beyond the native database
- * lifetime. Native cache operations are asynchronous internally; this C API
- * call waits until MapLibre's database callback reports completion, then
- * returns the resulting status.
+ * lifetime. Native cache operations are asynchronous internally; this call
+ * waits until MapLibre's database callback reports completion and returns the
+ * resulting status.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -532,6 +563,8 @@ MLN_API mln_status mln_runtime_run_ambient_cache_operation(
 /**
  * Destroys a runtime handle.
  *
+ * The runtime must no longer own live maps.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not a live runtime
@@ -544,7 +577,9 @@ MLN_API mln_status mln_runtime_run_ambient_cache_operation(
 MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
 
 /**
- * Runs one pending owner-thread task for this runtime, if any.
+ * Runs one pending owner-thread task for this runtime.
+ *
+ * If no task is pending, the call returns MLN_STATUS_OK without doing work.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -559,6 +594,7 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 #pragma endregion
 
 #pragma region Map, camera, and events
+/** Field mask values for mln_camera_options. */
 typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_CENTER = 1u << 0u,
   MLN_CAMERA_OPTION_ZOOM = 1u << 1u,
@@ -566,8 +602,8 @@ typedef enum mln_camera_option_field {
   MLN_CAMERA_OPTION_PITCH = 1u << 3u,
 } mln_camera_option_field;
 
+/** Map event types returned by mln_map_poll_event(). */
 typedef enum mln_map_event_type {
-  MLN_MAP_EVENT_NONE = 0,
   MLN_MAP_EVENT_CAMERA_WILL_CHANGE = 1,
   MLN_MAP_EVENT_CAMERA_IS_CHANGING = 2,
   MLN_MAP_EVENT_CAMERA_DID_CHANGE = 3,
@@ -580,6 +616,7 @@ typedef enum mln_map_event_type {
   MLN_MAP_EVENT_RENDER_ERROR = 10,
 } mln_map_event_type;
 
+/** Options used when creating a map. */
 typedef struct mln_map_options {
   uint32_t size;
   uint32_t width;
@@ -587,6 +624,7 @@ typedef struct mln_map_options {
   double scale_factor;
 } mln_map_options;
 
+/** Camera fields used for snapshots and camera commands. */
 typedef struct mln_camera_options {
   uint32_t size;
   uint32_t fields;
@@ -597,11 +635,13 @@ typedef struct mln_camera_options {
   double pitch;
 } mln_camera_options;
 
+/** Screen-space point in logical map pixels. */
 typedef struct mln_screen_point {
   double x;
   double y;
 } mln_screen_point;
 
+/** Copied map event payload returned by mln_map_poll_event(). */
 typedef struct mln_map_event {
   uint32_t size;
   uint32_t type;
@@ -610,12 +650,12 @@ typedef struct mln_map_event {
 } mln_map_event;
 
 /**
- * Returns default map options with the C API size field populated.
+ * Returns map options initialized for this C API version.
  */
 MLN_API mln_map_options mln_map_options_default(void) MLN_NOEXCEPT;
 
 /**
- * Returns default empty camera options with the C API size field populated.
+ * Returns empty camera options initialized for this C API version.
  */
 MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
 
@@ -639,6 +679,8 @@ MLN_API mln_status mln_map_create(
 /**
  * Destroys a map handle on its owner thread.
  *
+ * The map must not have an attached texture session.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not a live map handle.
@@ -652,9 +694,8 @@ MLN_API mln_status mln_map_destroy(mln_map* map) MLN_NOEXCEPT;
 /**
  * Loads a style URL through MapLibre Native style APIs.
  *
- * Completion may be represented by the return status and later map events.
- * Synchronous failures are reported through status and thread-local
- * diagnostics; asynchronous native failures are reported through map events.
+ * This is a map command. The return status reports synchronous acceptance or
+ * failure. Later native success and failure are reported through map events.
  *
  * Returns:
  * - MLN_STATUS_OK when the load request was accepted.
@@ -670,8 +711,9 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
 /**
  * Loads inline style JSON through MapLibre Native style APIs.
  *
- * Completion may be represented by the return status and later map events.
- * Malformed JSON can fail synchronously with diagnostics and a loading-failed
+ * This is a map command. The return status reports synchronous acceptance or
+ * failure. Later native success and failure are reported through map events.
+ * Malformed JSON can fail synchronously and still enqueue a loading-failed
  * event.
  *
  * Returns:
@@ -686,7 +728,7 @@ MLN_API mln_status
 mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
 
 /**
- * Returns the current camera snapshot.
+ * Copies the current camera snapshot.
  *
  * On success, *out_camera is overwritten.
  *
@@ -704,12 +746,12 @@ mln_map_get_camera(mln_map* map, mln_camera_options* out_camera) MLN_NOEXCEPT;
 /**
  * Applies a camera jump command.
  *
- * Only fields indicated by camera->fields are used.
+ * Only fields indicated by camera->fields affect the map.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, camera is null,
- *   or camera->size is too small.
+ *   camera->size is too small, or camera->fields contains unknown bits.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -733,7 +775,7 @@ mln_map_move_by(mln_map* map, double delta_x, double delta_y) MLN_NOEXCEPT;
 /**
  * Applies a screen-space zoom command.
  *
- * The anchor pointer may be null.
+ * Passing a null anchor uses MapLibre Native's default zoom anchor.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -787,7 +829,7 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
 /**
  * Pops the next queued map event.
  *
- * On success, *out_has_event is set to whether an event was available. When an
+ * On success, *out_has_event indicates whether an event was available. When an
  * event is available, *out_event is overwritten. Event message storage is
  * copied into out_event and remains valid after later C API calls.
  *
@@ -808,45 +850,48 @@ MLN_API mln_status mln_map_poll_event(
 
 #pragma region Texture sessions
 
+/** Metal texture session attachment options. */
 typedef struct mln_metal_texture_descriptor {
   uint32_t size;
-  /** Logical map width in UI pixels. Physical texture width is width *
-   * scale_factor. */
+  /** Logical map width in UI pixels. */
   uint32_t width;
-  /** Logical map height in UI pixels. Physical texture height is height *
-   * scale_factor. */
+  /** Logical map height in UI pixels. */
   uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
   double scale_factor;
   /** Borrowed id<MTLDevice> / MTL::Device*. Required. */
   void* device;
 } mln_metal_texture_descriptor;
 
+/** Metal texture frame acquired from a texture session. */
 typedef struct mln_metal_texture_frame {
   uint32_t size;
+  /** Session generation that produced this frame. */
   uint64_t generation;
   /** Physical Metal texture width in device pixels. */
   uint32_t width;
   /** Physical Metal texture height in device pixels. */
   uint32_t height;
+  /** UI-to-device pixel scale used for this frame. */
   double scale_factor;
   /** Opaque frame identity used to reject stale releases. */
   uint64_t frame_id;
-  /** Borrowed id<MTLTexture> / MTL::Texture*. Valid until release only. */
+  /** Borrowed id<MTLTexture> / MTL::Texture*. Valid until frame release. */
   void* texture;
-  /** Borrowed id<MTLDevice> / MTL::Device*. Valid until release only. */
+  /** Borrowed id<MTLDevice> / MTL::Device*. Valid until frame release. */
   void* device;
   /** Backend-native pixel format value. Metal uses MTLPixelFormat. */
   uint64_t pixel_format;
 } mln_metal_texture_frame;
 
+/** Vulkan texture session attachment options. */
 typedef struct mln_vulkan_texture_descriptor {
   uint32_t size;
-  /** Logical map width in UI pixels. Physical image width is width *
-   * scale_factor. */
+  /** Logical map width in UI pixels. */
   uint32_t width;
-  /** Logical map height in UI pixels. Physical image height is height *
-   * scale_factor. */
+  /** Logical map height in UI pixels. */
   uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
   double scale_factor;
   /** Borrowed VkInstance. Required. */
   void* instance;
@@ -856,24 +901,28 @@ typedef struct mln_vulkan_texture_descriptor {
   void* device;
   /** Borrowed graphics VkQueue. Required. */
   void* graphics_queue;
+  /** Queue family index for graphics_queue. Must support graphics commands. */
   uint32_t graphics_queue_family_index;
 } mln_vulkan_texture_descriptor;
 
+/** Vulkan texture frame acquired from a texture session. */
 typedef struct mln_vulkan_texture_frame {
   uint32_t size;
+  /** Session generation that produced this frame. */
   uint64_t generation;
   /** Physical Vulkan image width in device pixels. */
   uint32_t width;
   /** Physical Vulkan image height in device pixels. */
   uint32_t height;
+  /** UI-to-device pixel scale used for this frame. */
   double scale_factor;
   /** Opaque frame identity used to reject stale releases. */
   uint64_t frame_id;
-  /** Borrowed VkImage. Valid until release only. */
+  /** Borrowed VkImage. Valid until frame release. */
   void* image;
-  /** Borrowed VkImageView. Valid until release only. */
+  /** Borrowed VkImageView. Valid until frame release. */
   void* image_view;
-  /** Borrowed VkDevice. Valid until release only. */
+  /** Borrowed VkDevice. Valid until frame release. */
   void* device;
   /** Backend-native VkFormat value. */
   uint32_t format;
@@ -881,11 +930,15 @@ typedef struct mln_vulkan_texture_frame {
   uint32_t layout;
 } mln_vulkan_texture_frame;
 
-/** Returns default Metal texture descriptor values. */
+/**
+ * Returns Metal texture descriptor values initialized for this C API version.
+ */
 MLN_API mln_metal_texture_descriptor
 mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
 
-/** Returns default Vulkan texture descriptor values. */
+/**
+ * Returns Vulkan texture descriptor values initialized for this C API version.
+ */
 MLN_API mln_vulkan_texture_descriptor
 mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
 
@@ -895,7 +948,8 @@ mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
  * The map may have at most one live texture session. The session and every
  * texture-session call are owner-thread affine to the map owner thread. The
  * wrapper renders into a wrapper-owned texture created on the caller-provided
- * Metal device.
+ * Metal device. On success, *out_texture receives a handle the caller destroys
+ * with mln_texture_destroy().
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -905,7 +959,7 @@ mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
- * this build.
+ *   this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_metal_texture_attach(
@@ -919,7 +973,8 @@ MLN_API mln_status mln_metal_texture_attach(
  * The map may have at most one live texture session. The session and every
  * texture-session call are owner-thread affine to the map owner thread. The
  * wrapper renders into a wrapper-owned image created on the caller-provided
- * Vulkan device.
+ * Vulkan device. On success, *out_texture receives a handle the caller destroys
+ * with mln_texture_destroy().
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -942,7 +997,7 @@ MLN_API mln_status mln_vulkan_texture_attach(
  *
  * Width and height are logical map dimensions. The session renders into a
  * physical backend texture/image sized from the logical dimensions and
- * scale_factor.
+ * scale_factor. Resize clears the previously rendered frame.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -962,6 +1017,9 @@ MLN_API mln_status mln_texture_resize(
 /**
  * Renders the latest map update into the offscreen texture session.
  *
+ * A successful render makes a frame available to the backend-specific acquire
+ * function for the same session generation.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
@@ -978,7 +1036,7 @@ mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
  * Acquires the most recently rendered Metal texture frame.
  *
  * The returned texture and device pointers are borrowed and remain valid only
- * until mln_metal_texture_release_frame is called for the same frame. While
+ * until mln_metal_texture_release_frame() is called for the same frame. While
  * acquired, resize, render, detach, destroy, and a second acquire return
  * MLN_STATUS_INVALID_STATE.
  *
@@ -1002,7 +1060,7 @@ MLN_API mln_status mln_metal_texture_acquire_frame(
  * Acquires the most recently rendered Vulkan texture frame.
  *
  * The returned image, image view, and device pointers are borrowed and remain
- * valid only until mln_vulkan_texture_release_frame is called for the same
+ * valid only until mln_vulkan_texture_release_frame() is called for the same
  * frame. While acquired, resize, render, detach, destroy, and a second acquire
  * return MLN_STATUS_INVALID_STATE.
  *
@@ -1028,11 +1086,14 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
 /**
  * Releases a previously acquired Metal texture frame.
  *
+ * The frame must be the active acquired frame for this session. A successful
+ * release ends the borrow of frame->texture and frame->device.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
- *   null, frame->size is too small, or the frame generation does not match the
- *   active acquired frame.
+ *   null, frame->size is too small, or the frame generation or frame_id does
+ *   not match the active acquired frame.
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
@@ -1047,11 +1108,15 @@ MLN_API mln_status mln_metal_texture_release_frame(
 /**
  * Releases a previously acquired Vulkan texture frame.
  *
+ * The frame must be the active acquired frame for this session. A successful
+ * release ends the borrow of frame->image, frame->image_view, and
+ * frame->device.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
- *   null, frame->size is too small, or the frame generation does not match the
- *   active acquired frame.
+ *   null, frame->size is too small, or the frame generation or frame_id does
+ *   not match the active acquired frame.
  * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
@@ -1067,6 +1132,9 @@ MLN_API mln_status mln_vulkan_texture_release_frame(
  * Detaches backend-bound resources from the map while keeping the session
  * handle live for destruction.
  *
+ * Detach advances the session generation. After detach, resize, render, and
+ * acquire operations return MLN_STATUS_INVALID_STATE.
+ *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live.
@@ -1081,8 +1149,9 @@ mln_texture_detach(mln_texture_session* texture) MLN_NOEXCEPT;
 /**
  * Destroys a texture session handle.
  *
- * If still attached, destroy detaches first. Destroy is rejected while a frame
- * is acquired so borrowed texture pointers cannot outlive their session.
+ * If the session is still attached, this function detaches it first.
+ * Destruction is rejected while a frame is acquired so borrowed texture
+ * pointers cannot outlive their session.
  *
  * Returns:
  * - MLN_STATUS_OK on success.

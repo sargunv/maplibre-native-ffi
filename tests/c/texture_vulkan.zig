@@ -219,6 +219,30 @@ const Backend = struct {
     }
 };
 
+test "Vulkan texture unsupported backend validates arguments" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_vulkan_texture_descriptor_default();
+    descriptor.instance = @ptrFromInt(1);
+    descriptor.physical_device = @ptrFromInt(1);
+    descriptor.device = @ptrFromInt(1);
+    descriptor.graphics_queue = @ptrFromInt(1);
+
+    var texture: ?*c.mln_texture_session = @ptrFromInt(1);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_texture_attach(map, &descriptor, &texture));
+    try testing.expect(texture != null);
+
+    texture = null;
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+}
+
 fn expectVk(result: vk.VkResult) !void {
     try testing.expectEqual(vk.VK_SUCCESS, result);
 }

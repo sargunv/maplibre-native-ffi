@@ -129,6 +129,27 @@ const Backend = struct {
     }
 };
 
+test "Metal texture unsupported backend validates arguments" {
+    if (builtin.os.tag == .macos) return error.SkipZigTest;
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_metal_texture_descriptor_default();
+    descriptor.device = @ptrFromInt(1);
+
+    var texture: ?*c.mln_texture_session = @ptrFromInt(1);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expect(texture != null);
+
+    texture = null;
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+}
+
 test "Metal texture attach rejects invalid arguments" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     try common.expectAttachRejectsInvalidArguments(Backend);

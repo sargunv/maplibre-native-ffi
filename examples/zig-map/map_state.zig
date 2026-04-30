@@ -61,7 +61,7 @@ pub fn drainEvents(map: *c.mln_map) !bool {
     while (true) {
         var event: c.mln_map_event = .{
             .size = @sizeOf(c.mln_map_event),
-            .type = c.MLN_MAP_EVENT_NONE,
+            .type = 0,
             .code = 0,
             .message = [_:0]u8{0} ** 512,
         };
