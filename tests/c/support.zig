@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 pub const c = @cImport({
-    @cInclude("maplibre_native_abi.h");
+    @cInclude("maplibre_native_c.h");
 });
 
 extern fn usleep(useconds: c_uint) c_int;
@@ -14,7 +14,7 @@ fn consumeLog(_: ?*anyopaque, _: u32, _: u32, _: i64, _: [*c]const u8) callconv(
 pub const style_json =
     \\{
     \\  "version": 8,
-    \\  "name": "zig-abi-test",
+    \\  "name": "zig-c-test",
     \\  "sources": {
     \\    "point": {
     \\      "type": "geojson",

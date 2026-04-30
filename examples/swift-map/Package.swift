@@ -10,12 +10,12 @@ let package = Package(
   ],
   targets: [
     .systemLibrary(
-      name: "CMapLibreNativeABI",
-      pkgConfig: "maplibre-native-ffi"
+      name: "CMapLibreNativeC",
+      pkgConfig: "maplibre-native-c"
     ),
     .executableTarget(
       name: "SwiftMap",
-      dependencies: ["CMapLibreNativeABI"],
+      dependencies: ["CMapLibreNativeC"],
       resources: [.process("Shaders")],
       linkerSettings: [
         .linkedFramework("AppKit"),

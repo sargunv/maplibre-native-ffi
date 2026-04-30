@@ -2,8 +2,8 @@ prefix=@MLN_PC_PREFIX@
 includedir=@MLN_PC_INCLUDEDIR@
 libdir=@MLN_PC_LIBDIR@
 
-Name: maplibre-native-ffi
+Name: maplibre-native-c
 Description: C ABI for MapLibre Native
 Version: 0
 Cflags: -I${includedir}
-Libs: -L${libdir} -lmaplibre_native_abi
+Libs: -L${libdir} -lmaplibre-native-c

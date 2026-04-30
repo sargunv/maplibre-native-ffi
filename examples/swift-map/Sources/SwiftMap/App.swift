@@ -21,13 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
-    installABILogging()
+    installCAPILogging()
     logControls()
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     NotificationCenter.default.post(name: Self.willTerminateMapViews, object: nil)
-    clearABILogging()
+    clearCAPILogging()
     return .terminateNow
   }
 }

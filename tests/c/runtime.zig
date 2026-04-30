@@ -18,9 +18,9 @@ fn createRuntimeOnThread(out_status: *c.mln_status) void {
     }
 }
 
-test "runtime exposes ABI version and default options" {
+test "runtime exposes C API version and default options" {
     const options = c.mln_runtime_options_default();
-    try testing.expectEqual(@as(u32, 0), c.mln_abi_version());
+    try testing.expectEqual(@as(u32, 0), c.mln_c_version());
     try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_options)), options.size);
 }
 

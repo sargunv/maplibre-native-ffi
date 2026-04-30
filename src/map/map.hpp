@@ -3,7 +3,7 @@
 #include <memory>
 #include <thread>
 
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 namespace mbgl {
 class Map;

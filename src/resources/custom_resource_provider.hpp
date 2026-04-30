@@ -6,7 +6,7 @@
 #include <mbgl/storage/resource.hpp>
 #include <mbgl/util/async_request.hpp>
 
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 namespace mln::core {
 

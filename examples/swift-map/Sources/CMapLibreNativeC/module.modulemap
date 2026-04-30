@@ -1,0 +1,4 @@
+module CMapLibreNativeC [system] {
+  header "include/maplibre_native_c.h"
+  export *
+}

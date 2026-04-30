@@ -21,7 +21,7 @@
 #include "runtime/runtime.hpp"
 
 #include "diagnostics/diagnostics.hpp"
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 namespace {
 using RuntimeRegistry =

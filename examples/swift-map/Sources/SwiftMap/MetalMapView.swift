@@ -1,5 +1,5 @@
 import AppKit
-import CMapLibreNativeABI
+import CMapLibreNativeC
 import Metal
 import QuartzCore
 
@@ -34,7 +34,7 @@ final class MetalMapView: NSView {
       device = nil
       commandQueue = nil
       pipeline = nil
-      setupError = ABIError.failure("Metal is not available")
+      setupError = CAPIError.failure("Metal is not available")
     }
     super.init(frame: .zero)
 
@@ -200,10 +200,10 @@ final class MetalMapView: NSView {
     frame.size = UInt32(MemoryLayout<mln_metal_texture_frame>.size)
     let acquireStatus = mln_metal_texture_acquire_frame(textureSession, &frame)
     if acquireStatus == MLN_STATUS_INVALID_STATE { return false }
-    try checkABI(acquireStatus, "Metal texture acquire failed")
+    try checkCAPI(acquireStatus, "Metal texture acquire failed")
     defer {
       if mln_metal_texture_release_frame(textureSession, &frame) != MLN_STATUS_OK {
-        logABIError("Metal texture release failed")
+        logCAPIError("Metal texture release failed")
       }
     }
 
@@ -212,8 +212,8 @@ final class MetalMapView: NSView {
       let commandBuffer = commandQueue.makeCommandBuffer()
     else { return false }
 
-    // The ABI returns a borrowed id<MTLTexture>. Keep it borrowed and release
-    // the ABI frame only after the command buffer has completed sampling it.
+    // The C API returns a borrowed id<MTLTexture>. Keep it borrowed and release
+    // the C API frame only after the command buffer has completed sampling it.
     let mapTexture = Unmanaged<AnyObject>.fromOpaque(texturePointer).takeUnretainedValue() as! MTLTexture
     let passDescriptor = MTLRenderPassDescriptor()
     passDescriptor.colorAttachments[0].texture = drawable.texture
@@ -234,7 +234,7 @@ final class MetalMapView: NSView {
 
   private static func makePipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
     guard let shaderURL = Bundle.module.url(forResource: "MapShader", withExtension: "metal") else {
-      throw ABIError.failure("MapShader.metal resource is missing")
+      throw CAPIError.failure("MapShader.metal resource is missing")
     }
     let source = try String(contentsOf: shaderURL, encoding: .utf8)
     let library = try device.makeLibrary(source: source, options: nil)

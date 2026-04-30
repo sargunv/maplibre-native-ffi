@@ -5,7 +5,7 @@
 #include "resources/network_status.hpp"
 
 #include "diagnostics/diagnostics.hpp"
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 namespace mln::core {
 

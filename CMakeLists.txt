@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-project(maplibre_native_experiments VERSION 0.1.0 LANGUAGES C CXX)
+project(maplibre_native_c VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,8 +16,8 @@ set(MLN_PC_PREFIX "${PROJECT_SOURCE_DIR}")
 set(MLN_PC_INCLUDEDIR "${PROJECT_SOURCE_DIR}/include")
 set(MLN_PC_LIBDIR "${PROJECT_BINARY_DIR}")
 configure_file(
-  "${PROJECT_SOURCE_DIR}/cmake/maplibre-native-ffi.pc.in"
-  "${PROJECT_BINARY_DIR}/pkgconfig/maplibre-native-ffi.pc"
+  "${PROJECT_SOURCE_DIR}/cmake/maplibre-native-c.pc.in"
+  "${PROJECT_BINARY_DIR}/pkgconfig/maplibre-native-c.pc"
   @ONLY)
 
 # MLN_SOURCE_DIR can be set externally to point at a local MapLibre Native
@@ -181,15 +181,15 @@ else()
 endif()
 
 add_library(
-  maplibre_native_abi
+  maplibre_native_c
   SHARED
-    src/abi/diagnostics.cpp
-    src/abi/logging.cpp
-    src/abi/map.cpp
-    src/abi/network.cpp
-    src/abi/runtime.cpp
-    src/abi/texture.cpp
-    src/abi/version.cpp
+    src/c_api/diagnostics.cpp
+    src/c_api/logging.cpp
+    src/c_api/map.cpp
+    src/c_api/network.cpp
+    src/c_api/runtime.cpp
+    src/c_api/texture.cpp
+    src/c_api/version.cpp
     src/diagnostics/diagnostics.cpp
     src/logging/logging.cpp
     src/map/map.cpp
@@ -200,16 +200,16 @@ add_library(
     ${MLN_TEXTURE_SESSION_SOURCE}
     src/runtime/runtime.cpp
     ${MLN_PLATFORM_SUPPORT_SOURCES})
-add_library(maplibre_native_experiments::abi ALIAS maplibre_native_abi)
+add_library(maplibre_native_ffi::c ALIAS maplibre_native_c)
 
 target_include_directories(
-  maplibre_native_abi
+  maplibre_native_c
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
   PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(
-  maplibre_native_abi
+  maplibre_native_c
   SYSTEM
   PRIVATE
     ${MLN_SOURCE_DIR}/src
@@ -227,7 +227,7 @@ target_include_directories(
     $<$<NOT:$<BOOL:${APPLE}>>:${ICUUC_INCLUDE_DIRS}>
     $<$<NOT:$<BOOL:${APPLE}>>:${ICUI18N_INCLUDE_DIRS}>)
 target_link_libraries(
-  maplibre_native_abi
+  maplibre_native_c
   PRIVATE
     Mapbox::Map
     mbgl-vendor-boost
@@ -238,16 +238,16 @@ target_link_libraries(
     $<$<BOOL:${APPLE}>:mbgl-vendor-metal-cpp>
     ${MLN_PLATFORM_SUPPORT_LIBRARIES})
 target_compile_options(
-  maplibre_native_abi
+  maplibre_native_c
   PRIVATE
     $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-rtti>
     $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>)
 target_compile_definitions(
-  maplibre_native_abi
+  maplibre_native_c
   PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:NDEBUG>)
 
 set_target_properties(
-  maplibre_native_abi
+  maplibre_native_c
   PROPERTIES
     CXX_VISIBILITY_PRESET
     hidden
@@ -256,10 +256,10 @@ set_target_properties(
     VISIBILITY_INLINES_HIDDEN
     YES
     OUTPUT_NAME
-    maplibre_native_abi)
+    maplibre-native-c)
 if(APPLE)
   set_target_properties(
-    maplibre_native_abi
+    maplibre_native_c
     PROPERTIES
       BUILD_WITH_INSTALL_NAME_DIR YES INSTALL_NAME_DIR "${PROJECT_BINARY_DIR}")
 endif()

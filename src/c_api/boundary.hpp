@@ -3,9 +3,9 @@
 #include <exception>
 
 #include "diagnostics/diagnostics.hpp"
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
-namespace mln::abi {
+namespace mln::c_api {
 
 template <typename Function>
 auto status_boundary(Function function) noexcept -> mln_status {
@@ -21,4 +21,4 @@ auto status_boundary(Function function) noexcept -> mln_status {
   }
 }
 
-}  // namespace mln::abi
+}  // namespace mln::c_api

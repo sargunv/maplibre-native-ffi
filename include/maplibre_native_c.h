@@ -1,5 +1,5 @@
 /**
- * @file maplibre_native_abi.h
+ * @file maplibre_native_c.h
  * Public C ABI for the MapLibre Native wrapper.
  *
  * All functions are memory-safe to call from any thread. Functions that operate
@@ -9,12 +9,12 @@
  *
  * Status-returning functions clear thread-local diagnostics on entry. When a
  * synchronous failure status is returned, callers should read
- * mln_thread_last_error_message() on the same thread before making another ABI
- * call. Asynchronous native failures are reported through map events.
+ * mln_thread_last_error_message() on the same thread before making another C
+ * API call. Asynchronous native failures are reported through map events.
  */
 
-#ifndef MAPLIBRE_NATIVE_ABI_H
-#define MAPLIBRE_NATIVE_ABI_H
+#ifndef MAPLIBRE_NATIVE_C_H
+#define MAPLIBRE_NATIVE_C_H
 
 // NOLINTBEGIN(cppcoreguidelines-use-enum-class)
 // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
@@ -31,7 +31,7 @@
 #include <stdint.h>
 
 #ifdef _WIN32
-#if defined(MLN_BUILDING_ABI)
+#if defined(MLN_BUILDING_C)
 #define MLN_API __declspec(dllexport)
 #else
 #define MLN_API __declspec(dllimport)
@@ -50,8 +50,8 @@
 extern "C" {
 #endif
 
-#pragma region Common ABI contract
-/** Status values returned by status-returning ABI functions. */
+#pragma region Common C API contract
+/** Status values returned by status-returning C API functions. */
 typedef enum mln_status {
   MLN_STATUS_OK = 0,
   /** A pointer, size field, mask, or handle argument was invalid. */
@@ -61,7 +61,8 @@ typedef enum mln_status {
   /** The handle is thread-affine and the call was made from the wrong thread.
    */
   MLN_STATUS_WRONG_THREAD = -3,
-  /** The ABI entry point or requested behavior is not supported on this build.
+  /** The C API entry point or requested behavior is not supported on this
+   * build.
    */
   MLN_STATUS_UNSUPPORTED = -4,
   /** A native MapLibre error or C++ exception was converted to status. */
@@ -76,10 +77,10 @@ typedef struct mln_texture_session mln_texture_session;
 /**
  * Returns the C ABI contract version.
  *
- * Returns 0 while the ABI is unstable. Stable ABI contract editions use YYYYMM
- * and only change when the ABI contract changes.
+ * Returns 0 while the C ABI is unstable. Stable C ABI contract editions use
+ * YYYYMM and only change when the C ABI contract changes.
  */
-MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
+MLN_API uint32_t mln_c_version(void) MLN_NOEXCEPT;
 
 #pragma endregion
 
@@ -87,8 +88,8 @@ MLN_API uint32_t mln_abi_version(void) MLN_NOEXCEPT;
 /**
  * Returns the last thread-local diagnostic message, or an empty string.
  *
- * The returned pointer is owned by the ABI and remains valid until the next ABI
- * call on the same thread that writes a thread-local diagnostic.
+ * The returned pointer is owned by the C API and remains valid until the next C
+ * API call on the same thread that writes a thread-local diagnostic.
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
@@ -113,7 +114,7 @@ typedef enum mln_log_severity_mask {
                               MLN_LOG_SEVERITY_MASK_ERROR,
 } mln_log_severity_mask;
 
-/** MapLibre Native log event categories exposed as ABI-stable integer values.
+/** MapLibre Native log event categories exposed as C ABI-stable integer values.
  */
 typedef enum mln_log_event {
   MLN_LOG_EVENT_GENERAL = 0,
@@ -310,11 +311,11 @@ typedef struct mln_resource_transform_response {
  * status is treated as no rewrite and does not fail the resource request. The
  * callback may run on a MapLibre worker/network thread, not the runtime owner
  * thread; it must be thread-safe, return quickly, and must not call back into
- * the ABI. url and out_response are valid only during the callback and must not
- * be retained. When out_response->url is set, the ABI copies it before the
- * callback returns. The callback and user_data must remain valid until no live
- * maps or in-flight requests can invoke the transform, normally until runtime
- * teardown.
+ * the C API. url and out_response are valid only during the callback and must
+ * not be retained. When out_response->url is set, the C API copies it before
+ * the callback returns. The callback and user_data must remain valid until no
+ * live maps or in-flight requests can invoke the transform, normally until
+ * runtime teardown.
  */
 typedef mln_status (*mln_resource_transform_callback)(
   void* user_data, uint32_t kind, const char* url,
@@ -374,14 +375,14 @@ typedef struct mln_resource_response {
  * to complete it through the request handle. When returning PASS_THROUGH, the
  * provider must not retain, complete, or release the handle. When returning
  * HANDLE, the provider may complete inline or later; completion is copied by
- * the ABI and may be called from any thread. Providers should release the
+ * the C API and may be called from any thread. Providers should release the
  * handle after they no longer need to complete or observe cancellation.
  *
- * The callback runs synchronously on the thread that reaches the ABI network
+ * The callback runs synchronously on the thread that reaches the C API network
  * file source, which may be a MapLibre worker or network thread rather than the
  * runtime owner thread. It must be thread-safe, return quickly, and must not
- * call back into map/runtime ABI functions. It may call resource request handle
- * functions for the handle provided to this callback.
+ * call back into map/runtime C API functions. It may call resource request
+ * handle functions for the handle provided to this callback.
  */
 typedef uint32_t (*mln_resource_provider_callback)(
   void* user_data, const mln_resource_request* request,
@@ -395,7 +396,7 @@ typedef struct mln_resource_provider {
 } mln_resource_provider;
 
 /**
- * Returns default runtime options with the ABI size field populated.
+ * Returns default runtime options with the C API size field populated.
  */
 MLN_API mln_runtime_options mln_runtime_options_default(void) MLN_NOEXCEPT;
 
@@ -418,7 +419,7 @@ MLN_API mln_status mln_runtime_create(
  * Sets a runtime-scoped network resource provider.
  *
  * The provider must be set before any map is created from the runtime. It is
- * invoked for requests that reach the ABI network file source; built-in
+ * invoked for requests that reach the C API network file source; built-in
  * non-network schemes such as file, asset, mbtiles, and pmtiles are handled by
  * native MainResourceLoader before this extension point. The callback and
  * user_data must remain valid until the runtime is destroyed.
@@ -437,14 +438,14 @@ MLN_API mln_status mln_runtime_set_resource_provider(
 ) MLN_NOEXCEPT;
 
 /**
- * Completes an ABI resource provider request.
+ * Completes a C API resource provider request.
  *
  * May be called inline from the provider callback or later from any thread.
- * The ABI copies all response bytes and strings before returning. Completion is
- * one-shot: a second completion, completion after cancellation, or completion
- * with null arguments returns a non-OK status and does not invoke MapLibre's
- * resource callback. Malformed response contents are converted to provider
- * error responses and still consume the one-shot completion.
+ * The C API copies all response bytes and strings before returning. Completion
+ * is one-shot: a second completion, completion after cancellation, or
+ * completion with null arguments returns a non-OK status and does not invoke
+ * MapLibre's resource callback. Malformed response contents are converted to
+ * provider error responses and still consume the one-shot completion.
  *
  * Returns:
  * - MLN_STATUS_OK when the response was accepted for asynchronous delivery.
@@ -458,7 +459,7 @@ MLN_API mln_status mln_resource_request_complete(
 ) MLN_NOEXCEPT;
 
 /**
- * Reports whether MapLibre has cancelled an ABI resource provider request.
+ * Reports whether MapLibre has cancelled a C API resource provider request.
  *
  * May be called from any thread while the provider still owns the handle. A
  * cancelled request no longer wants a response; later completion is ignored
@@ -492,7 +493,7 @@ MLN_API void mln_resource_request_release(
  * It is forwarded to MapLibre's OnlineFileSource and therefore applies wherever
  * native OnlineFileSource applies transforms, including nested PMTiles network
  * range requests. It does not apply to file, asset, database, MBTiles, or
- * registered ABI provider responses intercepted before OnlineFileSource.
+ * registered C API provider responses intercepted before OnlineFileSource.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -512,9 +513,9 @@ MLN_API mln_status mln_runtime_set_resource_transform(
  *
  * When runtime options omit cache_path, this operates on MapLibre's default
  * in-memory database and its effects are not durable beyond the native database
- * lifetime. Native cache operations are asynchronous internally; this ABI call
- * waits until MapLibre's database callback reports completion, then returns the
- * resulting status.
+ * lifetime. Native cache operations are asynchronous internally; this C API
+ * call waits until MapLibre's database callback reports completion, then
+ * returns the resulting status.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -609,12 +610,12 @@ typedef struct mln_map_event {
 } mln_map_event;
 
 /**
- * Returns default map options with the ABI size field populated.
+ * Returns default map options with the C API size field populated.
  */
 MLN_API mln_map_options mln_map_options_default(void) MLN_NOEXCEPT;
 
 /**
- * Returns default empty camera options with the ABI size field populated.
+ * Returns default empty camera options with the C API size field populated.
  */
 MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
 
@@ -788,7 +789,7 @@ MLN_API mln_status mln_map_cancel_transitions(mln_map* map) MLN_NOEXCEPT;
  *
  * On success, *out_has_event is set to whether an event was available. When an
  * event is available, *out_event is overwritten. Event message storage is
- * copied into out_event and remains valid after later ABI calls.
+ * copied into out_event and remains valid after later C API calls.
  *
  * Returns:
  * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an

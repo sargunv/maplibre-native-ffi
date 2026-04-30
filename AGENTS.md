@@ -21,28 +21,28 @@
 
 ## Project Conventions
 
-- Keep `include/maplibre_native_abi.h` as the public product boundary.
-- Keep the public ABI C-shaped: plain structs, opaque handles, status returns,
+- Keep `include/maplibre_native_c.h` as the public product boundary.
+- Keep the public C ABI C-shaped: plain structs, opaque handles, status returns,
   explicit ownership, and no C++/STL/exceptions/templates across the boundary.
 - Keep implementation-only helpers out of the public header.
-- Keep framework behavior above the ABI: gestures, declarative state, widget
+- Keep framework behavior above the C API: gestures, declarative state, widget
   lifecycle, coroutine/Flow/Promise APIs, and toolkit-specific adapters belong
   in language/UI bindings, not the core C ABI.
 - Preserve the event-driven async model: C ABI calls return status and report
   asynchronous native work through drained events, not futures, promises,
   coroutines, or arbitrary host-language callbacks.
 - Treat native callbacks as low-level escape hatches only; document threading,
-  reentrancy, lifetime, and whether callbacks may call back into the ABI.
+  reentrancy, lifetime, and whether callbacks may call back into the C API.
 - Keep map state separate from render targets. A map may have zero or one
   attached render target at a time, either a texture session or a native surface
   session.
-- The ABI is currently unstable (`mln_abi_version() == 0`); do not add
+- The C ABI is currently unstable (`mln_c_version() == 0`); do not add
   backward-compatibility shims for changed structs or functions unless
   explicitly requested.
-- Mark every exported `MLN_API` C++ definition `noexcept`; status-returning ABI
-  functions must catch exceptions and convert them to `mln_status`.
+- Mark every exported `MLN_API` C++ definition `noexcept`; status-returning C
+  API functions must catch exceptions and convert them to `mln_status`.
 - Keep diagnostics paths non-throwing where practical; fallback diagnostics are
   better than letting error reporting violate the C ABI boundary.
-- Keep public ABI docs complete but concise. Do not duplicate preconditions or
+- Keep public C API docs complete but concise. Do not duplicate preconditions or
   threading rules in prose when the `Returns:` status bullets already state
   them.

@@ -9,7 +9,7 @@
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/util/run_loop.hpp>
 
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 namespace mln::core {
 

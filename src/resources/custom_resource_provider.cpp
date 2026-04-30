@@ -20,7 +20,7 @@
 #include "resources/custom_resource_provider.hpp"
 
 #include "diagnostics/diagnostics.hpp"
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 
 struct mln_resource_request_handle {
   explicit mln_resource_request_handle(

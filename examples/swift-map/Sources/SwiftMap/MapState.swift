@@ -1,4 +1,4 @@
-import CMapLibreNativeABI
+import CMapLibreNativeC
 import Foundation
 import Metal
 
@@ -46,7 +46,7 @@ final class MapState {
   }
 
   func resize(_ viewport: Viewport) throws {
-    try checkABI(
+    try checkCAPI(
       mln_texture_resize(texture, viewport.logicalWidth, viewport.logicalHeight, viewport.scaleFactor),
       "texture resize failed"
     )
@@ -62,7 +62,7 @@ final class MapState {
       var event = mln_map_event()
       event.size = UInt32(MemoryLayout<mln_map_event>.size)
       var hasEvent = false
-      try checkABI(mln_map_poll_event(map, &event, &hasEvent), "event poll failed")
+      try checkCAPI(mln_map_poll_event(map, &event, &hasEvent), "event poll failed")
       if !hasEvent { return renderInvalidated }
       if event.type == MLN_MAP_EVENT_RENDER_INVALIDATED.rawValue {
         renderInvalidated = true
@@ -74,7 +74,7 @@ final class MapState {
     let status = mln_texture_render(texture)
     if status == MLN_STATUS_OK { return true }
     if status == MLN_STATUS_INVALID_STATE { return false }
-    try checkABI(status, "texture render failed")
+    try checkCAPI(status, "texture render failed")
     return false
   }
 
@@ -82,7 +82,7 @@ final class MapState {
     var runtimeOptions = mln_runtime_options_default()
     try ":memory:".withCString { cachePath in
       runtimeOptions.cache_path = cachePath
-      try checkABI(mln_runtime_create(&runtimeOptions, &outRuntime), "runtime create failed")
+      try checkCAPI(mln_runtime_create(&runtimeOptions, &outRuntime), "runtime create failed")
     }
   }
 
@@ -95,12 +95,12 @@ final class MapState {
     mapOptions.width = viewport.logicalWidth
     mapOptions.height = viewport.logicalHeight
     mapOptions.scale_factor = viewport.scaleFactor
-    try checkABI(mln_map_create(runtime, &mapOptions, &outMap), "map create failed")
+      try checkCAPI(mln_map_create(runtime, &mapOptions, &outMap), "map create failed")
   }
 
   private static func loadStyle(map: OpaquePointer?) throws {
     try "https://tiles.openfreemap.org/styles/bright".withCString { styleURL in
-      try checkABI(mln_map_set_style_url(map, styleURL), "style load failed")
+      try checkCAPI(mln_map_set_style_url(map, styleURL), "style load failed")
     }
   }
 
@@ -115,7 +115,7 @@ final class MapState {
     camera.zoom = 13.0
     camera.bearing = 12.0
     camera.pitch = 30.0
-    try checkABI(mln_map_jump_to(map, &camera), "camera jump failed")
+    try checkCAPI(mln_map_jump_to(map, &camera), "camera jump failed")
   }
 
   private static func attachTexture(
@@ -129,6 +129,6 @@ final class MapState {
     descriptor.height = viewport.logicalHeight
     descriptor.scale_factor = viewport.scaleFactor
     descriptor.device = Unmanaged.passUnretained(device).toOpaque()
-    try checkABI(mln_metal_texture_attach(map, &descriptor, &outTexture), "Metal texture attach failed")
+    try checkCAPI(mln_metal_texture_attach(map, &descriptor, &outTexture), "Metal texture attach failed")
   }
 }

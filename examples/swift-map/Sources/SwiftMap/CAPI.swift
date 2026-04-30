@@ -1,4 +1,4 @@
-import CMapLibreNativeABI
+import CMapLibreNativeC
 import Foundation
 
 @_cdecl("swift_map_log_callback")
@@ -14,7 +14,7 @@ func swiftMapLogCallback(
   return 0
 }
 
-enum ABIError: Error, CustomStringConvertible {
+enum CAPIError: Error, CustomStringConvertible {
   case failure(String)
 
   var description: String {
@@ -24,33 +24,33 @@ enum ABIError: Error, CustomStringConvertible {
   }
 }
 
-func checkABI(_ status: mln_status, _ context: String) throws {
+func checkCAPI(_ status: mln_status, _ context: String) throws {
   if status == MLN_STATUS_OK { return }
   let diagnostic = String(cString: mln_thread_last_error_message())
   if diagnostic.isEmpty {
-    throw ABIError.failure("\(context): status \(status.rawValue)")
+    throw CAPIError.failure("\(context): status \(status.rawValue)")
   }
-  throw ABIError.failure("\(context): \(diagnostic)")
+  throw CAPIError.failure("\(context): \(diagnostic)")
 }
 
-func logABIError(_ context: String) {
+func logCAPIError(_ context: String) {
   let diagnostic = String(cString: mln_thread_last_error_message())
   if diagnostic.isEmpty {
-    print("\(context): no ABI diagnostic")
+    print("\(context): no C API diagnostic")
   } else {
     print("\(context): \(diagnostic)")
   }
 }
 
-func installABILogging() {
+func installCAPILogging() {
   if mln_log_set_callback(swiftMapLogCallback, nil) != MLN_STATUS_OK {
-    logABIError("log callback install failed")
+    logCAPIError("log callback install failed")
   }
 }
 
-func clearABILogging() {
+func clearCAPILogging() {
   if mln_log_clear_callback() != MLN_STATUS_OK {
-    logABIError("log callback clear failed")
+    logCAPIError("log callback clear failed")
   }
 }
 

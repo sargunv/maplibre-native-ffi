@@ -15,7 +15,7 @@
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
-#include "maplibre_native_abi.h"
+#include "maplibre_native_c.h"
 #include "render/texture_session.hpp"
 #include "render/vulkan/vulkan_texture_backend.hpp"
 

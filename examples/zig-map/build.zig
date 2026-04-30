@@ -5,8 +5,8 @@ const BuildOptions = struct {
     optimize: std.builtin.OptimizeMode,
 };
 
-fn linkMapLibreAbi(module: *std.Build.Module) void {
-    module.linkSystemLibrary("maplibre-native-ffi", .{ .use_pkg_config = .force });
+fn linkMapLibreC(module: *std.Build.Module) void {
+    module.linkSystemLibrary("maplibre-native-c", .{ .use_pkg_config = .force });
     module.link_libc = true;
 }
 
@@ -28,7 +28,7 @@ fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compil
         }),
     });
 
-    linkMapLibreAbi(example.root_module);
+    linkMapLibreC(example.root_module);
     example.root_module.addIncludePath(b.path("../../.pixi/envs/default/include"));
     example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
     example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));

@@ -22,9 +22,9 @@ const Backend = struct {
         pub fn init() !AttachContext {
             var app_info = std.mem.zeroes(vk.VkApplicationInfo);
             app_info.sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO;
-            app_info.pApplicationName = "maplibre-native-ffi-tests";
+            app_info.pApplicationName = "maplibre-native-c-tests";
             app_info.applicationVersion = 1;
-            app_info.pEngineName = "maplibre-native-ffi-tests";
+            app_info.pEngineName = "maplibre-native-c-tests";
             app_info.engineVersion = 1;
             app_info.apiVersion = vk.VK_API_VERSION_1_0;
 
