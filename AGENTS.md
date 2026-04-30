@@ -18,6 +18,8 @@
 - Prefer tests/examples that consume the C ABI rather than C++ internals.
 - If work cannot be fully validated yet, document the remaining risk in the
   relevant issue.
+- Campsite rules apply -- anything you touch should be left tidier than it was
+  when you started.
 
 ## Project Conventions
 
