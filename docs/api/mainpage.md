@@ -7,5 +7,3 @@
 - [Enum values](globals_eval.html)
 - [Header reference](maplibre__native__c_8h.html)
 - [Header source](maplibre__native__c_8h_source.html)
-
-Use search to find a symbol such as `mln_runtime_create`.
