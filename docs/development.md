@@ -35,11 +35,20 @@ The ABI is unstable while `mln_c_version()` returns `0`. Do not add
 compatibility shims or version-branching code for changed structs or functions
 during this phase.
 
+The public C header targets C23. ABI-crossing enum types use C23
+fixed-underlying enum syntax: `int32_t` for status values and `uint32_t` for
+non-negative domains and masks unless a native ABI field requires another width.
+
 Still shape structs for future ABI stability. Use `size` fields for option and
 output structs that may grow over time, and populate them in default
 constructors.
 
 Use field masks or presence booleans for optional values where zero is valid.
+
+Keep public struct fields friendly to binding generators. Prefer scalar fields,
+pointers with length fields, structs, unions, and opaque handles. Do not use
+fixed-size inline text buffers; expose borrowed ABI-owned text with a length or
+provide an explicit copy or drain API.
 
 Keep backend-native handles opaque as `void*`; document the backend type and
 ownership rules on the function or struct field.

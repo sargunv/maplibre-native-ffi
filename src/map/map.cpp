@@ -1,13 +1,10 @@
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -49,38 +46,29 @@ auto map_registry() -> MapRegistry& {
   return value;
 }
 
-auto copy_message(std::span<char, 512> target, const char* message) noexcept
-  -> void {
-  target.front() = '\0';
-  if (message == nullptr) {
-    return;
-  }
-
-  const auto length = std::min(std::strlen(message), target.size() - 1);
-  std::memcpy(target.data(), message, length);
-  target.subspan(length).front() = '\0';
-}
+struct QueuedEvent {
+  mln_map_event_type type;
+  int32_t code;
+  std::string message;
+};
 
 class EventQueue final {
  public:
   auto push(
     mln_map_event_type type, int32_t code = 0, const char* message = nullptr
   ) -> void {
-    auto event = mln_map_event{
-      .size = sizeof(mln_map_event),
-      .type = static_cast<uint32_t>(type),
+    auto event = QueuedEvent{
+      .type = type,
       .code = code,
-      .message = {}
+      .message = message == nullptr ? std::string{} : std::string{message}
     };
-    copy_message(std::span<char, 512>{event.message}, message);
 
     const std::scoped_lock lock(mutex_);
     if (type == MLN_MAP_EVENT_MAP_LOADING_FAILED) {
       failed_ = true;
-      failure_message_ =
-        message == nullptr ? std::string{} : std::string{message};
+      failure_message_ = event.message;
     }
-    events_.push_back(event);
+    events_.push_back(std::move(event));
   }
 
   auto clear_failure() -> void {
@@ -101,18 +89,35 @@ class EventQueue final {
 
   auto poll(mln_map_event* out_event) -> bool {
     const std::scoped_lock lock(mutex_);
+    last_polled_message_.clear();
+    *out_event = mln_map_event{
+      .size = sizeof(mln_map_event),
+      .type = 0,
+      .code = 0,
+      .message = nullptr,
+      .message_size = 0
+    };
+
     if (events_.empty()) {
       return false;
     }
 
-    *out_event = events_.front();
+    auto event = std::move(events_.front());
     events_.pop_front();
+    last_polled_message_ = std::move(event.message);
+
+    out_event->type = static_cast<uint32_t>(event.type);
+    out_event->code = event.code;
+    out_event->message =
+      last_polled_message_.empty() ? nullptr : last_polled_message_.c_str();
+    out_event->message_size = last_polled_message_.size();
     return true;
   }
 
  private:
   mutable std::mutex mutex_;
-  std::deque<mln_map_event> events_;
+  std::deque<QueuedEvent> events_;
+  std::string last_polled_message_;
   bool failed_ = false;
   std::string failure_message_;
 };
