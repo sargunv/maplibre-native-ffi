@@ -10,6 +10,8 @@
 
 ## Implementation Notes
 
+- See [`docs/development.md`](docs/development.md) for the project boundary and
+  conventions expected of code changes.
 - Treat local MapLibre Native behavior as evidence; inspect
   `third_party/maplibre-native` (fetched on demand by CMake — see
   `cmake/mln_version.cmake`) or `MLN_SOURCE_DIR` before guessing.
