@@ -25,6 +25,20 @@ body:
     validations:
       required: true
   - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and version you tested on.
+    validations:
+      required: false
+  - type: input
+    id: render-backend
+    attributes:
+      label: Render backend
+      description: Render backend in use, such as Metal, Vulkan, or OpenGL/EGL.
+    validations:
+      required: false
+  - type: input
     id: commit
     attributes:
       label: Commit
