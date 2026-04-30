@@ -33,9 +33,15 @@ auto mln_map_destroy(mln_map* map) noexcept -> mln_status {
   });
 }
 
-auto mln_map_request_render(mln_map* map) noexcept -> mln_status {
+auto mln_map_request_repaint(mln_map* map) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::map_request_render(map);
+    return mln::core::map_request_repaint(map);
+  });
+}
+
+auto mln_map_request_still_image(mln_map* map) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_request_still_image(map);
   });
 }
 

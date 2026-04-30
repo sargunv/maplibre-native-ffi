@@ -22,7 +22,7 @@ auto texture_resize(
   mln_texture_session* texture, uint32_t width, uint32_t height,
   double scale_factor
 ) -> mln_status;
-auto texture_render(mln_texture_session* texture) -> mln_status;
+auto texture_render_update(mln_texture_session* texture) -> mln_status;
 auto metal_texture_acquire_frame(
   mln_texture_session* texture, mln_metal_texture_frame* out_frame
 ) -> mln_status;

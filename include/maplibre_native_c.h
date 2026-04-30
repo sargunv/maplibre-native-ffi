@@ -616,9 +616,9 @@ typedef enum mln_projection_mode_field : uint32_t {
 typedef enum mln_map_mode : uint32_t {
   /** Continuously updates as data arrives and map state changes. */
   MLN_MAP_MODE_CONTINUOUS = 0,
-  /** Produces one-off still renders of an arbitrary viewport. */
+  /** Produces one-off still images of an arbitrary viewport. */
   MLN_MAP_MODE_STATIC = 1,
-  /** Produces one-off still renders for a single tile. */
+  /** Produces one-off still images for a single tile. */
   MLN_MAP_MODE_TILE = 2,
 } mln_map_mode;
 
@@ -632,10 +632,10 @@ typedef enum mln_map_event_type : uint32_t {
   MLN_MAP_EVENT_MAP_LOADING_FINISHED = 6,
   MLN_MAP_EVENT_MAP_LOADING_FAILED = 7,
   MLN_MAP_EVENT_MAP_IDLE = 8,
-  MLN_MAP_EVENT_RENDER_INVALIDATED = 9,
+  MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE = 9,
   MLN_MAP_EVENT_RENDER_ERROR = 10,
-  MLN_MAP_EVENT_RENDER_REQUEST_FINISHED = 11,
-  MLN_MAP_EVENT_RENDER_REQUEST_FAILED = 12,
+  MLN_MAP_EVENT_STILL_IMAGE_FINISHED = 11,
+  MLN_MAP_EVENT_STILL_IMAGE_FAILED = 12,
 } mln_map_event_type;
 
 /** Options used when creating a map. */
@@ -746,28 +746,47 @@ MLN_API mln_status mln_map_create(
 ) MLN_NOEXCEPT;
 
 /**
- * Requests a render update for a map.
+ * Requests a repaint for a continuous map.
  *
- * In MLN_MAP_MODE_CONTINUOUS, this forces a repaint. Continuous maps also
- * invalidate automatically when style data, resources, camera, and transitions
- * change.
- *
- * In MLN_MAP_MODE_STATIC and MLN_MAP_MODE_TILE, this starts one still-render
- * request. After calling it, pump the runtime, render invalidated updates into
- * an attached render target, and poll events until
- * MLN_MAP_EVENT_RENDER_REQUEST_FINISHED or MLN_MAP_EVENT_RENDER_REQUEST_FAILED
- * is reported.
+ * Continuous maps also invalidate automatically when style data, resources,
+ * camera, or transitions change. Ask attached render targets to process the
+ * latest update when MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE is reported. Repaint
+ * requests do not produce MLN_MAP_EVENT_STILL_IMAGE_FINISHED or
+ * MLN_MAP_EVENT_STILL_IMAGE_FAILED events.
  *
  * Returns:
  * - MLN_STATUS_OK when the request was accepted.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
- * - MLN_STATUS_INVALID_STATE when a static or tile render request is already
- *   pending.
+ * - MLN_STATUS_INVALID_STATE when map is not in MLN_MAP_MODE_CONTINUOUS.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
-MLN_API mln_status mln_map_request_render(mln_map* map) MLN_NOEXCEPT;
+MLN_API mln_status mln_map_request_repaint(mln_map* map) MLN_NOEXCEPT;
+
+/**
+ * Requests one still image for a static or tile map.
+ *
+ * Pump the runtime and poll map events until
+ * MLN_MAP_EVENT_STILL_IMAGE_FINISHED or MLN_MAP_EVENT_STILL_IMAGE_FAILED is
+ * reported. While the request is pending, ask the attached render target to
+ * process the latest update whenever MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE is
+ * reported. Texture targets do this with mln_texture_render_update(), which can
+ * return MLN_STATUS_INVALID_STATE when no frame is produced for that update.
+ * Keep pumping and polling in that case. After
+ * MLN_MAP_EVENT_STILL_IMAGE_FINISHED, acquire the frame produced by the most
+ * recent successful target update.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the request was accepted.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
+ * - MLN_STATUS_INVALID_STATE when map is not in MLN_MAP_MODE_STATIC or
+ *   MLN_MAP_MODE_TILE, or when a still-image request is already pending.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_request_still_image(mln_map* map) MLN_NOEXCEPT;
 
 /**
  * Destroys a map handle on its owner thread.
@@ -1395,10 +1414,11 @@ MLN_API mln_status mln_texture_resize(
 ) MLN_NOEXCEPT;
 
 /**
- * Renders the latest map update into the offscreen texture session.
+ * Processes the latest map render update for an offscreen texture session.
  *
- * A successful render makes a frame available to the backend-specific acquire
- * function for the same session generation.
+ * When the update produces a frame, this renders into the texture and makes a
+ * frame available to the backend-specific acquire function for the same session
+ * generation.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1411,15 +1431,15 @@ MLN_API mln_status mln_texture_resize(
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status
-mln_texture_render(mln_texture_session* texture) MLN_NOEXCEPT;
+mln_texture_render_update(mln_texture_session* texture) MLN_NOEXCEPT;
 
 /**
  * Acquires the most recently rendered Metal texture frame.
  *
  * The returned texture and device pointers are borrowed and remain valid only
  * until mln_metal_texture_release_frame() is called for the same frame. While
- * acquired, resize, render, detach, destroy, and a second acquire return
- * MLN_STATUS_INVALID_STATE.
+ * acquired, resize, mln_texture_render_update(), detach, destroy, and a second
+ * acquire return MLN_STATUS_INVALID_STATE.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1442,8 +1462,8 @@ MLN_API mln_status mln_metal_texture_acquire_frame(
  *
  * The returned image, image view, and device pointers are borrowed and remain
  * valid only until mln_vulkan_texture_release_frame() is called for the same
- * frame. While acquired, resize, render, detach, destroy, and a second acquire
- * return MLN_STATUS_INVALID_STATE.
+ * frame. While acquired, resize, mln_texture_render_update(), detach, destroy,
+ * and a second acquire return MLN_STATUS_INVALID_STATE.
  *
  * On success, the image has been rendered and made available in the returned
  * layout for shader sampling through the returned image view until release.

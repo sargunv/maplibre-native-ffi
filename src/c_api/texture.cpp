@@ -43,9 +43,10 @@ auto mln_texture_resize(
   });
 }
 
-auto mln_texture_render(mln_texture_session* texture) noexcept -> mln_status {
+auto mln_texture_render_update(mln_texture_session* texture) noexcept
+  -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::texture_render(texture);
+    return mln::core::texture_render_update(texture);
   });
 }
 

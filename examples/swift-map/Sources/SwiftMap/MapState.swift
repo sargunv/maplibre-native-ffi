@@ -57,21 +57,21 @@ final class MapState {
   }
 
   func drainEvents() throws -> Bool {
-    var renderInvalidated = false
+    var renderUpdateAvailable = false
     while true {
       var event = mln_map_event()
       event.size = UInt32(MemoryLayout<mln_map_event>.size)
       var hasEvent = false
       try checkCAPI(mln_map_poll_event(map, &event, &hasEvent), "event poll failed")
-      if !hasEvent { return renderInvalidated }
-      if event.type == MLN_MAP_EVENT_RENDER_INVALIDATED.rawValue {
-        renderInvalidated = true
+      if !hasEvent { return renderUpdateAvailable }
+      if event.type == MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE.rawValue {
+        renderUpdateAvailable = true
       }
     }
   }
 
   func render() throws -> Bool {
-    let status = mln_texture_render(texture)
+    let status = mln_texture_render_update(texture)
     if status == MLN_STATUS_OK { return true }
     if status == MLN_STATUS_INVALID_STATE { return false }
     try checkCAPI(status, "texture render failed")

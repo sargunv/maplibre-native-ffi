@@ -9,8 +9,8 @@ fn pollMapOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
     out_status.* = c.mln_map_poll_event(map, &event, &has_event);
 }
 
-fn requestRenderOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
-    out_status.* = c.mln_map_request_render(map);
+fn requestRepaintOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
+    out_status.* = c.mln_map_request_repaint(map);
 }
 
 test "map exposes default options" {
@@ -68,7 +68,8 @@ test "map lifecycle rejects invalid state and stale handles" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_destroy(map));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_destroy(map));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_style_json(map, support.style_json));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_request_render(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_request_repaint(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_request_still_image(map));
 
     var camera = c.mln_camera_options_default();
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_get_camera(map, &camera));
@@ -80,7 +81,7 @@ test "map lifecycle rejects invalid state and stale handles" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
 }
 
-test "continuous render request invalidates map" {
+test "continuous repaint request makes render update available" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 
@@ -88,8 +89,9 @@ test "continuous render request invalidates map" {
     defer support.destroyMap(map);
 
     _ = try support.drainEvents(map);
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_render(map));
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_INVALIDATED));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_still_image(map));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_repaint(map));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE));
 }
 
 test "runtime supports multiple maps" {
@@ -118,7 +120,7 @@ test "map rejects wrong-thread calls" {
 
     try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);
 
-    const request_thread = try std.Thread.spawn(.{}, requestRenderOnThread, .{ map, &status });
+    const request_thread = try std.Thread.spawn(.{}, requestRepaintOnThread, .{ map, &status });
     request_thread.join();
 
     try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);

@@ -324,7 +324,7 @@ auto texture_resize(
   return MLN_STATUS_OK;
 }
 
-auto texture_render(mln_texture_session* texture) -> mln_status {
+auto texture_render_update(mln_texture_session* texture) -> mln_status {
   const auto status = validate_live_attached_texture(texture);
   if (status != MLN_STATUS_OK) {
     return status;
