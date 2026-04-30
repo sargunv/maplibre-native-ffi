@@ -1,52 +1,13 @@
 # AGENTS.md
 
-## Workflow
+Read [`docs/development.md`](docs/development.md) before changing design, C ABI,
+ownership, threading, async, errors, tests, examples, or render targets. Inspect
+`third_party/maplibre-native` or `MLN_SOURCE_DIR` before inferring native
+behavior.
 
-- `mise run fix` -- run formatters and linters
-  - clang-tidy is slow -- pre-commit hooks will run this for you on changed
-    files. You don't need to run it yourself during a task.
-- `mise run test` -- build project and run tests
-- if you run the example apps, always use a brief timeout
+Use `mise run test` to build and test. Skip `mise run fix` unless explicitly
+requested; pre-commit runs formatters and linters on changed files. Run examples
+only when useful, with a brief timeout.
 
-## Implementation Notes
-
-- See [`docs/development.md`](docs/development.md) for the project boundary and
-  conventions expected of code changes.
-- Treat local MapLibre Native behavior as evidence; inspect
-  `third_party/maplibre-native` (fetched on demand by CMake — see
-  `cmake/mln_version.cmake`) or `MLN_SOURCE_DIR` before guessing.
-- Every feature should add or update a smoke test, example, or automated test
-  that demonstrates its acceptance criteria.
-- Prefer tests/examples that consume the C ABI rather than C++ internals.
-- If work cannot be fully validated yet, document the remaining risk in the
-  relevant issue.
-- Campsite rules apply -- anything you touch should be left tidier than it was
-  when you started.
-
-## Project Conventions
-
-- Keep `include/maplibre_native_c.h` as the public product boundary.
-- Keep the public C ABI C-shaped: plain structs, opaque handles, status returns,
-  explicit ownership, and no C++/STL/exceptions/templates across the boundary.
-- Keep implementation-only helpers out of the public header.
-- Keep framework behavior above the C API: gestures, declarative state, widget
-  lifecycle, coroutine/Flow/Promise APIs, and toolkit-specific adapters belong
-  in language/UI bindings, not the core C ABI.
-- Preserve the event-driven async model: C ABI calls return status and report
-  asynchronous native work through drained events, not futures, promises,
-  coroutines, or arbitrary host-language callbacks.
-- Treat native callbacks as low-level escape hatches only; document threading,
-  reentrancy, lifetime, and whether callbacks may call back into the C API.
-- Keep map state separate from render targets. A map may have zero or one
-  attached render target at a time, either a texture session or a native surface
-  session.
-- The C ABI is currently unstable (`mln_c_version() == 0`); do not add
-  backward-compatibility shims for changed structs or functions unless
-  explicitly requested.
-- Mark every exported `MLN_API` C++ definition `noexcept`; status-returning C
-  API functions must catch exceptions and convert them to `mln_status`.
-- Keep diagnostics paths non-throwing where practical; fallback diagnostics are
-  better than letting error reporting violate the C ABI boundary.
-- Keep public C API docs complete but concise. Do not duplicate preconditions or
-  threading rules in prose when the `Returns:` status bullets already state
-  them.
+Feature changes need evidence through the C ABI when practical. Leave touched
+code tidier than you found it.
