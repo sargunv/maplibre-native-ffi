@@ -58,18 +58,25 @@ auto resource_kind_to_abi(mbgl::Resource::Kind kind) -> uint32_t {
 
 auto make_resource_transform(void* platform_context)
   -> mbgl::ResourceTransform {
-  const auto* runtime = find_runtime_for_platform_context(platform_context);
-  if (runtime == nullptr || runtime->resource_transform_callback == nullptr) {
+  if (platform_context == nullptr) {
     return mbgl::ResourceTransform{};
   }
 
-  auto callback = runtime->resource_transform_callback;
-  auto* user_data = runtime->resource_transform_user_data;
   return mbgl::ResourceTransform{
-    [callback, user_data](
+    [platform_context](
       mbgl::Resource::Kind kind, const std::string& url,
       mbgl::ResourceTransform::FinishedCallback finished
     ) -> void {
+      const auto* runtime = find_runtime_for_platform_context(platform_context);
+      if (
+        runtime == nullptr || runtime->resource_transform_callback == nullptr
+      ) {
+        finished(url);
+        return;
+      }
+
+      auto callback = runtime->resource_transform_callback;
+      auto* user_data = runtime->resource_transform_user_data;
       auto response = mln_resource_transform_response{
         .size = sizeof(mln_resource_transform_response), .url = nullptr
       };
@@ -101,9 +108,6 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
   )
       : resource_options_(resource_options.clone()),
         client_options_(client_options.clone()),
-        provider_(
-          runtime_resource_provider(resource_options.platformContext())
-        ),
         native_(
           std::make_unique<mbgl::OnlineFileSource>(
             resource_options, client_options
@@ -114,9 +118,11 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
 
   auto request(const mbgl::Resource& resource, Callback callback)
     -> std::unique_ptr<mbgl::AsyncRequest> override {
-    if (can_request_network(resource) && provider_.has_value()) {
+    const auto provider =
+      runtime_resource_provider(resource_options_.platformContext());
+    if (can_request_network(resource) && provider.has_value()) {
       auto request = request_custom_resource(
-        resource, provider_->callback, provider_->user_data, callback
+        resource, provider->callback, provider->user_data, callback
       );
       if (request != nullptr) {
         return request;
@@ -130,7 +136,10 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
 
   [[nodiscard]] auto canRequest(const mbgl::Resource& resource) const
     -> bool override {
-    return (can_request_network(resource) && provider_.has_value()) ||
+    const auto has_provider =
+      runtime_resource_provider(resource_options_.platformContext())
+        .has_value();
+    return (can_request_network(resource) && has_provider) ||
            native_->canRequest(resource);
   }
 
@@ -155,7 +164,6 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
 
   void setResourceOptions(mbgl::ResourceOptions options) override {
     resource_options_ = options.clone();
-    provider_ = runtime_resource_provider(resource_options_.platformContext());
     native_->setResourceOptions(std::move(options));
     apply_resource_transform();
   }
@@ -191,7 +199,6 @@ class AbiNetworkFileSource final : public mbgl::FileSource {
 
   mbgl::ResourceOptions resource_options_;
   mbgl::ClientOptions client_options_;
-  std::optional<ResourceProvider> provider_;
   std::unique_ptr<mbgl::FileSource> native_;
 };
 
