@@ -3,6 +3,8 @@ const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
+extern fn usleep(useconds: c_uint) c_int;
+
 const ThreadCall = enum { resize, render, acquire, release, detach, destroy };
 
 pub fn expectDescriptorDefaults() !void {
@@ -190,6 +192,60 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     try Backend.expectResizedFrame(&frame);
     try testing.expectEqual(c.MLN_STATUS_OK, fixture.release(&frame));
     frame_acquired = false;
+}
+
+pub fn expectStillModeRenderRequest(comptime Backend: type, map_mode: u32) !void {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMapWithMode(runtime, map_mode);
+    defer support.destroyMap(map);
+    var fixture = try Backend.Fixture.create(map);
+    defer fixture.destroy();
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_render(fixture.texture));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_render(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_render(map));
+
+    var rendered_frame = false;
+    for (0..1000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+
+        while (true) {
+            var event = support.emptyEvent();
+            var has_event = false;
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+            if (!has_event) break;
+
+            switch (event.type) {
+                c.MLN_MAP_EVENT_RENDER_INVALIDATED => {
+                    const render_status = c.mln_texture_render(fixture.texture);
+                    if (render_status == c.MLN_STATUS_OK) {
+                        rendered_frame = true;
+                    } else if (render_status != c.MLN_STATUS_INVALID_STATE) {
+                        try testing.expectEqual(c.MLN_STATUS_OK, render_status);
+                    }
+                },
+                c.MLN_MAP_EVENT_RENDER_REQUEST_FINISHED => {
+                    try testing.expect(rendered_frame);
+                    var frame = Backend.Frame.empty(fixture.texture);
+                    try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
+                    try Backend.expectInitialFrame(&frame);
+                    try testing.expectEqual(c.MLN_STATUS_OK, fixture.release(&frame));
+                    return;
+                },
+                c.MLN_MAP_EVENT_RENDER_REQUEST_FAILED => return error.RenderRequestFailed,
+                else => {},
+            }
+        }
+
+        _ = usleep(1000);
+    }
+    return error.EventNotFound;
 }
 
 pub fn expectDetachLeavesHandleLiveButUnusable(comptime Backend: type) !void {

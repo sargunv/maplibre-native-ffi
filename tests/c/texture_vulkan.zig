@@ -267,6 +267,16 @@ test "Vulkan texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
+test "Vulkan texture supports static render requests" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    try common.expectStillModeRenderRequest(Backend, c.MLN_MAP_MODE_STATIC);
+}
+
+test "Vulkan texture supports tile render requests" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    try common.expectStillModeRenderRequest(Backend, c.MLN_MAP_MODE_TILE);
+}
+
 test "Vulkan texture detach leaves handle live but unusable for rendering" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectDetachLeavesHandleLiveButUnusable(Backend);

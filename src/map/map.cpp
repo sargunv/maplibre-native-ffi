@@ -241,7 +241,46 @@ auto validate_map_options(const mln_map_options* options) -> mln_status {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
+  switch (options->map_mode) {
+    case MLN_MAP_MODE_CONTINUOUS:
+    case MLN_MAP_MODE_STATIC:
+    case MLN_MAP_MODE_TILE:
+      break;
+    default:
+      mln::core::set_thread_error("map_mode is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
   return MLN_STATUS_OK;
+}
+
+auto to_native_map_mode(uint32_t mode) -> mbgl::MapMode {
+  switch (mode) {
+    case MLN_MAP_MODE_STATIC:
+      return mbgl::MapMode::Static;
+    case MLN_MAP_MODE_TILE:
+      return mbgl::MapMode::Tile;
+    case MLN_MAP_MODE_CONTINUOUS:
+    default:
+      return mbgl::MapMode::Continuous;
+  }
+}
+
+auto is_still_map_mode(uint32_t mode) -> bool {
+  return mode == MLN_MAP_MODE_STATIC || mode == MLN_MAP_MODE_TILE;
+}
+
+auto exception_message(std::exception_ptr error) -> std::string {
+  if (!error) {
+    return {};
+  }
+  try {
+    std::rethrow_exception(error);
+  } catch (const std::exception& exception) {
+    return exception.what();
+  } catch (...) {
+    return "unknown render request error";
+  }
 }
 
 auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
@@ -316,6 +355,8 @@ auto screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate {
 struct mln_map {
   mln_runtime* runtime = nullptr;
   std::thread::id owner_thread;
+  uint32_t map_mode = MLN_MAP_MODE_CONTINUOUS;
+  bool render_request_pending = false;
   EventQueue events;
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
@@ -346,6 +387,17 @@ class RuntimeMapRetainGuard final {
   mln_runtime* runtime_ = nullptr;
 };
 
+auto finish_render_request(mln_map* map, std::exception_ptr error) -> void {
+  map->render_request_pending = false;
+  if (error) {
+    const auto message = exception_message(error);
+    map->events.push(MLN_MAP_EVENT_RENDER_REQUEST_FAILED, 0, message.c_str());
+    return;
+  }
+
+  map->events.push(MLN_MAP_EVENT_RENDER_REQUEST_FINISHED);
+}
+
 }  // namespace
 
 auto map_options_default() noexcept -> mln_map_options {
@@ -353,7 +405,8 @@ auto map_options_default() noexcept -> mln_map_options {
     .size = sizeof(mln_map_options),
     .width = default_map_width,
     .height = default_map_height,
-    .scale_factor = default_scale_factor
+    .scale_factor = default_scale_factor,
+    .map_mode = MLN_MAP_MODE_CONTINUOUS
   };
 }
 
@@ -415,11 +468,12 @@ auto create_map(
   auto owned_map = std::make_unique<mln_map>();
   owned_map->runtime = runtime;
   owned_map->owner_thread = std::this_thread::get_id();
+  owned_map->map_mode = effective.map_mode;
   owned_map->observer = std::make_unique<HeadlessObserver>(owned_map->events);
   owned_map->frontend = std::make_unique<HeadlessFrontend>(owned_map->events);
 
   auto map_options = mbgl::MapOptions{};
-  map_options.withMapMode(mbgl::MapMode::Continuous)
+  map_options.withMapMode(to_native_map_mode(effective.map_mode))
     .withSize(mbgl::Size{effective.width, effective.height})
     .withPixelRatio(static_cast<float>(effective.scale_factor));
   owned_map->map = std::make_unique<mbgl::Map>(
@@ -458,6 +512,29 @@ auto destroy_map(mln_map* map) -> mln_status {
   }
   owned_map.reset();
   release_runtime_map(runtime);
+  return MLN_STATUS_OK;
+}
+
+auto map_request_render(mln_map* map) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  if (!is_still_map_mode(map->map_mode)) {
+    map->map->triggerRepaint();
+    return MLN_STATUS_OK;
+  }
+
+  if (map->render_request_pending) {
+    set_thread_error("map already has a pending render request");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  map->render_request_pending = true;
+  map->map->renderStill([map](std::exception_ptr error) -> void {
+    finish_render_request(map, error);
+  });
   return MLN_STATUS_OK;
 }
 

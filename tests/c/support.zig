@@ -41,10 +41,15 @@ pub fn createRuntime() !*c.mln_runtime {
 }
 
 pub fn createMap(runtime: *c.mln_runtime) !*c.mln_map {
+    return createMapWithMode(runtime, c.MLN_MAP_MODE_CONTINUOUS);
+}
+
+pub fn createMapWithMode(runtime: *c.mln_runtime, map_mode: u32) !*c.mln_map {
     var map: ?*c.mln_map = null;
     var options = c.mln_map_options_default();
     options.width = 512;
     options.height = 512;
+    options.map_mode = map_mode;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_create(runtime, &options, &map));
     return map orelse error.MapCreateFailed;
 }
