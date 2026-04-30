@@ -1,32 +1,46 @@
-# maplibre-native-ffi
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://maplibre.org/img/maplibre-logos/maplibre-logo-for-dark-bg.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://maplibre.org/img/maplibre-logos/maplibre-logo-for-light-bg.svg">
+    <img alt="MapLibre Logo" src="https://maplibre.org/img/maplibre-logos/maplibre-logo-for-light-bg.svg" width="200">
+  </picture>
+</p>
 
-Experimental C ABI wrapper around
+# MapLibre Native FFI
+
+[![MapLibre](https://img.shields.io/badge/MapLibre-396CB2)](https://maplibre.org/)
+[![Slack](https://img.shields.io/badge/Slack-4A154B?logo=slack&logoColor=white)](https://slack.openstreetmap.us/)
+[![License](https://img.shields.io/github/license/sargunv/maplibre-native-ffi?label=License)](./LICENSE)
+
+## Introduction
+
+This is an experimental C ABI wrapper around
 [MapLibre Native](https://github.com/maplibre/maplibre-native).
 
-This project produces a shared library with a plain C public API wrapping
-MapLibre Native. It is meant for writing straightforward language bindings to
-other language ecosystems, especially those that don't easily interop with C++.
-Framework concerns (gestures, widgets, declarative UI) are intentionally left
-out and belong in downstream adapters.
+It's meant for writing language bindings to other language ecosystems,
+especially those that don't easily interop with C++. Framework concerns
+(gestures, widgets, declarative UI) are intentionally left out and belong in
+downstream adapters.
 
-The goal is to build a complete C wrapper and low level language bindings to a
-wide variety of programming languages and runtimes.
-
-## Status
+The goal is to build, in this repo, a complete C wrapper and low level language
+bindings to a wide variety of programming languages and runtimes.
 
 The C ABI is **unstable**. Expect breaking changes until we're feature complete.
 
 ## Support Matrix
 
-| Platform | Vulkan | Metal | OpenGL |
-| -------- | ------ | ----- | ------ |
-| Linux    | 🟢     | -     | ❌     |
-| macOS    | ❌     | 🟢    | -      |
-| Windows  | ❌     | -     | ❌     |
-| Android  | ❌     | -     | ❌     |
-| iOS      | -      | ❌    | -      |
-
-🟢 current, 🟡 partial, ❌ planned, - not applicable.
+| Target             | Support | Tracking                                                        |
+| ------------------ | ------- | --------------------------------------------------------------- |
+| Linux Vulkan       | 🟢      |                                                                 |
+| Linux OpenGL/EGL   | ❌      | [#23](https://github.com/sargunv/maplibre-native-ffi/issues/23) |
+| macOS Metal        | 🟢      |                                                                 |
+| macOS Vulkan       | ❌      | [#20](https://github.com/sargunv/maplibre-native-ffi/issues/20) |
+| Windows Vulkan     | ❌      | [#21](https://github.com/sargunv/maplibre-native-ffi/issues/21) |
+| Windows OpenGL/WGL | ❌      | [#22](https://github.com/sargunv/maplibre-native-ffi/issues/22) |
+| Android Vulkan     | ❌      | [#24](https://github.com/sargunv/maplibre-native-ffi/issues/24) |
+| Android OpenGL/EGL | ❌      | [#24](https://github.com/sargunv/maplibre-native-ffi/issues/24) |
+| iOS Metal          | ❌      | [#25](https://github.com/sargunv/maplibre-native-ffi/issues/25) |
+| WebGPU             | ❌      | [#37](https://github.com/sargunv/maplibre-native-ffi/issues/37) |
 
 ## API Coverage
 
@@ -62,7 +76,15 @@ Examples are standalone sub-projects under [`examples/`](examples/):
 ```bash
 # macOS and Linux
 mise run //examples/zig-map:run
+```
 
+```bash
 # macOS only
 mise run //examples/swift-map:run
 ```
+
+## License
+
+BSD 3-Clause. See [LICENSE](LICENSE).
+
+Copyright (c) 2026 MapLibre contributors.
