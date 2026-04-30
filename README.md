@@ -12,22 +12,52 @@
 [![Slack](https://img.shields.io/badge/Slack-4A154B?logo=slack&logoColor=white)](https://slack.openstreetmap.us/)
 [![License](https://img.shields.io/github/license/sargunv/maplibre-native-ffi?label=License)](./LICENSE)
 
-## Introduction
+This project provides an experimental C API for
+[MapLibre Native](https://github.com/maplibre/maplibre-native). It is built for
+low-level language bindings and host integrations that need a C boundary instead
+of direct C++ interop.
 
-This is an experimental C ABI wrapper around
-[MapLibre Native](https://github.com/maplibre/maplibre-native).
+The API keeps MapLibre Native concepts direct. Framework concerns such as
+gestures, widgets, declarative UI, and application lifecycle integration belong
+in downstream adapters.
 
-It's meant for writing language bindings to other language ecosystems,
-especially those that don't easily interop with C++. Framework concerns
-(gestures, widgets, declarative UI) are intentionally left out and belong in
-downstream adapters.
+The C ABI is unstable while the project is pre-1.0. Use
+[`include/maplibre_native_c.h`](include/maplibre_native_c.h) as the current API
+source of truth.
 
-The goal is to build, in this repo, a complete C wrapper and low level language
-bindings to a wide variety of programming languages and runtimes.
+## Try It
 
-The C ABI is **unstable**. Expect breaking changes until we're feature complete.
+Install [mise](https://mise.jdx.dev/), then install the pinned tools:
 
-## Support Matrix
+```bash
+mise install
+```
+
+Run a supported example:
+
+```bash
+# macOS and Linux
+mise run //examples/zig-map:run
+```
+
+```bash
+# macOS only
+mise run //examples/swift-map:run
+```
+
+## Project Docs
+
+- [`include/maplibre_native_c.h`](include/maplibre_native_c.h) defines the
+  public C API.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to prepare changes for
+  review.
+- [`docs/development.md`](docs/development.md) explains project scope and
+  development conventions.
+
+## Current Status
+
+Target support tracks renderer and platform combinations that can build and run
+through this C API.
 
 | Target             | Support | Tracking                                                        |
 | ------------------ | ------- | --------------------------------------------------------------- |
@@ -42,7 +72,7 @@ The C ABI is **unstable**. Expect breaking changes until we're feature complete.
 | iOS Metal          | ❌      | [#25](https://github.com/sargunv/maplibre-native-ffi/issues/25) |
 | WebGPU             | ❌      | [#37](https://github.com/sargunv/maplibre-native-ffi/issues/37) |
 
-## API Coverage
+API coverage tracks MapLibre Native domains exposed through the C API.
 
 | Domain                | Coverage | Tracking                                                                                                                                                                                                                                                          |
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,25 +93,22 @@ The C ABI is **unstable**. Expect breaking changes until we're feature complete.
 | Feature state         | ❌       | [#27](https://github.com/sargunv/maplibre-native-ffi/issues/27)                                                                                                                                                                                                   |
 | Offline regions       | ❌       | [#13](https://github.com/sargunv/maplibre-native-ffi/issues/13)                                                                                                                                                                                                   |
 
-Current coverage is defined by
-[`include/maplibre_native_c.h`](./include/maplibre_native_c.h).
+Language binding support tracks low-level bindings intended to sit directly
+above the C API. No bindings are implemented yet.
 
-## Trying It Out
-
-See [`include/maplibre_native_c.h`](./include/maplibre_native_c.h) for the
-public API.
-
-Examples are standalone sub-projects under [`examples/`](examples/):
-
-```bash
-# macOS and Linux
-mise run //examples/zig-map:run
-```
-
-```bash
-# macOS only
-mise run //examples/swift-map:run
-```
+| Target               | Support | Example                           | Tracking                                                        |
+| -------------------- | ------- | --------------------------------- | --------------------------------------------------------------- |
+| Rust                 | ❌      |                                   | [#41](https://github.com/sargunv/maplibre-native-ffi/issues/41) |
+| Zig                  | ❌      | [`zig-map`](examples/zig-map)     | [#42](https://github.com/sargunv/maplibre-native-ffi/issues/42) |
+| Go                   | ❌      |                                   | [#43](https://github.com/sargunv/maplibre-native-ffi/issues/43) |
+| Swift                | ❌      | [`swift-map`](examples/swift-map) | [#44](https://github.com/sargunv/maplibre-native-ffi/issues/44) |
+| Kotlin/Native        | ❌      |                                   | [#46](https://github.com/sargunv/maplibre-native-ffi/issues/46) |
+| Java FFM             | ❌      |                                   | [#45](https://github.com/sargunv/maplibre-native-ffi/issues/45) |
+| Java JNI / Android   | ❌      |                                   | [#47](https://github.com/sargunv/maplibre-native-ffi/issues/47) |
+| C# / .NET            | ❌      |                                   | [#48](https://github.com/sargunv/maplibre-native-ffi/issues/48) |
+| Python               | ❌      |                                   | [#49](https://github.com/sargunv/maplibre-native-ffi/issues/49) |
+| TypeScript / Node.js | ❌      |                                   | [#50](https://github.com/sargunv/maplibre-native-ffi/issues/50) |
+| Dart                 | ❌      |                                   | [#51](https://github.com/sargunv/maplibre-native-ffi/issues/51) |
 
 ## License
 

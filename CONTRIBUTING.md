@@ -1,48 +1,77 @@
 # Contributing
 
-The project is still moving quickly. Bug reports, design feedback, platform
-notes, and small fixes are welcome. Large changes are unlikely to be reviewed
-promptly unless they were already coordinated with the maintainer.
+This repository accepts changes that improve the C ABI, low-level language
+bindings, tests, examples, documentation, and platform evidence around MapLibre
+Native. It is still moving quickly, so small focused fixes, bug reports, design
+feedback, and platform notes are easiest to review.
 
-For discussion, use `#maplibre` on the
-[OSM-US Slack](https://slack.openstreetmap.us/).
+Coordinate large API, ABI, ownership, threading, async, render target, or
+binding changes before opening a pull request.
 
-If you are using AI assistance, review
-[MapLibre's AI Policy](https://github.com/maplibre/maplibre/blob/main/AI_POLICY.md).
-Verify generated content before requesting review and disclose AI usage in the
-PR.
-
-## Repository Layout
-
-- `include/` — public C ABI; keep this C-shaped and FFI-friendly.
-- `src/` — C++ implementation around MapLibre Native.
-- `tests/` — automated tests in Zig through the C ABI.
-- `examples/` — small consumers that exercise the C ABI or language bindings.
-
-See [`docs/development.md`](docs/development.md) for the project boundary and
-conventions expected of code changes.
+Use `#maplibre` on the [OSM-US Slack](https://slack.openstreetmap.us/) for
+discussion.
 
 ## Development Setup
 
-The recommended workflow is to install [mise](https://mise.jdx.dev/), then run:
+Install [mise](https://mise.jdx.dev/), then install the pinned project tools:
 
 ```bash
 mise install
 ```
 
-On macOS, additionally install a recent version of Xcode.
+On macOS, install a recent version of Xcode.
 
-Mise installs the pinned project tools and sets up the Git hooks. CMake fetches
-MapLibre Native into `third_party/maplibre-native` during configuration. To use
-a separate MapLibre Native checkout, set `MLN_SOURCE_DIR` before configuring.
+Mise installs the tools used by the repository and sets up Git hooks. CMake
+fetches MapLibre Native into `third_party/maplibre-native` during configuration.
+Set `MLN_SOURCE_DIR` before configuring to use a separate MapLibre Native
+checkout.
 
-You can also set up your tooling manually without mise -- read
-[`mise.toml`](mise.toml) and [`pixi.toml`](./pixi.toml) to see what needs to be
-present in your environment.
+For manual setup, use [`mise.toml`](mise.toml) and [`pixi.toml`](pixi.toml) as
+the list of required tools.
 
-## Key Commands
+## Making Changes
 
-- `mise run build` — configure and build the C library.
-- `mise run test` — build and run tests.
-- `mise run fix` — run formatters and linters.
-- `mise run //examples/<project>:run` — run an example application.
+Read [`docs/development.md`](docs/development.md) before changing behavior or
+public interfaces. It owns the project scope and the conventions for ABI shape,
+errors, ownership, threading, callbacks, render targets, tests, and examples.
+
+Keep pull requests focused on one reviewable change. The reviewer should be able
+to connect the use case, public behavior, implementation, and validation without
+separating unrelated work.
+
+## Validation
+
+Build and test with:
+
+```bash
+mise run test
+```
+
+Use targeted example runs when they provide evidence that automated tests
+cannot, such as rendering or host integration:
+
+```bash
+mise run //examples/<project>:run
+```
+
+The repository also provides:
+
+- `mise run build` to configure and build the C library;
+- `mise run fix` to run formatters and linters.
+
+Pre-commit runs the configured formatters and linters on changed files.
+
+## Pull Requests
+
+Open a pull request when the change is ready for review and include:
+
+- the problem or use case;
+- the public API or behavior change, if any;
+- the validation you ran;
+- platform limitations or native MapLibre behavior you checked;
+- follow-up work that should remain separate.
+
+If you use AI assistance, review
+[MapLibre's AI Policy](https://github.com/maplibre/maplibre/blob/main/AI_POLICY.md),
+verify generated content before requesting review, and disclose AI usage in the
+pull request.
