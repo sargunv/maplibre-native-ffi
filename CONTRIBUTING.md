@@ -19,6 +19,9 @@ PR.
 - `tests/` — automated tests in Zig through the C ABI.
 - `examples/` — small consumers that exercise the C ABI or language bindings.
 
+See [`docs/development.md`](docs/development.md) for the project boundary and
+conventions expected of code changes.
+
 ## Development Setup
 
 The recommended workflow is to install [mise](https://mise.jdx.dev/), then run:
