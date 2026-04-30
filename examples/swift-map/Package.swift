@@ -9,9 +9,9 @@ let package = Package(
     .executable(name: "swift-map", targets: ["SwiftMap"]),
   ],
   targets: [
-    .target(
+    .systemLibrary(
       name: "CMapLibreNativeABI",
-      publicHeadersPath: "include"
+      pkgConfig: "maplibre-native-ffi"
     ),
     .executableTarget(
       name: "SwiftMap",
@@ -21,12 +21,6 @@ let package = Package(
         .linkedFramework("AppKit"),
         .linkedFramework("Metal"),
         .linkedFramework("QuartzCore"),
-        .unsafeFlags([
-          "-L../../build",
-          "-lmaplibre_native_abi",
-          "-Xlinker", "-rpath",
-          "-Xlinker", "../../build",
-        ]),
       ]
     ),
   ]

@@ -3,27 +3,10 @@ const std = @import("std");
 const BuildOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    cmake_artifact_dir: std.Build.LazyPath,
 };
 
-fn cmakeArtifactDir(b: *std.Build) std.Build.LazyPath {
-    const path = b.option(
-        []const u8,
-        "cmake-artifact-dir",
-        "Directory containing the CMake-built maplibre_native_abi library",
-    ) orelse "../../build";
-
-    if (std.fs.path.isAbsolute(path)) {
-        return .{ .cwd_relative = path };
-    }
-    return b.path(path);
-}
-
-fn linkMapLibreAbi(b: *std.Build, module: *std.Build.Module, cmake_artifact_dir: std.Build.LazyPath) void {
-    module.addIncludePath(b.path("../../include"));
-    module.addLibraryPath(cmake_artifact_dir);
-    module.addRPath(cmake_artifact_dir);
-    module.linkSystemLibrary("maplibre_native_abi", .{});
+fn linkMapLibreAbi(module: *std.Build.Module) void {
+    module.linkSystemLibrary("maplibre-native-ffi", .{ .use_pkg_config = .force });
     module.link_libc = true;
 }
 
@@ -45,7 +28,7 @@ fn addZigMapExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Compil
         }),
     });
 
-    linkMapLibreAbi(b, example.root_module, options.cmake_artifact_dir);
+    linkMapLibreAbi(example.root_module);
     example.root_module.addIncludePath(b.path("../../.pixi/envs/default/include"));
     example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
     example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));
@@ -73,7 +56,6 @@ pub fn build(b: *std.Build) void {
     const options = BuildOptions{
         .target = b.standardTargetOptions(.{}),
         .optimize = b.standardOptimizeOption(.{}),
-        .cmake_artifact_dir = cmakeArtifactDir(b),
     };
 
     const run_step = b.step("run", "Run Zig map example");

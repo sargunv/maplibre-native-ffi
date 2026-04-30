@@ -12,6 +12,14 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/mln_version.cmake)
 
+set(MLN_PC_PREFIX "${PROJECT_SOURCE_DIR}")
+set(MLN_PC_INCLUDEDIR "${PROJECT_SOURCE_DIR}/include")
+set(MLN_PC_LIBDIR "${PROJECT_BINARY_DIR}")
+configure_file(
+  "${PROJECT_SOURCE_DIR}/cmake/maplibre-native-ffi.pc.in"
+  "${PROJECT_BINARY_DIR}/pkgconfig/maplibre-native-ffi.pc"
+  @ONLY)
+
 # MLN_SOURCE_DIR can be set externally to point at a local MapLibre Native
 # checkout (useful for development against an unreleased branch). When unset,
 # we default to third_party/maplibre-native and fetch into it on demand.
@@ -249,3 +257,9 @@ set_target_properties(
     YES
     OUTPUT_NAME
     maplibre_native_abi)
+if(APPLE)
+  set_target_properties(
+    maplibre_native_abi
+    PROPERTIES
+      BUILD_WITH_INSTALL_NAME_DIR YES INSTALL_NAME_DIR "${PROJECT_BINARY_DIR}")
+endif()
