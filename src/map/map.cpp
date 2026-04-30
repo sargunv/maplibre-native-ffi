@@ -1,26 +1,32 @@
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <mbgl/actor/scheduler.hpp>
 #include <mbgl/map/camera.hpp>
 #include <mbgl/map/map.hpp>
 #include <mbgl/map/map_observer.hpp>
 #include <mbgl/map/map_options.hpp>
+#include <mbgl/map/map_projection.hpp>
 #include <mbgl/map/mode.hpp>
+#include <mbgl/map/projection_mode.hpp>
 #include <mbgl/renderer/renderer_frontend.hpp>
 #include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/util/geo.hpp>
+#include <mbgl/util/projection.hpp>
 #include <mbgl/util/size.hpp>
 
 #include "map/map.hpp"
@@ -31,6 +37,8 @@
 
 namespace {
 using MapRegistry = std::unordered_map<mln_map*, std::unique_ptr<mln_map>>;
+using ProjectionRegistry =
+  std::unordered_map<mln_map_projection*, std::unique_ptr<mln_map_projection>>;
 
 constexpr auto default_map_width = uint32_t{256};
 constexpr auto default_map_height = uint32_t{256};
@@ -43,6 +51,16 @@ auto map_registry_mutex() -> std::mutex& {
 
 auto map_registry() -> MapRegistry& {
   static MapRegistry value;
+  return value;
+}
+
+auto map_projection_registry_mutex() -> std::mutex& {
+  static std::mutex value;
+  return value;
+}
+
+auto map_projection_registry() -> ProjectionRegistry& {
+  static ProjectionRegistry value;
   return value;
 }
 
@@ -312,6 +330,136 @@ auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
   return MLN_STATUS_OK;
 }
 
+auto validate_projection_mode_options(const mln_projection_mode* mode)
+  -> mln_status {
+  if (mode == nullptr) {
+    mln::core::set_thread_error("projection mode must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (mode->size < sizeof(mln_projection_mode)) {
+    mln::core::set_thread_error("mln_projection_mode.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_PROJECTION_MODE_AXONOMETRIC) |
+    MLN_PROJECTION_MODE_X_SKEW | MLN_PROJECTION_MODE_Y_SKEW;
+  if ((mode->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_projection_mode.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (
+    ((mode->fields & MLN_PROJECTION_MODE_X_SKEW) != 0U &&
+     !std::isfinite(mode->x_skew)) ||
+    ((mode->fields & MLN_PROJECTION_MODE_Y_SKEW) != 0U &&
+     !std::isfinite(mode->y_skew))
+  ) {
+    mln::core::set_thread_error("projection skew values must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  return MLN_STATUS_OK;
+}
+
+auto validate_lat_lng(mln_lat_lng coordinate) -> mln_status {
+  if (
+    !std::isfinite(coordinate.latitude) || coordinate.latitude < -90.0 ||
+    coordinate.latitude > 90.0 || !std::isfinite(coordinate.longitude)
+  ) {
+    mln::core::set_thread_error(
+      "latitude must be finite and within [-90, 90], and longitude must be "
+      "finite"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_lat_lng_array(
+  const mln_lat_lng* coordinates, size_t coordinate_count, bool allow_empty
+) -> mln_status {
+  if (coordinate_count == 0) {
+    if (allow_empty) {
+      return MLN_STATUS_OK;
+    }
+    mln::core::set_thread_error("coordinate_count must be greater than 0");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (coordinates == nullptr) {
+    mln::core::set_thread_error("coordinates must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto coordinate_span =
+    std::span<const mln_lat_lng>{coordinates, coordinate_count};
+  for (const auto coordinate : coordinate_span) {
+    const auto status = validate_lat_lng(coordinate);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_screen_point(mln_screen_point point) -> mln_status {
+  if (!std::isfinite(point.x) || !std::isfinite(point.y)) {
+    mln::core::set_thread_error("screen point values must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_screen_point_array(
+  const mln_screen_point* points, size_t point_count
+) -> mln_status {
+  if (point_count == 0) {
+    return MLN_STATUS_OK;
+  }
+
+  if (points == nullptr) {
+    mln::core::set_thread_error("points must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto point_span =
+    std::span<const mln_screen_point>{points, point_count};
+  for (const auto point : point_span) {
+    const auto status = validate_screen_point(point);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_edge_insets(mln_edge_insets padding) -> mln_status {
+  if (
+    !std::isfinite(padding.top) || !std::isfinite(padding.left) ||
+    !std::isfinite(padding.bottom) || !std::isfinite(padding.right) ||
+    padding.top < 0.0 || padding.left < 0.0 || padding.bottom < 0.0 ||
+    padding.right < 0.0
+  ) {
+    mln::core::set_thread_error(
+      "padding values must be finite and greater than or equal to 0"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_projected_meters(mln_projected_meters meters) -> mln_status {
+  if (!std::isfinite(meters.northing) || !std::isfinite(meters.easting)) {
+    mln::core::set_thread_error("projected meter values must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
 auto to_native_camera(const mln_camera_options& camera) -> mbgl::CameraOptions {
   auto result = mbgl::CameraOptions{};
   if ((camera.fields & MLN_CAMERA_OPTION_CENTER) != 0U) {
@@ -352,6 +500,88 @@ auto from_native_camera(const mbgl::CameraOptions& camera)
   return result;
 }
 
+auto to_native_projection_mode(const mln_projection_mode& mode)
+  -> mbgl::ProjectionMode {
+  auto result = mbgl::ProjectionMode{};
+  if ((mode.fields & MLN_PROJECTION_MODE_AXONOMETRIC) != 0U) {
+    result.withAxonometric(mode.axonometric);
+  }
+  if ((mode.fields & MLN_PROJECTION_MODE_X_SKEW) != 0U) {
+    result.withXSkew(mode.x_skew);
+  }
+  if ((mode.fields & MLN_PROJECTION_MODE_Y_SKEW) != 0U) {
+    result.withYSkew(mode.y_skew);
+  }
+  return result;
+}
+
+auto from_native_projection_mode(const mbgl::ProjectionMode& mode)
+  -> mln_projection_mode {
+  auto result = mln::core::projection_mode_default();
+  if (mode.axonometric) {
+    result.fields |= MLN_PROJECTION_MODE_AXONOMETRIC;
+    result.axonometric = *mode.axonometric;
+  }
+  if (mode.xSkew) {
+    result.fields |= MLN_PROJECTION_MODE_X_SKEW;
+    result.x_skew = *mode.xSkew;
+  }
+  if (mode.ySkew) {
+    result.fields |= MLN_PROJECTION_MODE_Y_SKEW;
+    result.y_skew = *mode.ySkew;
+  }
+  return result;
+}
+
+auto to_native_lat_lng(mln_lat_lng coordinate) -> mbgl::LatLng {
+  return mbgl::LatLng{coordinate.latitude, coordinate.longitude};
+}
+
+auto from_native_lat_lng(const mbgl::LatLng& coordinate) -> mln_lat_lng {
+  return mln_lat_lng{
+    .latitude = coordinate.latitude(), .longitude = coordinate.longitude()
+  };
+}
+
+auto to_native_lat_lngs(const mln_lat_lng* coordinates, size_t coordinate_count)
+  -> std::vector<mbgl::LatLng> {
+  auto result = std::vector<mbgl::LatLng>{};
+  result.reserve(coordinate_count);
+  const auto coordinate_span =
+    std::span<const mln_lat_lng>{coordinates, coordinate_count};
+  for (const auto coordinate : coordinate_span) {
+    result.emplace_back(to_native_lat_lng(coordinate));
+  }
+  return result;
+}
+
+auto to_native_screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate {
+  return mbgl::ScreenCoordinate{point.x, point.y};
+}
+
+auto from_native_screen_point(const mbgl::ScreenCoordinate& point)
+  -> mln_screen_point {
+  return mln_screen_point{.x = point.x, .y = point.y};
+}
+
+auto to_native_screen_points(const mln_screen_point* points, size_t point_count)
+  -> std::vector<mbgl::ScreenCoordinate> {
+  auto result = std::vector<mbgl::ScreenCoordinate>{};
+  result.reserve(point_count);
+  const auto point_span =
+    std::span<const mln_screen_point>{points, point_count};
+  for (const auto point : point_span) {
+    result.emplace_back(to_native_screen_point(point));
+  }
+  return result;
+}
+
+auto to_native_edge_insets(mln_edge_insets padding) -> mbgl::EdgeInsets {
+  return mbgl::EdgeInsets{
+    padding.top, padding.left, padding.bottom, padding.right
+  };
+}
+
 auto screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate {
   return mbgl::ScreenCoordinate{point.x, point.y};
 }
@@ -367,6 +597,11 @@ struct mln_map {
   std::unique_ptr<HeadlessFrontend> frontend;
   std::unique_ptr<mbgl::Map> map;
   mln_texture_session* texture_session = nullptr;
+};
+
+struct mln_map_projection {
+  std::thread::id owner_thread;
+  std::unique_ptr<mbgl::MapProjection> projection;
 };
 
 namespace mln::core {
@@ -427,6 +662,16 @@ auto camera_options_default() noexcept -> mln_camera_options {
   };
 }
 
+auto projection_mode_default() noexcept -> mln_projection_mode {
+  return mln_projection_mode{
+    .size = sizeof(mln_projection_mode),
+    .fields = 0,
+    .axonometric = false,
+    .x_skew = 0,
+    .y_skew = 0
+  };
+}
+
 auto validate_map(mln_map* map) -> mln_status {
   if (map == nullptr) {
     set_thread_error("map must not be null");
@@ -441,6 +686,26 @@ auto validate_map(mln_map* map) -> mln_status {
 
   if (map->owner_thread != std::this_thread::get_id()) {
     set_thread_error("map call must be made on its owner thread");
+    return MLN_STATUS_WRONG_THREAD;
+  }
+
+  return MLN_STATUS_OK;
+}
+
+auto validate_map_projection(mln_map_projection* projection) -> mln_status {
+  if (projection == nullptr) {
+    set_thread_error("projection must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const std::scoped_lock lock(map_projection_registry_mutex());
+  if (!map_projection_registry().contains(projection)) {
+    set_thread_error("projection is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (projection->owner_thread != std::this_thread::get_id()) {
+    set_thread_error("projection call must be made on its owner thread");
     return MLN_STATUS_WRONG_THREAD;
   }
 
@@ -681,6 +946,337 @@ auto map_jump_to(mln_map* map, const mln_camera_options* camera) -> mln_status {
     return camera_status;
   }
   map->map->jumpTo(to_native_camera(*camera));
+  return MLN_STATUS_OK;
+}
+
+auto map_get_projection_mode(mln_map* map, mln_projection_mode* out_mode)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_mode == nullptr || out_mode->size < sizeof(mln_projection_mode)) {
+    set_thread_error("out_mode must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_mode = from_native_projection_mode(map->map->getProjectionMode());
+  return MLN_STATUS_OK;
+}
+
+auto map_set_projection_mode(mln_map* map, const mln_projection_mode* mode)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto mode_status = validate_projection_mode_options(mode);
+  if (mode_status != MLN_STATUS_OK) {
+    return mode_status;
+  }
+
+  map->map->setProjectionMode(to_native_projection_mode(*mode));
+  return MLN_STATUS_OK;
+}
+
+auto map_pixel_for_lat_lng(
+  mln_map* map, mln_lat_lng coordinate, mln_screen_point* out_point
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_point == nullptr) {
+    set_thread_error("out_point must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinate_status = validate_lat_lng(coordinate);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+
+  *out_point = from_native_screen_point(
+    map->map->pixelForLatLng(to_native_lat_lng(coordinate))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_lat_lng_for_pixel(
+  mln_map* map, mln_screen_point point, mln_lat_lng* out_coordinate
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_coordinate == nullptr) {
+    set_thread_error("out_coordinate must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto point_status = validate_screen_point(point);
+  if (point_status != MLN_STATUS_OK) {
+    return point_status;
+  }
+
+  *out_coordinate = from_native_lat_lng(
+    map->map->latLngForPixel(to_native_screen_point(point))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_pixels_for_lat_lngs(
+  mln_map* map, const mln_lat_lng* coordinates, size_t coordinate_count,
+  mln_screen_point* out_points
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (coordinate_count != 0 && out_points == nullptr) {
+    set_thread_error(
+      "out_points must not be null when coordinate_count is nonzero"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinates_status =
+    validate_lat_lng_array(coordinates, coordinate_count, true);
+  if (coordinates_status != MLN_STATUS_OK) {
+    return coordinates_status;
+  }
+  if (coordinate_count == 0) {
+    return MLN_STATUS_OK;
+  }
+
+  const auto native_coordinates =
+    to_native_lat_lngs(coordinates, coordinate_count);
+  const auto pixels = map->map->pixelsForLatLngs(native_coordinates);
+  auto output = std::span<mln_screen_point>{out_points, pixels.size()};
+  auto output_position = output.begin();
+  for (const auto& pixel : pixels) {
+    *output_position = from_native_screen_point(pixel);
+    ++output_position;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_lat_lngs_for_pixels(
+  mln_map* map, const mln_screen_point* points, size_t point_count,
+  mln_lat_lng* out_coordinates
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (point_count != 0 && out_coordinates == nullptr) {
+    set_thread_error(
+      "out_coordinates must not be null when point_count is nonzero"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto points_status = validate_screen_point_array(points, point_count);
+  if (points_status != MLN_STATUS_OK) {
+    return points_status;
+  }
+  if (point_count == 0) {
+    return MLN_STATUS_OK;
+  }
+
+  const auto native_points = to_native_screen_points(points, point_count);
+  const auto coordinates = map->map->latLngsForPixels(native_points);
+  auto output = std::span<mln_lat_lng>{out_coordinates, coordinates.size()};
+  auto output_position = output.begin();
+  for (const auto& coordinate : coordinates) {
+    *output_position = from_native_lat_lng(coordinate);
+    ++output_position;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_create(mln_map* map, mln_map_projection** out_projection)
+  -> mln_status {
+  if (out_projection == nullptr) {
+    set_thread_error("out_projection must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (*out_projection != nullptr) {
+    set_thread_error("out_projection must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  auto owned_projection = std::make_unique<mln_map_projection>();
+  owned_projection->owner_thread = std::this_thread::get_id();
+  owned_projection->projection =
+    std::make_unique<mbgl::MapProjection>(*map->map);
+
+  auto* handle = owned_projection.get();
+  {
+    const std::scoped_lock lock(map_projection_registry_mutex());
+    map_projection_registry().emplace(handle, std::move(owned_projection));
+  }
+  *out_projection = handle;
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_destroy(mln_map_projection* projection) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  auto owned_projection = std::unique_ptr<mln_map_projection>{};
+  {
+    const std::scoped_lock lock(map_projection_registry_mutex());
+    const auto found = map_projection_registry().find(projection);
+    owned_projection = std::move(found->second);
+    map_projection_registry().erase(found);
+  }
+  owned_projection.reset();
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_get_camera(
+  mln_map_projection* projection, mln_camera_options* out_camera
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_camera == nullptr || out_camera->size < sizeof(mln_camera_options)) {
+    set_thread_error("out_camera must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_camera = from_native_camera(projection->projection->getCamera());
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_set_camera(
+  mln_map_projection* projection, const mln_camera_options* camera
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto camera_status = validate_camera_options(camera);
+  if (camera_status != MLN_STATUS_OK) {
+    return camera_status;
+  }
+
+  projection->projection->setCamera(to_native_camera(*camera));
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_set_visible_coordinates(
+  mln_map_projection* projection, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_edge_insets padding
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto coordinates_status =
+    validate_lat_lng_array(coordinates, coordinate_count, false);
+  if (coordinates_status != MLN_STATUS_OK) {
+    return coordinates_status;
+  }
+  const auto padding_status = validate_edge_insets(padding);
+  if (padding_status != MLN_STATUS_OK) {
+    return padding_status;
+  }
+
+  projection->projection->setVisibleCoordinates(
+    to_native_lat_lngs(coordinates, coordinate_count),
+    to_native_edge_insets(padding)
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_pixel_for_lat_lng(
+  mln_map_projection* projection, mln_lat_lng coordinate,
+  mln_screen_point* out_point
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_point == nullptr) {
+    set_thread_error("out_point must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinate_status = validate_lat_lng(coordinate);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+
+  *out_point = from_native_screen_point(
+    projection->projection->pixelForLatLng(to_native_lat_lng(coordinate))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_lat_lng_for_pixel(
+  mln_map_projection* projection, mln_screen_point point,
+  mln_lat_lng* out_coordinate
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_coordinate == nullptr) {
+    set_thread_error("out_coordinate must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto point_status = validate_screen_point(point);
+  if (point_status != MLN_STATUS_OK) {
+    return point_status;
+  }
+
+  *out_coordinate = from_native_lat_lng(
+    projection->projection->latLngForPixel(to_native_screen_point(point))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto projected_meters_for_lat_lng(
+  mln_lat_lng coordinate, mln_projected_meters* out_meters
+) -> mln_status {
+  if (out_meters == nullptr) {
+    set_thread_error("out_meters must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinate_status = validate_lat_lng(coordinate);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+
+  const auto meters =
+    mbgl::Projection::projectedMetersForLatLng(to_native_lat_lng(coordinate));
+  *out_meters = mln_projected_meters{
+    .northing = meters.northing(), .easting = meters.easting()
+  };
+  return MLN_STATUS_OK;
+}
+
+auto lat_lng_for_projected_meters(
+  mln_projected_meters meters, mln_lat_lng* out_coordinate
+) -> mln_status {
+  if (out_coordinate == nullptr) {
+    set_thread_error("out_coordinate must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto meters_status = validate_projected_meters(meters);
+  if (meters_status != MLN_STATUS_OK) {
+    return meters_status;
+  }
+
+  *out_coordinate = from_native_lat_lng(
+    mbgl::Projection::latLngForProjectedMeters(
+      mbgl::ProjectedMeters{meters.northing, meters.easting}
+    )
+  );
   return MLN_STATUS_OK;
 }
 
