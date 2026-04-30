@@ -1,6 +1,6 @@
 # Development Conventions
 
-## Product Boundary
+## Project Boundary
 
 The project exposes MapLibre Native through two layers.
 
@@ -17,15 +17,32 @@ provide fully idiomatic APIs, higher-level async models over map events, view
 lifecycle integrations, convenience workflows, or new abstractions beyond the C
 API's concepts.
 
-## C API Shape
+## Implementation Layout
 
-Keep the C API C-shaped:
+`include/` is the public C API boundary. Keep implementation-only helpers out of
+public headers.
 
-- handles are opaque forward-declared structs;
-- option and output structs start with a `size` field;
-- optional struct fields use field masks or presence booleans so zero remains a
-  valid value;
-- backend-native handles are `void*` plus documented backend types.
+```text
+include/                 # public C API headers
+src/
+  c_api/                 # exported C definitions and C boundary validation
+  <subsystem>/           # implementation semantics
+```
+
+## ABI Evolution
+
+The ABI is unstable while `mln_c_version()` returns `0`. Do not add
+compatibility shims or version-branching code for changed structs or functions
+during this phase.
+
+Still shape structs for future ABI stability. Use `size` fields for option and
+output structs that may grow over time, and populate them in default
+constructors.
+
+Use field masks or presence booleans for optional values where zero is valid.
+
+Keep backend-native handles opaque as `void*`; document the backend type and
+ownership rules on the function or struct field.
 
 ## Status And Diagnostics
 
@@ -78,30 +95,23 @@ The runtime and map model is host-pumped. Runtime creation records the owner
 thread. Runtime, map, and texture-session calls that touch thread-affine state
 validate that owner thread and return `MLN_STATUS_WRONG_THREAD` for mismatches.
 
-Thread hopping belongs in documented enqueueing commands. Adapters can build
-threaded models above the C ABI.
+Cross-thread dispatch belongs in public functions designed as enqueueing
+commands. Document that behavior on the function. Higher-level adapters can
+build threaded models above the C API.
 
 MapLibre's `RunLoop` is owner-thread scheduler state. Each owner thread may hold
 one live runtime. `mln_runtime_run_once()` pumps that runtime's run loop.
 
-Low-level native callbacks can run outside the owner thread. Logging, resource
-transform, and resource provider callbacks may run on MapLibre worker, network,
-logging, or render-related threads. Their documentation states threading,
-reentrancy, lifetime, and C API reentry rules.
-
 ## Async Model And Events
 
-Preserve MapLibre Native's imperative, observer-driven model. The C ABI returns
-status for synchronous acceptance or failure and reports asynchronous native
-work through drained events.
+Preserve MapLibre Native's imperative, observer-driven model. C API calls return
+status for synchronous acceptance or failure. Later native work is reported
+through drained events.
 
-Bindings may translate event polling into futures, promises, coroutines, flows,
-or callbacks above the ABI.
+Map events are copied into map-owned storage and drained with C API calls. Event
+payloads use plain data with documented lifetimes.
 
-Copy map events into map-owned storage and drain them with C API calls. Use
-plain event payloads with documented lifetimes.
-
-When adding an operation, decide whether it is:
+Classify each operation as one of:
 
 - immediate, where the return status is the final result;
 - a command, where return status means accepted and later effects arrive as
@@ -112,7 +122,14 @@ When adding an operation, decide whether it is:
 
 ## Native Callbacks
 
-Callbacks are low-level escape hatches.
+Prefer polled events for native-to-host notifications about map state,
+lifecycle, rendering, and errors. Use native callbacks for low-level extension
+points where MapLibre needs a synchronous decision, an asynchronous request
+handle, or process-global integration such as logging.
+
+Low-level native callbacks can run outside the owner thread. Logging, resource
+transform, and resource provider callbacks may run on MapLibre worker, network,
+logging, or render-related threads.
 
 A callback API documents:
 
@@ -121,99 +138,34 @@ A callback API documents:
 - whether input pointers are borrowed or copied;
 - whether output pointers are copied before return;
 - whether it may call back into any C API function;
-- what happens when it returns an error, throws through foreign code, or returns
-  an unknown decision value.
+- what happens when it returns an error or unknown decision value.
 
-Prefer host-managed dispatch in language bindings for user code.
-
-## Resources And Cache
-
-Runtime-scoped resource configuration lets maps share file sources, cache
-configuration, and URL behavior.
-
-Follow MapLibre Native's resource model:
-
-- use runtime-derived `ResourceOptions` for asset path, cache path, maximum
-  ambient cache size, and the runtime platform context;
-- keep process-global network status as a wrapper over MapLibre Native network
-  status;
-- keep resource transforms URL-only to match MapLibre Native's
-  `ResourceTransform`;
-- use the custom resource provider as a network request interception point;
-- let built-in native resource loaders handle built-in schemes before the C API
-  provider sees network requests;
-- convert provider failures into native resource errors while containing
-  exceptions at the C boundary.
-
-Add higher-level retry policy, custom eviction policy, auth mutation, or offline
-product workflows for concrete MapLibre Native APIs or product requirements.
+Callbacks must not unwind through the C API. Bindings must catch host
+exceptions, panics, and errors inside the callback and convert them to the
+callback's documented return behavior.
 
 ## Maps And Render Targets
 
-Map state is separate from render targets.
+Keep map state separate from render targets. `mln_map` owns style, camera,
+observer events, and render invalidation state. Render target sessions own
+backend-bound resources.
 
-`mln_map` owns map/control state: style, camera, observer events, render
-invalidation state, and long-lived native map/frontend objects. A map may exist
-with no attached render target.
+Each render target kind should preserve the same separation from `mln_map`,
+including texture sessions, native surface sessions, and future targets.
 
-Render target sessions own backend-bound resources. Texture sessions cover Metal
-and Vulkan offscreen rendering. Future native surface sessions should preserve
-this separation from `mln_map`.
-
-Texture sessions and native surface sessions are alternate render target kinds.
-Texture sessions are the primary integration path for UI toolkits that composite
-their own scene graph. Native surface sessions provide fallback or comparison
-paths for concrete platform needs.
-
-A map may have zero or one attached render target. Attach, resize, render, frame
-acquire, frame release, detach, and destroy operations must document owner
-thread, backend handle ownership, synchronization, borrowed pointer lifetimes,
-generation or stale-frame behavior, and teardown rules.
-
-Texture rendering lets host UI toolkits sample the map inside their own scene
-graphs. The wrapper owns the rendered texture or image allocation created on
-host-provided backend objects. Hosts own windows, swapchains, widgets, and scene
-graph composition.
-
-## Style, Camera, And Gestures
-
-The C ABI wraps MapLibre Native concepts directly.
-
-Style APIs use `mbgl::style::Style` and C representations of MapLibre style
-operations. Add source and layer APIs in stages, starting with narrow JSON or
-typed wrappers that match native style behavior.
-
-Camera APIs expose native map movement primitives such as jump, pan, scale,
-rotate, pitch, and transition cancellation. Gesture recognition and declarative
-camera state belong in adapters. Camera observer events are notifications.
-
-Rendered-feature queries and projection helpers are map or render queries. Their
-docs state whether they require an attached render target.
-
-## Implementation Layout
-
-Keep `include/maplibre_native_c.h` as the public product boundary. Place
-implementation-only helpers outside the public header.
-
-`src/c_api/` owns exported C definitions, no-exception entry points, and calls
-into implementation code. Implementation semantics live in subsystem directories
-such as `src/runtime/`, `src/map/`, `src/resources/`, `src/render/`,
-`src/logging/`, and `src/diagnostics/`.
-
-Use local MapLibre Native behavior as evidence. CMake fetches the pinned source
-into `third_party/maplibre-native`; set `MLN_SOURCE_DIR` to inspect or develop
-against a separate checkout. Use the native source to confirm behavior.
-
-Add language or UI adapters to the core layout after the C ABI and
-render-session contract justify them.
+Render target APIs must document owner thread, backend handle ownership,
+synchronization, borrowed pointer lifetimes, generation or stale-frame behavior,
+and teardown rules.
 
 ## Tests And Examples
 
-Every feature should add or update a smoke test, example, or automated test that
-demonstrates its acceptance criteria.
+Every feature needs CI coverage through an automated test when practical. Tests
+should consume the public C API. Zig tests also check header shape because
+`@cImport` catches C API issues quickly.
 
-Prefer tests and examples that consume the public C ABI. Zig tests are the main
-ABI smoke tests because `@cImport` exposes header shape quickly.
+Use examples for human demos and for behavior that needs manual validation, such
+as visual output, interactive input, or host graphics integration.
 
-Keep example apps small. They validate the ABI, lifecycle, events, texture
-ownership, and interactive camera control.
+Keep examples small. This repository may include low-level language bindings and
+focused integration examples. Full application SDKs live outside this
+repository.
