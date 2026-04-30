@@ -1,6 +1,6 @@
 # Development Conventions
 
-## Project Boundary
+## Project Scope
 
 The project exposes MapLibre Native through two layers.
 
@@ -17,7 +17,7 @@ provide fully idiomatic APIs, higher-level async models over map events, view
 lifecycle integrations, convenience workflows, or new abstractions beyond the C
 API's concepts.
 
-## Implementation Layout
+## Code Layout
 
 `include/` is the public C API boundary. Keep implementation-only helpers out of
 public headers.
@@ -44,7 +44,7 @@ Use field masks or presence booleans for optional values where zero is valid.
 Keep backend-native handles opaque as `void*`; document the backend type and
 ownership rules on the function or struct field.
 
-## Status And Diagnostics
+## Errors And Diagnostics
 
 Status-returning C API functions return `mln_status`. Each function's public
 comment lists its status values and their meanings.
@@ -102,7 +102,7 @@ build threaded models above the C API.
 MapLibre's `RunLoop` is owner-thread scheduler state. Each owner thread may hold
 one live runtime. `mln_runtime_run_once()` pumps that runtime's run loop.
 
-## Async Model And Events
+## Async And Events
 
 Preserve MapLibre Native's imperative, observer-driven model. C API calls return
 status for synchronous acceptance or failure. Later native work is reported
