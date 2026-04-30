@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <thread>
 
@@ -15,6 +16,7 @@ namespace mln::core {
 
 auto map_options_default() noexcept -> mln_map_options;
 auto camera_options_default() noexcept -> mln_camera_options;
+auto projection_mode_default() noexcept -> mln_projection_mode;
 auto create_map(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) -> mln_status;
@@ -24,6 +26,51 @@ auto map_set_style_url(mln_map* map, const char* url) -> mln_status;
 auto map_set_style_json(mln_map* map, const char* json) -> mln_status;
 auto map_get_camera(mln_map* map, mln_camera_options* out_camera) -> mln_status;
 auto map_jump_to(mln_map* map, const mln_camera_options* camera) -> mln_status;
+auto map_get_projection_mode(mln_map* map, mln_projection_mode* out_mode)
+  -> mln_status;
+auto map_set_projection_mode(mln_map* map, const mln_projection_mode* mode)
+  -> mln_status;
+auto map_pixel_for_lat_lng(
+  mln_map* map, mln_lat_lng coordinate, mln_screen_point* out_point
+) -> mln_status;
+auto map_lat_lng_for_pixel(
+  mln_map* map, mln_screen_point point, mln_lat_lng* out_coordinate
+) -> mln_status;
+auto map_pixels_for_lat_lngs(
+  mln_map* map, const mln_lat_lng* coordinates, size_t coordinate_count,
+  mln_screen_point* out_points
+) -> mln_status;
+auto map_lat_lngs_for_pixels(
+  mln_map* map, const mln_screen_point* points, size_t point_count,
+  mln_lat_lng* out_coordinates
+) -> mln_status;
+auto map_projection_create(mln_map* map, mln_map_projection** out_projection)
+  -> mln_status;
+auto map_projection_destroy(mln_map_projection* projection) -> mln_status;
+auto map_projection_get_camera(
+  mln_map_projection* projection, mln_camera_options* out_camera
+) -> mln_status;
+auto map_projection_set_camera(
+  mln_map_projection* projection, const mln_camera_options* camera
+) -> mln_status;
+auto map_projection_set_visible_coordinates(
+  mln_map_projection* projection, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_edge_insets padding
+) -> mln_status;
+auto map_projection_pixel_for_lat_lng(
+  mln_map_projection* projection, mln_lat_lng coordinate,
+  mln_screen_point* out_point
+) -> mln_status;
+auto map_projection_lat_lng_for_pixel(
+  mln_map_projection* projection, mln_screen_point point,
+  mln_lat_lng* out_coordinate
+) -> mln_status;
+auto projected_meters_for_lat_lng(
+  mln_lat_lng coordinate, mln_projected_meters* out_meters
+) -> mln_status;
+auto lat_lng_for_projected_meters(
+  mln_projected_meters meters, mln_lat_lng* out_coordinate
+) -> mln_status;
 auto map_move_by(mln_map* map, double delta_x, double delta_y) -> mln_status;
 auto map_scale_by(mln_map* map, double scale, const mln_screen_point* anchor)
   -> mln_status;

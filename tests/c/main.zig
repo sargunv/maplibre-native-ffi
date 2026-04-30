@@ -4,6 +4,7 @@ comptime {
     _ = @import("style.zig");
     _ = @import("resources.zig");
     _ = @import("camera.zig");
+    _ = @import("projection.zig");
     _ = @import("diagnostics.zig");
     _ = @import("events.zig");
     _ = @import("logging.zig");
