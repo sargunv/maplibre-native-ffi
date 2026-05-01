@@ -1,10 +1,12 @@
 #include <array>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/vulkan/buffer_resource.hpp>
 #include <mbgl/vulkan/context.hpp>
 #include <mbgl/vulkan/renderable_resource.hpp>
 #include <mbgl/vulkan/texture2d.hpp>
@@ -267,7 +269,99 @@ auto VulkanTextureBackend::getDefaultRenderable() -> mbgl::gfx::Renderable& {
 }
 
 auto VulkanTextureBackend::readStillImage() -> mbgl::PremultipliedImage {
-  return {};
+  prepareRenderResources();
+
+  auto image = mbgl::PremultipliedImage(size);
+  const auto image_size = image.bytes();
+  const auto& allocator = getAllocator();
+  const auto buffer_info = vk::BufferCreateInfo()
+                             .setSize(image_size)
+                             .setUsage(vk::BufferUsageFlagBits::eTransferDst)
+                             .setSharingMode(vk::SharingMode::eExclusive);
+
+  auto allocation_info = VmaAllocationCreateInfo{};
+  allocation_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+  allocation_info.requiredFlags =
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  allocation_info.flags =
+    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+    VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  auto buffer_allocation = mbgl::vulkan::BufferAllocation{allocator};
+  if (!buffer_allocation.create(allocation_info, buffer_info)) {
+    return {};
+  }
+
+  auto& context_impl = static_cast<mbgl::vulkan::Context&>(getContext());
+  auto& resource_impl = rendered_resource();
+  const auto source_image = resource_impl.image();
+  context_impl.waitFrame();
+  context_impl.submitOneTimeCommand(
+    [&](const vk::UniqueCommandBuffer& command_buffer) {
+      const auto to_transfer =
+        vk::ImageMemoryBarrier()
+          .setImage(source_image)
+          .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+          .setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+          .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+          .setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+          .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+          .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+          .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+      command_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eTransfer, {}, nullptr, nullptr, to_transfer,
+        getDispatcher()
+      );
+
+      const auto region =
+        vk::BufferImageCopy()
+          .setBufferOffset(0)
+          .setBufferRowLength(0)
+          .setBufferImageHeight(0)
+          .setImageSubresource(
+            vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1)
+          )
+          .setImageOffset({0, 0, 0})
+          .setImageExtent({size.width, size.height, 1});
+      command_buffer->copyImageToBuffer(
+        source_image, vk::ImageLayout::eTransferSrcOptimal,
+        buffer_allocation.buffer, region, getDispatcher()
+      );
+
+      const auto to_shader_read =
+        vk::ImageMemoryBarrier()
+          .setImage(source_image)
+          .setOldLayout(vk::ImageLayout::eTransferSrcOptimal)
+          .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+          .setSrcAccessMask(vk::AccessFlagBits::eTransferRead)
+          .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+          .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+          .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+          .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+      command_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr, nullptr,
+        to_shader_read, getDispatcher()
+      );
+    }
+  );
+
+  if (buffer_allocation.mappedBuffer == nullptr) {
+    if (
+      vmaMapMemory(
+        allocator, buffer_allocation.allocation, &buffer_allocation.mappedBuffer
+      ) != VK_SUCCESS
+    ) {
+      return {};
+    }
+    std::memcpy(image.data.get(), buffer_allocation.mappedBuffer, image_size);
+    vmaUnmapMemory(allocator, buffer_allocation.allocation);
+    buffer_allocation.mappedBuffer = nullptr;
+  } else {
+    std::memcpy(image.data.get(), buffer_allocation.mappedBuffer, image_size);
+  }
+  return image;
 }
 
 auto VulkanTextureBackend::getRendererBackend() -> mbgl::gfx::RendererBackend* {

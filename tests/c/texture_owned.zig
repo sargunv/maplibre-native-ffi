@@ -83,3 +83,45 @@ test "owned texture lifecycle and render update" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_destroy(texture.?));
 }
+
+test "owned texture reads premultiplied rgba8" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_owned_texture_descriptor_default();
+    descriptor.width = 32;
+    descriptor.height = 16;
+
+    var texture: ?*c.mln_texture_session = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_owned_texture_attach(map, &descriptor, &texture));
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?)) catch @panic("texture destroy failed");
+
+    var info = c.mln_texture_image_info_default();
+    const data = try testing.allocator.alloc(u8, descriptor.width * descriptor.height * 4);
+    defer testing.allocator.free(data);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_read_premultiplied_rgba8(texture.?, data.ptr, data.len, &info));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+
+    info = c.mln_texture_image_info_default();
+    var small: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_read_premultiplied_rgba8(texture.?, small[0..].ptr, small.len, &info));
+    try testing.expectEqual(@as(u32, 32), info.width);
+    try testing.expectEqual(@as(u32, 16), info.height);
+    try testing.expectEqual(@as(u32, 32 * 4), info.stride);
+    try testing.expectEqual(@as(usize, 32 * 16 * 4), info.byte_length);
+
+    info = c.mln_texture_image_info_default();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_read_premultiplied_rgba8(texture.?, data.ptr, data.len, &info));
+    try testing.expectEqual(@as(u32, 32), info.width);
+    try testing.expectEqual(@as(u32, 16), info.height);
+    try testing.expectEqual(@as(u32, 32 * 4), info.stride);
+    try testing.expectEqual(@as(usize, 32 * 16 * 4), info.byte_length);
+}

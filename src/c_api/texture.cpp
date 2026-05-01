@@ -1,5 +1,6 @@
 #define MLN_BUILDING_C
 
+#include <cstddef>
 #include <cstdint>
 
 #include "c_api/boundary.hpp"
@@ -19,6 +20,10 @@ auto mln_metal_texture_descriptor_default(void) noexcept
 auto mln_vulkan_texture_descriptor_default(void) noexcept
   -> mln_vulkan_texture_descriptor {
   return mln::core::vulkan_texture_descriptor_default();
+}
+
+auto mln_texture_image_info_default(void) noexcept -> mln_texture_image_info {
+  return mln::core::texture_image_info_default();
 }
 
 auto mln_owned_texture_attach(
@@ -61,6 +66,17 @@ auto mln_texture_render_update(mln_texture_session* texture) noexcept
   -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::texture_render_update(texture);
+  });
+}
+
+auto mln_texture_read_premultiplied_rgba8(
+  mln_texture_session* texture, uint8_t* out_data, size_t out_data_capacity,
+  mln_texture_image_info* out_info
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::texture_read_premultiplied_rgba8(
+      texture, out_data, out_data_capacity, out_info
+    );
   });
 }
 

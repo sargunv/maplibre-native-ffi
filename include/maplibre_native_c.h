@@ -1477,6 +1477,19 @@ typedef struct mln_vulkan_texture_frame {
   uint32_t layout;
 } mln_vulkan_texture_frame;
 
+/** CPU image readback metadata for a texture session frame. */
+typedef struct mln_texture_image_info {
+  size_t size;
+  /** Physical image width in device pixels. */
+  uint32_t width;
+  /** Physical image height in device pixels. */
+  uint32_t height;
+  /** Bytes per image row. */
+  uint32_t stride;
+  /** Required or filled byte length. */
+  size_t byte_length;
+} mln_texture_image_info;
+
 /**
  * Returns MapLibre-owned texture descriptor values initialized for this C API
  * version.
@@ -1495,6 +1508,12 @@ mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
  */
 MLN_API mln_vulkan_texture_descriptor
 mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Returns texture image info values initialized for this C API version.
+ */
+MLN_API mln_texture_image_info
+mln_texture_image_info_default(void) MLN_NOEXCEPT;
 
 /**
  * Attaches a MapLibre-owned offscreen texture render target to a map.
@@ -1614,6 +1633,30 @@ MLN_API mln_status mln_texture_resize(
  */
 MLN_API mln_status
 mln_texture_render_update(mln_texture_session* texture) MLN_NOEXCEPT;
+
+/**
+ * Reads the most recently rendered texture frame into caller-owned storage.
+ *
+ * The copied image is premultiplied RGBA8 in physical pixels. The function
+ * fills out_info with the required byte length and image layout metadata. When
+ * out_data is null or out_data_capacity is too small, out_info is still filled
+ * and the function returns MLN_STATUS_INVALID_ARGUMENT.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, out_info is
+ *   null, out_info->size is too small, out_data is null, or out_data_capacity
+ *   is too small.
+ * - MLN_STATUS_INVALID_STATE when no rendered frame is available, the session
+ *   is detached, a frame is currently acquired, or readback produces no image.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_read_premultiplied_rgba8(
+  mln_texture_session* texture, uint8_t* out_data, size_t out_data_capacity,
+  mln_texture_image_info* out_info
+) MLN_NOEXCEPT;
 
 /**
  * Acquires the most recently rendered Metal texture frame.

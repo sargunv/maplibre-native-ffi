@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <thread>
@@ -52,6 +53,7 @@ auto metal_texture_descriptor_default() noexcept
   -> mln_metal_texture_descriptor;
 auto vulkan_texture_descriptor_default() noexcept
   -> mln_vulkan_texture_descriptor;
+auto texture_image_info_default() noexcept -> mln_texture_image_info;
 auto validate_attach_output(mln_texture_session** out_texture) -> mln_status;
 auto validate_texture(mln_texture_session* texture) -> mln_status;
 auto validate_live_attached_texture(mln_texture_session* texture) -> mln_status;
@@ -80,6 +82,10 @@ auto texture_resize(
   double scale_factor
 ) -> mln_status;
 auto texture_render_update(mln_texture_session* texture) -> mln_status;
+auto texture_read_premultiplied_rgba8(
+  mln_texture_session* texture, uint8_t* out_data, size_t out_data_capacity,
+  mln_texture_image_info* out_info
+) -> mln_status;
 auto metal_texture_acquire_frame(
   mln_texture_session* texture, mln_metal_texture_frame* out_frame
 ) -> mln_status;

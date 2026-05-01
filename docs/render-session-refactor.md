@@ -276,7 +276,7 @@ The lowest-risk order is:
 - [x] Move common session lifecycle into shared render-session code.
 - [x] Add MapLibre-owned/offscreen texture sessions for readback-first server
       use.
-- [ ] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
+- [x] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
 - [ ] Add shared/exportable texture descriptors and frame metadata for cross-API
       UI sharing.
 - [ ] Add native surface sessions as a sibling render target mode.

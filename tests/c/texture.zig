@@ -24,6 +24,13 @@ pub fn expectDescriptorDefaults() !void {
     try testing.expect(vulkan.physical_device == null);
     try testing.expect(vulkan.device == null);
     try testing.expect(vulkan.graphics_queue == null);
+
+    const image_info = c.mln_texture_image_info_default();
+    try testing.expectEqual(@as(@TypeOf(image_info.size), @sizeOf(c.mln_texture_image_info)), image_info.size);
+    try testing.expectEqual(@as(u32, 0), image_info.width);
+    try testing.expectEqual(@as(u32, 0), image_info.height);
+    try testing.expectEqual(@as(u32, 0), image_info.stride);
+    try testing.expectEqual(@as(usize, 0), image_info.byte_length);
 }
 
 pub fn expectAttachRejectsInvalidArguments(comptime Backend: type) !void {
