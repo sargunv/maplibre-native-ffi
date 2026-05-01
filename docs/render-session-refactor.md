@@ -4,6 +4,12 @@ This note records the current render backend model and the API direction for the
 render session refactor. It is written for contributors changing the C ABI,
 render target ownership, or backend integration.
 
+Related issues:
+
+- [#4 Make texture sessions use shareable GPU render targets](https://github.com/sargunv/maplibre-native-ffi/issues/4)
+- [#9 Expose CPU-readback ABI for texture sessions](https://github.com/sargunv/maplibre-native-ffi/issues/9)
+- [#38 Add native surface render targets](https://github.com/sargunv/maplibre-native-ffi/issues/38)
+
 ## Development Constraints
 
 The project keeps map state separate from render targets. `mln_map` owns style,
@@ -265,14 +271,15 @@ texture-frame acquire/release APIs.
 
 The lowest-risk order is:
 
-1. Generalize map attachment from one `texture_session` to one render target
-   session.
-2. Move common session lifecycle into shared render-session code.
-3. Add MapLibre-owned/offscreen texture sessions for readback-first server use.
-4. Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
-5. Add shared/exportable texture descriptors and frame metadata for cross-API UI
-   sharing.
-6. Add native surface sessions as a sibling render target mode.
+- [ ] Generalize map attachment from one `texture_session` to one render target
+      session.
+- [ ] Move common session lifecycle into shared render-session code.
+- [ ] Add MapLibre-owned/offscreen texture sessions for readback-first server
+      use.
+- [ ] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
+- [ ] Add shared/exportable texture descriptors and frame metadata for cross-API
+      UI sharing.
+- [ ] Add native surface sessions as a sibling render target mode.
 
 This order keeps the server path simple, preserves the existing host-provided UI
 texture path, and prevents surface sessions from becoming a parallel renderer
