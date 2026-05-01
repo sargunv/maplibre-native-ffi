@@ -283,7 +283,7 @@ The lowest-risk order is:
 - [x] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
 - [x] Add shared/exportable texture descriptors and frame metadata for cross-API
       UI sharing.
-- [ ] Add native surface sessions as a sibling render target mode.
+- [x] Add native surface sessions as a sibling render target mode.
 
 This order keeps the server path simple, preserves the existing host-provided UI
 texture path, and prevents surface sessions from becoming a parallel renderer

@@ -8,6 +8,7 @@ comptime {
     _ = @import("diagnostics.zig");
     _ = @import("events.zig");
     _ = @import("logging.zig");
+    _ = @import("surface.zig");
     _ = @import("texture.zig");
     _ = @import("texture_owned.zig");
     _ = @import("texture_metal.zig");

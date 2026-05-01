@@ -128,9 +128,11 @@ if(APPLE)
     "-framework CoreText"
     "-framework Foundation"
     "-framework ImageIO"
-    "-framework Metal")
+    "-framework Metal"
+    "-framework QuartzCore")
   set(MLN_TEXTURE_SESSION_SOURCE src/render/metal/metal_texture_session.mm
       src/render/metal/metal_texture_backend.mm)
+  set(MLN_SURFACE_SESSION_SOURCE src/render/metal/metal_surface_session.mm)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(CURL REQUIRED)
   find_package(JPEG REQUIRED)
@@ -173,6 +175,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     Threads::Threads)
   set(MLN_TEXTURE_SESSION_SOURCE src/render/vulkan/vulkan_texture_session.cpp
       src/render/vulkan/vulkan_texture_backend.cpp)
+  set(MLN_SURFACE_SESSION_SOURCE src/render/vulkan/vulkan_surface_session.cpp)
 else()
   message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
@@ -185,17 +188,20 @@ add_library(
     src/c_api/map.cpp
     src/c_api/network.cpp
     src/c_api/runtime.cpp
+    src/c_api/surface.cpp
     src/c_api/texture.cpp
     src/c_api/version.cpp
     src/diagnostics/diagnostics.cpp
     src/logging/logging.cpp
     src/map/map.cpp
+    src/render/surface_session.cpp
     src/render/texture_session.cpp
     src/resources/custom_resource_provider.cpp
     src/resources/file_source_manager.cpp
     src/resources/network_status.cpp
     src/resources/resource_loader.cpp
     ${MLN_TEXTURE_SESSION_SOURCE}
+    ${MLN_SURFACE_SESSION_SOURCE}
     src/runtime/runtime.cpp
     ${MLN_PLATFORM_SUPPORT_SOURCES})
 add_library(maplibre_native_ffi::c ALIAS maplibre_native_c)

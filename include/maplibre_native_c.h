@@ -72,6 +72,7 @@ typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
 typedef struct mln_map_projection mln_map_projection;
 typedef struct mln_resource_request_handle mln_resource_request_handle;
+typedef struct mln_surface_session mln_surface_session;
 typedef struct mln_texture_session mln_texture_session;
 
 /**
@@ -1381,6 +1382,181 @@ MLN_API mln_status mln_projected_meters_for_lat_lng(
 MLN_API mln_status mln_lat_lng_for_projected_meters(
   mln_projected_meters meters, mln_lat_lng* out_coordinate
 ) MLN_NOEXCEPT;
+
+#pragma endregion
+
+#pragma region Surface sessions
+
+/** Metal native surface session attachment options. */
+typedef struct mln_metal_surface_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. */
+  uint32_t width;
+  /** Logical map height in UI pixels. */
+  uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
+  double scale_factor;
+  /** Borrowed CAMetalLayer* / CA::MetalLayer*. Required. */
+  void* layer;
+  /** Optional borrowed id<MTLDevice> / MTL::Device*. */
+  void* device;
+} mln_metal_surface_descriptor;
+
+/** Vulkan native surface session attachment options. */
+typedef struct mln_vulkan_surface_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. */
+  uint32_t width;
+  /** Logical map height in UI pixels. */
+  uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
+  double scale_factor;
+  /** Borrowed VkInstance. Required. */
+  void* instance;
+  /** Borrowed VkPhysicalDevice. Required. */
+  void* physical_device;
+  /** Borrowed VkDevice. Required. */
+  void* device;
+  /** Borrowed graphics VkQueue. Required. */
+  void* graphics_queue;
+  /** Queue family index for graphics_queue. Must support graphics commands. */
+  uint32_t graphics_queue_family_index;
+  /** Borrowed VkSurfaceKHR. Required. */
+  void* surface;
+} mln_vulkan_surface_descriptor;
+
+/**
+ * Returns Metal surface descriptor values initialized for this C API version.
+ */
+MLN_API mln_metal_surface_descriptor
+mln_metal_surface_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Returns Vulkan surface descriptor values initialized for this C API version.
+ */
+MLN_API mln_vulkan_surface_descriptor
+mln_vulkan_surface_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Attaches a Metal native surface render target to a map.
+ *
+ * The map may have at most one live render target session. The session and
+ * every surface-session call are owner-thread affine to the map owner thread.
+ * The wrapper renders into and presents through the caller-provided
+ * CAMetalLayer. On success, *out_surface receives a handle the caller destroys
+ * with mln_surface_destroy().
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_surface is null, or *out_surface is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_UNSUPPORTED when Metal surface sessions are not supported by
+ *   this build.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_metal_surface_attach(
+  mln_map* map, const mln_metal_surface_descriptor* descriptor,
+  mln_surface_session** out_surface
+) MLN_NOEXCEPT;
+
+/**
+ * Attaches a Vulkan native surface render target to a map.
+ *
+ * The map may have at most one live render target session. The session and
+ * every surface-session call are owner-thread affine to the map owner thread.
+ * The wrapper renders into and presents through the caller-provided
+ * VkSurfaceKHR. On success, *out_surface receives a handle the caller destroys
+ * with mln_surface_destroy().
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_surface is null, or *out_surface is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_UNSUPPORTED when Vulkan surface sessions are not supported by
+ *   this build.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_vulkan_surface_attach(
+  mln_map* map, const mln_vulkan_surface_descriptor* descriptor,
+  mln_surface_session** out_surface
+) MLN_NOEXCEPT;
+
+/**
+ * Resizes a surface session and advances its generation.
+ *
+ * Width and height are logical map dimensions. The session presents to a
+ * physical backend surface sized from the logical dimensions and scale_factor.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when surface is null or not live, dimensions
+ *   are zero, or scale_factor is not positive and finite.
+ * - MLN_STATUS_INVALID_STATE when the session is detached.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_surface_resize(
+  mln_surface_session* surface, uint32_t width, uint32_t height,
+  double scale_factor
+) MLN_NOEXCEPT;
+
+/**
+ * Processes the latest map render update for a native surface session.
+ *
+ * When the update produces a frame, this renders and presents through the
+ * session's native surface.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when surface is null or not live.
+ * - MLN_STATUS_INVALID_STATE when no render update is available, the current
+ *   update does not produce a frame, or the session is detached.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_surface_render_update(mln_surface_session* surface) MLN_NOEXCEPT;
+
+/**
+ * Detaches backend-bound surface resources from the map while keeping the
+ * session handle live for destruction.
+ *
+ * Detach advances the session generation. After detach, resize and render
+ * operations return MLN_STATUS_INVALID_STATE.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when surface is null or not live.
+ * - MLN_STATUS_INVALID_STATE when already detached.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_surface_detach(mln_surface_session* surface) MLN_NOEXCEPT;
+
+/**
+ * Destroys a surface session handle.
+ *
+ * If the session is still attached, this function detaches it first.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when surface is null or not live.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_surface_destroy(mln_surface_session* surface) MLN_NOEXCEPT;
 
 #pragma endregion
 
