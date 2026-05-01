@@ -73,12 +73,12 @@ pub fn restoreLogs() void {
     testing.expectEqual(c.MLN_STATUS_OK, c.mln_log_set_async_severity_mask(c.MLN_LOG_SEVERITY_MASK_DEFAULT)) catch @panic("log async mask restore failed");
 }
 
-pub fn drainEvents(map: *c.mln_map) !usize {
+pub fn drainEvents(runtime: *c.mln_runtime) !usize {
     var count: usize = 0;
     while (true) {
         var event = emptyEvent();
         var has_event = false;
-        const status = c.mln_map_poll_event(map, &event, &has_event);
+        const status = c.mln_runtime_poll_event(runtime, &event, &has_event);
         try testing.expectEqual(c.MLN_STATUS_OK, status);
         if (!has_event) break;
         count += 1;
@@ -92,17 +92,30 @@ pub fn waitForEvent(runtime: *c.mln_runtime, map: *c.mln_map, event_type: u32) !
         while (true) {
             var event = emptyEvent();
             var has_event = false;
-            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_poll_event(runtime, &event, &has_event));
             if (!has_event) break;
-            if (event.type == event_type) return true;
+            if (event.type == event_type and
+                event.source_type == c.MLN_RUNTIME_EVENT_SOURCE_MAP and
+                event.source == @as(?*anyopaque, @ptrCast(map))) return true;
         }
         _ = usleep(1000);
     }
     return false;
 }
 
-pub fn emptyEvent() c.mln_map_event {
-    return .{ .size = @sizeOf(c.mln_map_event), .type = 0, .code = 0, .message = null, .message_size = 0 };
+pub fn emptyEvent() c.mln_runtime_event {
+    return .{
+        .size = @sizeOf(c.mln_runtime_event),
+        .type = 0,
+        .source_type = c.MLN_RUNTIME_EVENT_SOURCE_RUNTIME,
+        .source = null,
+        .code = 0,
+        .payload_type = c.MLN_RUNTIME_EVENT_PAYLOAD_NONE,
+        .payload = null,
+        .payload_size = 0,
+        .message = null,
+        .message_size = 0,
+    };
 }
 
 pub fn testCamera() c.mln_camera_options {

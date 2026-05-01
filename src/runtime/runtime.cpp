@@ -179,21 +179,23 @@ auto create_runtime(
     return MLN_STATUS_INVALID_STATE;
   }
 
-  auto owned_runtime = std::make_unique<mln_runtime>(mln_runtime{
-    .owner_thread = owner_thread,
-    .run_loop =
-      std::make_unique<mbgl::util::RunLoop>(mbgl::util::RunLoop::Type::New),
-    .asset_path = options == nullptr || options->asset_path == nullptr
-                    ? std::string{}
-                    : std::string{options->asset_path},
-    .cache_path = options == nullptr || options->cache_path == nullptr
-                    ? std::string{}
-                    : std::string{options->cache_path},
-    .has_maximum_cache_size =
-      options != nullptr &&
-      (options->flags & MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE) != 0,
-    .maximum_cache_size = options == nullptr ? 0 : options->maximum_cache_size,
-  });
+  auto owned_runtime = std::make_unique<mln_runtime>();
+  owned_runtime->owner_thread = owner_thread;
+  owned_runtime->run_loop =
+    std::make_unique<mbgl::util::RunLoop>(mbgl::util::RunLoop::Type::New);
+  owned_runtime->asset_path =
+    options == nullptr || options->asset_path == nullptr
+      ? std::string{}
+      : std::string{options->asset_path};
+  owned_runtime->cache_path =
+    options == nullptr || options->cache_path == nullptr
+      ? std::string{}
+      : std::string{options->cache_path};
+  owned_runtime->has_maximum_cache_size =
+    options != nullptr &&
+    (options->flags & MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE) != 0;
+  owned_runtime->maximum_cache_size =
+    options == nullptr ? 0 : options->maximum_cache_size;
   auto* runtime = owned_runtime.get();
   {
     const std::scoped_lock lock(runtime_registry_mutex());
@@ -350,6 +352,67 @@ auto run_runtime_once(mln_runtime* runtime) -> mln_status {
   return MLN_STATUS_OK;
 }
 
+auto poll_runtime_event(
+  mln_runtime* runtime, mln_runtime_event* out_event, bool* out_has_event
+) -> mln_status {
+  const auto status = validate_runtime(runtime);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    out_event == nullptr || out_has_event == nullptr ||
+    out_event->size < sizeof(mln_runtime_event)
+  ) {
+    set_thread_error(
+      "out_event and out_has_event must not be null, and out_event must have a "
+      "valid size"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  runtime->last_polled_event_payload.clear();
+  runtime->last_polled_event_message.clear();
+  *out_event = mln_runtime_event{
+    .size = sizeof(mln_runtime_event),
+    .type = 0,
+    .source_type = MLN_RUNTIME_EVENT_SOURCE_RUNTIME,
+    .source = runtime,
+    .code = 0,
+    .payload_type = MLN_RUNTIME_EVENT_PAYLOAD_NONE,
+    .payload = nullptr,
+    .payload_size = 0,
+    .message = nullptr,
+    .message_size = 0
+  };
+
+  if (runtime->events.empty()) {
+    *out_has_event = false;
+    return MLN_STATUS_OK;
+  }
+
+  auto event = std::move(runtime->events.front());
+  runtime->events.pop_front();
+  runtime->last_polled_event_payload = std::move(event.payload);
+  runtime->last_polled_event_message = std::move(event.message);
+
+  out_event->type = event.type;
+  out_event->source_type = event.source_type;
+  out_event->source = event.source;
+  out_event->code = event.code;
+  out_event->payload_type = event.payload_type;
+  out_event->payload = runtime->last_polled_event_payload.empty()
+                         ? nullptr
+                         : runtime->last_polled_event_payload.data();
+  out_event->payload_size = runtime->last_polled_event_payload.size();
+  out_event->message = runtime->last_polled_event_message.empty()
+                         ? nullptr
+                         : runtime->last_polled_event_message.c_str();
+  out_event->message_size = runtime->last_polled_event_message.size();
+  *out_has_event = true;
+  return MLN_STATUS_OK;
+}
+
 auto retain_runtime_map(mln_runtime* runtime) -> mln_status {
   const auto status = validate_runtime(runtime);
   if (status != MLN_STATUS_OK) {
@@ -399,6 +462,92 @@ auto find_runtime_for_platform_context(void* platform_context) noexcept
   const std::scoped_lock lock(runtime_registry_mutex());
   auto* runtime = static_cast<mln_runtime*>(platform_context);
   return runtime_registry().contains(runtime) ? runtime : nullptr;
+}
+
+auto push_runtime_map_event(
+  mln_runtime* runtime, mln_map* map, uint32_t type, int32_t code,
+  const char* message
+) -> void {
+  if (runtime == nullptr) {
+    return;
+  }
+
+  auto event = QueuedRuntimeEvent{
+    .type = type,
+    .source_type = MLN_RUNTIME_EVENT_SOURCE_MAP,
+    .source = map,
+    .map = map,
+    .code = code,
+    .payload_type = MLN_RUNTIME_EVENT_PAYLOAD_NONE,
+    .payload = {},
+    .message = message == nullptr ? std::string{} : std::string{message}
+  };
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  if (map != nullptr && !runtime->event_maps.contains(map)) {
+    return;
+  }
+  if (type == MLN_RUNTIME_EVENT_MAP_LOADING_FAILED && map != nullptr) {
+    runtime->map_loading_failures[map] = event.message;
+  }
+  runtime->events.push_back(std::move(event));
+}
+
+auto register_runtime_map_events(mln_runtime* runtime, const mln_map* map)
+  -> void {
+  if (runtime == nullptr || map == nullptr) {
+    return;
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  runtime->event_maps.insert(map);
+}
+
+auto clear_runtime_map_loading_failure(mln_runtime* runtime, const mln_map* map)
+  -> void {
+  if (runtime == nullptr || map == nullptr) {
+    return;
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  runtime->map_loading_failures.erase(map);
+}
+
+auto runtime_map_loading_failed(mln_runtime* runtime, const mln_map* map)
+  -> bool {
+  if (runtime == nullptr || map == nullptr) {
+    return false;
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  return runtime->map_loading_failures.contains(map);
+}
+
+auto runtime_map_loading_failure_message(
+  mln_runtime* runtime, const mln_map* map
+) -> std::string {
+  if (runtime == nullptr || map == nullptr) {
+    return {};
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  const auto found = runtime->map_loading_failures.find(map);
+  return found == runtime->map_loading_failures.end() ? std::string{}
+                                                      : found->second;
+}
+
+auto discard_runtime_map_events(mln_runtime* runtime, const mln_map* map)
+  -> void {
+  if (runtime == nullptr || map == nullptr) {
+    return;
+  }
+
+  const std::scoped_lock lock(runtime->event_mutex);
+  runtime->event_maps.erase(map);
+  std::erase_if(runtime->events, [map](const auto& event) -> bool {
+    return event.map == map;
+  });
+  runtime->map_loading_failures.erase(map);
 }
 
 }  // namespace mln::core

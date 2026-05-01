@@ -91,7 +91,7 @@ pub fn main(init_args: std.process.Init) !void {
         }
 
         _ = c.mln_runtime_run_once(map.runtime);
-        const render_update_available = try map_state.drainEvents(map.map);
+        const render_update_available = try map_state.drainEvents(map.runtime, map.map);
         render_pending = render_pending or render_update_available;
         did_work = did_work or render_update_available;
 

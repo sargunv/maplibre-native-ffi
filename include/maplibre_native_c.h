@@ -9,7 +9,7 @@
  * Status-returning functions clear thread-local diagnostics on entry. After a
  * synchronous failure status is returned, read
  * mln_thread_last_error_message() on the same thread before making another C
- * API call. Asynchronous native failures are reported through map events.
+ * API call. Asynchronous native failures are reported through runtime events.
  *
  * This header targets C23.
  */
@@ -219,6 +219,33 @@ typedef enum mln_ambient_cache_operation : uint32_t {
   MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
 } mln_ambient_cache_operation;
 
+/** Runtime event types returned by mln_runtime_poll_event(). */
+typedef enum mln_runtime_event_type : uint32_t {
+  MLN_RUNTIME_EVENT_MAP_CAMERA_WILL_CHANGE = 1,
+  MLN_RUNTIME_EVENT_MAP_CAMERA_IS_CHANGING = 2,
+  MLN_RUNTIME_EVENT_MAP_CAMERA_DID_CHANGE = 3,
+  MLN_RUNTIME_EVENT_MAP_STYLE_LOADED = 4,
+  MLN_RUNTIME_EVENT_MAP_LOADING_STARTED = 5,
+  MLN_RUNTIME_EVENT_MAP_LOADING_FINISHED = 6,
+  MLN_RUNTIME_EVENT_MAP_LOADING_FAILED = 7,
+  MLN_RUNTIME_EVENT_MAP_IDLE = 8,
+  MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE = 9,
+  MLN_RUNTIME_EVENT_MAP_RENDER_ERROR = 10,
+  MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED = 11,
+  MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED = 12,
+} mln_runtime_event_type;
+
+/** Source kinds used by mln_runtime_event.source_type. */
+typedef enum mln_runtime_event_source_type : uint32_t {
+  MLN_RUNTIME_EVENT_SOURCE_RUNTIME = 0,
+  MLN_RUNTIME_EVENT_SOURCE_MAP = 1,
+} mln_runtime_event_source_type;
+
+/** Payload kinds used by mln_runtime_event.payload_type. */
+typedef enum mln_runtime_event_payload_type : uint32_t {
+  MLN_RUNTIME_EVENT_PAYLOAD_NONE = 0,
+} mln_runtime_event_payload_type;
+
 typedef enum mln_resource_kind : uint32_t {
   MLN_RESOURCE_KIND_UNKNOWN = 0,
   MLN_RESOURCE_KIND_STYLE = 1,
@@ -309,6 +336,31 @@ typedef struct mln_runtime_options {
   /** Maximum ambient cache size in bytes when the matching flag is set. */
   uint64_t maximum_cache_size;
 } mln_runtime_options;
+
+/** Event payload returned by mln_runtime_poll_event(). */
+typedef struct mln_runtime_event {
+  uint32_t size;
+  uint32_t type;
+  /** One of mln_runtime_event_source_type. */
+  uint32_t source_type;
+  /**
+   * Source handle for this event. For map-originated events, this is an
+   * mln_map*. For runtime-originated events, this is an mln_runtime*. Borrowed;
+   * valid while the source handle remains live.
+   */
+  void* source;
+  int32_t code;
+  /** One of mln_runtime_event_payload_type. */
+  uint32_t payload_type;
+  /** Borrowed payload bytes. Null when payload_size is 0. */
+  const void* payload;
+  /** Number of bytes in payload. */
+  size_t payload_size;
+  /** Borrowed event message bytes. Null when message_size is 0. */
+  const char* message;
+  /** Number of bytes in message, excluding the trailing null terminator. */
+  size_t message_size;
+} mln_runtime_event;
 
 typedef struct mln_resource_transform_response {
   uint32_t size;
@@ -594,9 +646,37 @@ MLN_API mln_status mln_runtime_destroy(mln_runtime* runtime) MLN_NOEXCEPT;
  */
 MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 
+/**
+ * Pops the next queued runtime event.
+ *
+ * On success, *out_event is reset and *out_has_event indicates whether an event
+ * was available. When an event is available, *out_event receives it.
+ * Map-originated events set out_event->source_type to
+ * MLN_RUNTIME_EVENT_SOURCE_MAP and out_event->source to the source map.
+ * Runtime-originated events set out_event->source_type to
+ * MLN_RUNTIME_EVENT_SOURCE_RUNTIME.
+ *
+ * When an event is available, out_event->payload and out_event->message point
+ * to runtime-owned storage that remains valid until the next
+ * mln_runtime_poll_event() call for the same runtime or until the runtime is
+ * destroyed. Copy those bytes before then when they must outlive that window.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an
+ *   event was written to out_event.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, out_event is
+ *   null, out_has_event is null, or out_event->size is too small.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_runtime_poll_event(
+  mln_runtime* runtime, mln_runtime_event* out_event, bool* out_has_event
+) MLN_NOEXCEPT;
+
 #pragma endregion
 
-#pragma region Map types, lifecycle, style, and events
+#pragma region Map types, lifecycle, and style
 /** Field mask values for mln_camera_options. */
 typedef enum mln_camera_option_field : uint32_t {
   MLN_CAMERA_OPTION_CENTER = 1u << 0u,
@@ -621,22 +701,6 @@ typedef enum mln_map_mode : uint32_t {
   /** Produces one-off still images for a single tile. */
   MLN_MAP_MODE_TILE = 2,
 } mln_map_mode;
-
-/** Map event types returned by mln_map_poll_event(). */
-typedef enum mln_map_event_type : uint32_t {
-  MLN_MAP_EVENT_CAMERA_WILL_CHANGE = 1,
-  MLN_MAP_EVENT_CAMERA_IS_CHANGING = 2,
-  MLN_MAP_EVENT_CAMERA_DID_CHANGE = 3,
-  MLN_MAP_EVENT_STYLE_LOADED = 4,
-  MLN_MAP_EVENT_MAP_LOADING_STARTED = 5,
-  MLN_MAP_EVENT_MAP_LOADING_FINISHED = 6,
-  MLN_MAP_EVENT_MAP_LOADING_FAILED = 7,
-  MLN_MAP_EVENT_MAP_IDLE = 8,
-  MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE = 9,
-  MLN_MAP_EVENT_RENDER_ERROR = 10,
-  MLN_MAP_EVENT_STILL_IMAGE_FINISHED = 11,
-  MLN_MAP_EVENT_STILL_IMAGE_FAILED = 12,
-} mln_map_event_type;
 
 /** Options used when creating a map. */
 typedef struct mln_map_options {
@@ -712,17 +776,6 @@ typedef struct mln_projection_mode {
   double y_skew;
 } mln_projection_mode;
 
-/** Map event payload returned by mln_map_poll_event(). */
-typedef struct mln_map_event {
-  uint32_t size;
-  uint32_t type;
-  int32_t code;
-  /** Borrowed event message bytes. Null when message_size is 0. */
-  const char* message;
-  /** Number of bytes in message, excluding the trailing null terminator. */
-  size_t message_size;
-} mln_map_event;
-
 /**
  * Returns map options initialized for this C API version.
  */
@@ -750,9 +803,10 @@ MLN_API mln_status mln_map_create(
  *
  * Continuous maps also invalidate automatically when style data, resources,
  * camera, or transitions change. Ask attached render targets to process the
- * latest update when MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE is reported. Repaint
- * requests do not produce MLN_MAP_EVENT_STILL_IMAGE_FINISHED or
- * MLN_MAP_EVENT_STILL_IMAGE_FAILED events.
+ * latest update when MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE is reported.
+ * Repaint requests do not produce
+ * MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED or
+ * MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED events.
  *
  * Returns:
  * - MLN_STATUS_OK when the request was accepted.
@@ -767,15 +821,16 @@ MLN_API mln_status mln_map_request_repaint(mln_map* map) MLN_NOEXCEPT;
 /**
  * Requests one still image for a static or tile map.
  *
- * Pump the runtime and poll map events until
- * MLN_MAP_EVENT_STILL_IMAGE_FINISHED or MLN_MAP_EVENT_STILL_IMAGE_FAILED is
- * reported. While the request is pending, ask the attached render target to
- * process the latest update whenever MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE is
- * reported. Texture targets do this with mln_texture_render_update(), which can
- * return MLN_STATUS_INVALID_STATE when no frame is produced for that update.
- * Keep pumping and polling in that case. After
- * MLN_MAP_EVENT_STILL_IMAGE_FINISHED, acquire the frame produced by the most
- * recent successful target update.
+ * Pump the runtime and poll runtime events for this map until
+ * MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED or
+ * MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED is reported. While the request is
+ * pending, process render target updates for
+ * MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE events from this map. Texture
+ * targets do this with mln_texture_render_update(), which can return
+ * MLN_STATUS_INVALID_STATE when no frame is produced for that update. Keep
+ * pumping and polling in that case. After
+ * MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED, acquire the frame produced by the
+ * most recent successful target update.
  *
  * Returns:
  * - MLN_STATUS_OK when the request was accepted.
@@ -807,7 +862,8 @@ MLN_API mln_status mln_map_destroy(mln_map* map) MLN_NOEXCEPT;
  * Loads a style URL through MapLibre Native style APIs.
  *
  * This is a map command. The return status reports synchronous acceptance or
- * failure. Later native success and failure are reported through map events.
+ * failure. Later native success and failure are reported through runtime
+ * events.
  *
  * Returns:
  * - MLN_STATUS_OK when the load request was accepted.
@@ -824,9 +880,9 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
  * Loads inline style JSON through MapLibre Native style APIs.
  *
  * This is a map command. The return status reports synchronous acceptance or
- * failure. Later native success and failure are reported through map events.
- * Malformed JSON can fail synchronously and still enqueue a loading-failed
- * event.
+ * failure. Later native success and failure are reported through runtime
+ * events. Malformed JSON can fail synchronously and still enqueue a
+ * loading-failed event.
  *
  * Returns:
  * - MLN_STATUS_OK when the load request was accepted.
@@ -838,28 +894,6 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
  */
 MLN_API mln_status
 mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
-
-/**
- * Pops the next queued map event.
- *
- * On success, *out_event is overwritten and *out_has_event indicates whether an
- * event was available. When an event is available, out_event->message points to
- * map-owned storage that remains valid until the next mln_map_poll_event() call
- * for the same map or until the map is destroyed. Copy message bytes before
- * then when they must outlive that window.
- *
- * Returns:
- * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an
- *   event was written to out_event.
- * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, out_event is
- *   null, out_has_event is null, or out_event->size is too small.
- * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
- *   thread.
- * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
- */
-MLN_API mln_status mln_map_poll_event(
-  mln_map* map, mln_map_event* out_event, bool* out_has_event
-) MLN_NOEXCEPT;
 
 #pragma endregion
 
@@ -1094,7 +1128,7 @@ MLN_API mln_status mln_map_lat_lngs_for_pixels(
  * Creates a standalone projection helper from the current map transform.
  *
  * The helper owns projection and camera transform state only. It does not own
- * style, resources, render targets, or map events. Use it to convert
+ * style, resources, render targets, or runtime events. Use it to convert
  * coordinates or compute camera fitting without changing the source map.
  *
  * Creation snapshots the map's transform. Later map camera or projection

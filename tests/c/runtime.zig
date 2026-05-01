@@ -7,6 +7,12 @@ fn destroyRuntimeOnThread(runtime: *c.mln_runtime, out_status: *c.mln_status) vo
     out_status.* = c.mln_runtime_destroy(runtime);
 }
 
+fn pollRuntimeOnThread(runtime: *c.mln_runtime, out_status: *c.mln_status) void {
+    var event = support.emptyEvent();
+    var has_event = false;
+    out_status.* = c.mln_runtime_poll_event(runtime, &event, &has_event);
+}
+
 fn createRuntimeOnThread(out_status: *c.mln_status) void {
     var runtime: ?*c.mln_runtime = null;
     var options = c.mln_runtime_options_default();
@@ -62,12 +68,29 @@ test "runtime run once rejects null runtime" {
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_run_once(null));
 }
 
+test "runtime event polling rejects null runtime" {
+    var event = support.emptyEvent();
+    var has_event = false;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_poll_event(null, &event, &has_event));
+}
+
 test "runtime rejects wrong-thread destroy" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
 
     var status: c.mln_status = c.MLN_STATUS_OK;
     const thread = try std.Thread.spawn(.{}, destroyRuntimeOnThread, .{ runtime, &status });
+    thread.join();
+
+    try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);
+}
+
+test "runtime rejects wrong-thread event polling" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var status: c.mln_status = c.MLN_STATUS_OK;
+    const thread = try std.Thread.spawn(.{}, pollRuntimeOnThread, .{ runtime, &status });
     thread.join();
 
     try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);
