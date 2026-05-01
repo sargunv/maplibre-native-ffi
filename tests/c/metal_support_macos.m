@@ -8,6 +8,17 @@ typedef struct mln_test_window_metal_layer {
   void* layer;
 } mln_test_window_metal_layer;
 
+@interface MLNTestCountingMetalLayer : CAMetalLayer
+@property(nonatomic) uint32_t nextDrawableCount;
+@end
+
+@implementation MLNTestCountingMetalLayer
+- (id<CAMetalDrawable>)nextDrawable {
+  _nextDrawableCount += 1;
+  return [super nextDrawable];
+}
+@end
+
 extern void* objc_autoreleasePoolPush(void);
 extern void objc_autoreleasePoolPop(void* pool);
 
@@ -21,8 +32,9 @@ void mln_test_autorelease_pool_pop(void* pool) {
 
 void* mln_test_create_metal_layer(void) { return [CAMetalLayer layer]; }
 
-bool mln_test_create_window_metal_layer(
-  uint32_t width, uint32_t height, mln_test_window_metal_layer* out_layer
+static bool create_window_metal_layer(
+  uint32_t width, uint32_t height, bool counted,
+  mln_test_window_metal_layer* out_layer
 ) {
   if (out_layer == NULL || width == 0 || height == 0) {
     return false;
@@ -43,7 +55,8 @@ bool mln_test_create_window_metal_layer(
 
     [window setReleasedWhenClosed:NO];
     NSView* content_view = [window contentView];
-    CAMetalLayer* layer = [CAMetalLayer layer];
+    CAMetalLayer* layer =
+      counted ? [MLNTestCountingMetalLayer layer] : [CAMetalLayer layer];
     if (content_view == nil || layer == nil) {
       [window release];
       return false;
@@ -59,6 +72,26 @@ bool mln_test_create_window_metal_layer(
     [window release];
     return false;
   }
+}
+
+bool mln_test_create_window_metal_layer(
+  uint32_t width, uint32_t height, mln_test_window_metal_layer* out_layer
+) {
+  return create_window_metal_layer(width, height, false, out_layer);
+}
+
+bool mln_test_create_counting_window_metal_layer(
+  uint32_t width, uint32_t height, mln_test_window_metal_layer* out_layer
+) {
+  return create_window_metal_layer(width, height, true, out_layer);
+}
+
+uint32_t mln_test_metal_layer_next_drawable_count(void* layer) {
+  id object = (id)layer;
+  if (![object isKindOfClass:[MLNTestCountingMetalLayer class]]) {
+    return 0;
+  }
+  return [(MLNTestCountingMetalLayer*)object nextDrawableCount];
 }
 
 void mln_test_destroy_window_metal_layer(

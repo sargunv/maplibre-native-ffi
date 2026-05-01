@@ -78,6 +78,10 @@ class MetalSurfaceBackend final : public mbgl::mtl::RendererBackend,
     }
 
     void bind() override {
+      if (drawable && commandBuffer && renderPassDescriptor) {
+        return;
+      }
+
       auto* next_drawable = layer->nextDrawable();
       if (next_drawable == nullptr) {
         throw std::runtime_error("Metal surface did not provide a drawable");

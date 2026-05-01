@@ -26,6 +26,8 @@ extern "c" fn mln_test_autorelease_pool_push() ?*anyopaque;
 extern "c" fn mln_test_autorelease_pool_pop(pool: *anyopaque) void;
 extern "c" fn mln_test_create_metal_layer() ?*anyopaque;
 extern "c" fn mln_test_create_window_metal_layer(width: u32, height: u32, out_layer: *WindowLayer) bool;
+extern "c" fn mln_test_create_counting_window_metal_layer(width: u32, height: u32, out_layer: *WindowLayer) bool;
+extern "c" fn mln_test_metal_layer_next_drawable_count(layer: *anyopaque) u32;
 extern "c" fn mln_test_destroy_window_metal_layer(window_layer: *WindowLayer) void;
 
 pub fn createLayer() !*anyopaque {
@@ -40,4 +42,17 @@ pub fn createWindowLayer(width: u32, height: u32) !WindowLayer {
         return error.MetalWindowUnavailable;
     }
     return window_layer;
+}
+
+pub fn createCountingWindowLayer(width: u32, height: u32) !WindowLayer {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    var window_layer = WindowLayer{ .window = null, .layer = null };
+    if (!mln_test_create_counting_window_metal_layer(width, height, &window_layer) or window_layer.layer == null) {
+        return error.MetalWindowUnavailable;
+    }
+    return window_layer;
+}
+
+pub fn nextDrawableCount(layer: *anyopaque) u32 {
+    return mln_test_metal_layer_next_drawable_count(layer);
 }
