@@ -46,6 +46,8 @@ struct mln_texture_session {
 
 namespace mln::core {
 
+auto owned_texture_descriptor_default() noexcept
+  -> mln_owned_texture_descriptor;
 auto metal_texture_descriptor_default() noexcept
   -> mln_metal_texture_descriptor;
 auto vulkan_texture_descriptor_default() noexcept
@@ -59,6 +61,10 @@ auto validate_physical_size(
 ) -> mln_status;
 auto texture_attach_session(
   std::unique_ptr<mln_texture_session> session,
+  mln_texture_session** out_texture
+) -> mln_status;
+auto owned_texture_attach(
+  mln_map* map, const mln_owned_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status;
 auto metal_texture_attach(

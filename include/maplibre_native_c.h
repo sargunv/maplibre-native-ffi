@@ -1386,6 +1386,17 @@ MLN_API mln_status mln_lat_lng_for_projected_meters(
 
 #pragma region Texture sessions
 
+/** MapLibre-owned texture session attachment options. */
+typedef struct mln_owned_texture_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. */
+  uint32_t width;
+  /** Logical map height in UI pixels. */
+  uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
+  double scale_factor;
+} mln_owned_texture_descriptor;
+
 /** Metal texture session attachment options. */
 typedef struct mln_metal_texture_descriptor {
   uint32_t size;
@@ -1467,6 +1478,13 @@ typedef struct mln_vulkan_texture_frame {
 } mln_vulkan_texture_frame;
 
 /**
+ * Returns MapLibre-owned texture descriptor values initialized for this C API
+ * version.
+ */
+MLN_API mln_owned_texture_descriptor
+mln_owned_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
  * Returns Metal texture descriptor values initialized for this C API version.
  */
 MLN_API mln_metal_texture_descriptor
@@ -1477,6 +1495,33 @@ mln_metal_texture_descriptor_default(void) MLN_NOEXCEPT;
  */
 MLN_API mln_vulkan_texture_descriptor
 mln_vulkan_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Attaches a MapLibre-owned offscreen texture render target to a map.
+ *
+ * The map may have at most one live texture session. The session and every
+ * texture-session call are owner-thread affine to the map owner thread. The
+ * wrapper creates a backend-native offscreen target using MapLibre Native's
+ * default headless backend for this build. On success, *out_texture receives a
+ * handle the caller destroys with mln_texture_destroy().
+ *
+ * This target is intended for still-image and CPU-readback workflows. Use the
+ * backend-specific host-provided texture attach functions when a UI framework
+ * needs to sample the rendered texture on its own graphics device.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_texture is null, or *out_texture is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a texture session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_owned_texture_attach(
+  mln_map* map, const mln_owned_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) MLN_NOEXCEPT;
 
 /**
  * Attaches a Metal offscreen texture render target to a map.

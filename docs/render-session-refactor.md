@@ -274,7 +274,7 @@ The lowest-risk order is:
 - [x] Generalize map attachment from one `texture_session` to one render target
       session.
 - [x] Move common session lifecycle into shared render-session code.
-- [ ] Add MapLibre-owned/offscreen texture sessions for readback-first server
+- [x] Add MapLibre-owned/offscreen texture sessions for readback-first server
       use.
 - [ ] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
 - [ ] Add shared/exportable texture descriptors and frame metadata for cross-API

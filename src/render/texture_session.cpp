@@ -8,6 +8,9 @@
 #include <utility>
 
 #include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/gfx/headless_backend.hpp>
+#include <mbgl/gfx/renderable.hpp>
+#include <mbgl/gfx/renderer_backend.hpp>
 #include <mbgl/map/map.hpp>
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/util/size.hpp>
@@ -33,9 +36,43 @@ auto texture_registry() -> TextureRegistry& {
   return registry;
 }
 
+auto validate_owned_descriptor(const mln_owned_texture_descriptor* descriptor)
+  -> mln_status {
+  if (descriptor == nullptr) {
+    mln::core::set_thread_error("texture descriptor must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (descriptor->size < sizeof(mln_owned_texture_descriptor)) {
+    mln::core::set_thread_error(
+      "mln_owned_texture_descriptor.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    descriptor->width == 0 || descriptor->height == 0 ||
+    !std::isfinite(descriptor->scale_factor) || descriptor->scale_factor <= 0.0
+  ) {
+    mln::core::set_thread_error(
+      "texture dimensions and scale_factor must be positive"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
 }  // namespace
 
 namespace mln::core {
+
+auto owned_texture_descriptor_default() noexcept
+  -> mln_owned_texture_descriptor {
+  return mln_owned_texture_descriptor{
+    .size = sizeof(mln_owned_texture_descriptor),
+    .width = 256,
+    .height = 256,
+    .scale_factor = 1.0
+  };
+}
 
 auto validate_attach_output(mln_texture_session** out_texture) -> mln_status {
   if (out_texture == nullptr) {
@@ -130,6 +167,47 @@ auto texture_attach_session(
 
   *out_texture = handle;
   return MLN_STATUS_OK;
+}
+
+auto owned_texture_attach(
+  mln_map* map, const mln_owned_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) -> mln_status {
+  const auto map_status = validate_map(map);
+  if (map_status != MLN_STATUS_OK) {
+    return map_status;
+  }
+  const auto descriptor_status = validate_owned_descriptor(descriptor);
+  if (descriptor_status != MLN_STATUS_OK) {
+    return descriptor_status;
+  }
+  const auto output_status = validate_attach_output(out_texture);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
+  }
+
+  auto session = std::make_unique<mln_texture_session>();
+  session->map = map;
+  session->owner_thread = map_owner_thread(map);
+  session->width = descriptor->width;
+  session->height = descriptor->height;
+  session->scale_factor = descriptor->scale_factor;
+  session->physical_width =
+    physical_dimension(descriptor->width, descriptor->scale_factor);
+  session->physical_height =
+    physical_dimension(descriptor->height, descriptor->scale_factor);
+  session->backend_kind = TextureSessionBackend::Owned;
+  session->backend = mbgl::gfx::HeadlessBackend::Create(
+    mbgl::Size{session->physical_width, session->physical_height},
+    mbgl::gfx::Renderable::SwapBehaviour::Flush, mbgl::gfx::ContextMode::Unique
+  );
+  return texture_attach_session(std::move(session), out_texture);
 }
 
 auto texture_resize(
