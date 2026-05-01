@@ -19,7 +19,7 @@ test "map loads inline style and emits events" {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
     }
 
-    try testing.expect(try support.drainEvents(map) > 0);
+    try testing.expect(try support.drainEvents(runtime) > 0);
 }
 
 test "malformed style returns failure status and event" {
@@ -39,10 +39,13 @@ test "malformed style returns failure status and event" {
     while (true) {
         var event = support.emptyEvent();
         var has_event = false;
-        const status = c.mln_map_poll_event(map, &event, &has_event);
+        const status = c.mln_runtime_poll_event(runtime, &event, &has_event);
         try testing.expectEqual(c.MLN_STATUS_OK, status);
         if (!has_event) break;
-        if (event.type == c.MLN_MAP_EVENT_MAP_LOADING_FAILED) {
+        if (event.type == c.MLN_RUNTIME_EVENT_MAP_LOADING_FAILED and
+            event.source_type == c.MLN_RUNTIME_EVENT_SOURCE_MAP and
+            event.source == @as(?*anyopaque, @ptrCast(map)))
+        {
             saw_failed_event = true;
             break;
         }
@@ -75,5 +78,5 @@ test "unsupported style URL is accepted then emits failure event" {
     defer support.destroyMap(map);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "unsupported://style.json"));
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_MAP_LOADING_FAILED));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_LOADING_FAILED));
 }

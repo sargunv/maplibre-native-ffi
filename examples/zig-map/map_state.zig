@@ -57,23 +57,30 @@ pub const MapState = struct {
     }
 };
 
-pub fn drainEvents(map: *c.mln_map) !bool {
+pub fn drainEvents(runtime: *c.mln_runtime, map: *c.mln_map) !bool {
     var render_update_available = false;
     while (true) {
-        var event: c.mln_map_event = .{
-            .size = @sizeOf(c.mln_map_event),
+        var event: c.mln_runtime_event = .{
+            .size = @sizeOf(c.mln_runtime_event),
             .type = 0,
+            .source_type = c.MLN_RUNTIME_EVENT_SOURCE_RUNTIME,
+            .source = null,
             .code = 0,
+            .payload_type = c.MLN_RUNTIME_EVENT_PAYLOAD_NONE,
+            .payload = null,
+            .payload_size = 0,
             .message = null,
             .message_size = 0,
         };
         var has_event = false;
-        if (c.mln_map_poll_event(map, &event, &has_event) != c.MLN_STATUS_OK) {
+        if (c.mln_runtime_poll_event(runtime, &event, &has_event) != c.MLN_STATUS_OK) {
             diagnostics.logAbiError("event poll failed");
             return types.AppError.TextureRenderFailed;
         }
         if (!has_event) return render_update_available;
-        if (event.type == c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE) render_update_available = true;
+        if (event.source_type == c.MLN_RUNTIME_EVENT_SOURCE_MAP and
+            event.source == @as(?*anyopaque, @ptrCast(map)) and
+            event.type == c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE) render_update_available = true;
     }
 }
 

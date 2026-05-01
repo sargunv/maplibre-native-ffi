@@ -1,7 +1,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -64,142 +63,74 @@ auto map_projection_registry() -> ProjectionRegistry& {
   return value;
 }
 
-struct QueuedEvent {
-  mln_map_event_type type;
-  int32_t code;
-  std::string message;
-};
-
-class EventQueue final {
- public:
-  auto push(
-    mln_map_event_type type, int32_t code = 0, const char* message = nullptr
-  ) -> void {
-    auto event = QueuedEvent{
-      .type = type,
-      .code = code,
-      .message = message == nullptr ? std::string{} : std::string{message}
-    };
-
-    const std::scoped_lock lock(mutex_);
-    if (type == MLN_MAP_EVENT_MAP_LOADING_FAILED) {
-      failed_ = true;
-      failure_message_ = event.message;
-    }
-    events_.push_back(std::move(event));
-  }
-
-  auto clear_failure() -> void {
-    const std::scoped_lock lock(mutex_);
-    failed_ = false;
-    failure_message_.clear();
-  }
-
-  [[nodiscard]] auto failed() const -> bool {
-    const std::scoped_lock lock(mutex_);
-    return failed_;
-  }
-
-  [[nodiscard]] auto failure_message() const -> std::string {
-    const std::scoped_lock lock(mutex_);
-    return failure_message_;
-  }
-
-  auto poll(mln_map_event* out_event) -> bool {
-    const std::scoped_lock lock(mutex_);
-    last_polled_message_.clear();
-    *out_event = mln_map_event{
-      .size = sizeof(mln_map_event),
-      .type = 0,
-      .code = 0,
-      .message = nullptr,
-      .message_size = 0
-    };
-
-    if (events_.empty()) {
-      return false;
-    }
-
-    auto event = std::move(events_.front());
-    events_.pop_front();
-    last_polled_message_ = std::move(event.message);
-
-    out_event->type = static_cast<uint32_t>(event.type);
-    out_event->code = event.code;
-    out_event->message =
-      last_polled_message_.empty() ? nullptr : last_polled_message_.c_str();
-    out_event->message_size = last_polled_message_.size();
-    return true;
-  }
-
- private:
-  mutable std::mutex mutex_;
-  std::deque<QueuedEvent> events_;
-  std::string last_polled_message_;
-  bool failed_ = false;
-  std::string failure_message_;
-};
-
 class HeadlessObserver final : public mbgl::MapObserver {
  public:
-  explicit HeadlessObserver(EventQueue& events) : events_(&events) {}
+  HeadlessObserver(mln_runtime* runtime, mln_map* map)
+      : runtime_(runtime), map_(map) {}
 
   void onCameraWillChange(CameraChangeMode mode) override {
-    events_->push(MLN_MAP_EVENT_CAMERA_WILL_CHANGE, static_cast<int32_t>(mode));
+    push(MLN_RUNTIME_EVENT_MAP_CAMERA_WILL_CHANGE, static_cast<int32_t>(mode));
   }
 
   void onCameraIsChanging() override {
-    events_->push(MLN_MAP_EVENT_CAMERA_IS_CHANGING);
+    push(MLN_RUNTIME_EVENT_MAP_CAMERA_IS_CHANGING);
   }
 
   void onCameraDidChange(CameraChangeMode mode) override {
-    events_->push(MLN_MAP_EVENT_CAMERA_DID_CHANGE, static_cast<int32_t>(mode));
+    push(MLN_RUNTIME_EVENT_MAP_CAMERA_DID_CHANGE, static_cast<int32_t>(mode));
   }
 
   void onWillStartLoadingMap() override {
-    events_->push(MLN_MAP_EVENT_MAP_LOADING_STARTED);
+    push(MLN_RUNTIME_EVENT_MAP_LOADING_STARTED);
   }
 
   void onDidFinishLoadingMap() override {
-    events_->push(MLN_MAP_EVENT_MAP_LOADING_FINISHED);
+    push(MLN_RUNTIME_EVENT_MAP_LOADING_FINISHED);
   }
 
   void onDidFailLoadingMap(
     mbgl::MapLoadError error, const std::string& message
   ) override {
-    events_->push(
-      MLN_MAP_EVENT_MAP_LOADING_FAILED, static_cast<int32_t>(error),
+    push(
+      MLN_RUNTIME_EVENT_MAP_LOADING_FAILED, static_cast<int32_t>(error),
       message.c_str()
     );
   }
 
   void onDidFinishLoadingStyle() override {
-    events_->push(MLN_MAP_EVENT_STYLE_LOADED);
+    push(MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
   }
 
-  void onDidBecomeIdle() override { events_->push(MLN_MAP_EVENT_MAP_IDLE); }
+  void onDidBecomeIdle() override { push(MLN_RUNTIME_EVENT_MAP_IDLE); }
 
   void onRenderError(std::exception_ptr error) override {
     try {
       if (error) {
         std::rethrow_exception(error);
       }
-      events_->push(MLN_MAP_EVENT_RENDER_ERROR);
+      push(MLN_RUNTIME_EVENT_MAP_RENDER_ERROR);
     } catch (const std::exception& exception) {
-      events_->push(MLN_MAP_EVENT_RENDER_ERROR, 0, exception.what());
+      push(MLN_RUNTIME_EVENT_MAP_RENDER_ERROR, 0, exception.what());
     } catch (...) {
-      events_->push(MLN_MAP_EVENT_RENDER_ERROR, 0, "unknown render error");
+      push(MLN_RUNTIME_EVENT_MAP_RENDER_ERROR, 0, "unknown render error");
     }
   }
 
  private:
-  EventQueue* events_;
+  auto push(uint32_t type, int32_t code = 0, const char* message = nullptr)
+    -> void {
+    mln::core::push_runtime_map_event(runtime_, map_, type, code, message);
+  }
+
+  mln_runtime* runtime_;
+  mln_map* map_;
 };
 
 class HeadlessFrontend final : public mbgl::RendererFrontend {
  public:
-  explicit HeadlessFrontend(EventQueue& events)
-      : events_(&events),
+  HeadlessFrontend(mln_runtime* runtime, mln_map* map)
+      : runtime_(runtime),
+        map_(map),
         thread_pool_(
           mbgl::Scheduler::GetBackground(), mbgl::util::SimpleIdentity::Empty
         ) {}
@@ -216,7 +147,9 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
   void update(std::shared_ptr<mbgl::UpdateParameters> update) override {
     const std::scoped_lock lock(latest_update_mutex_);
     latest_update_ = std::move(update);
-    events_->push(MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE);
+    mln::core::push_runtime_map_event(
+      runtime_, map_, MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE
+    );
   }
 
   [[nodiscard]] auto latest_update() const
@@ -237,7 +170,8 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
   }
 
  private:
-  EventQueue* events_;
+  mln_runtime* runtime_;
+  mln_map* map_;
   mbgl::RendererObserver* observer_ = nullptr;
   mbgl::TaggedScheduler thread_pool_;
   mutable std::mutex latest_update_mutex_;
@@ -592,7 +526,6 @@ struct mln_map {
   std::thread::id owner_thread;
   uint32_t map_mode = MLN_MAP_MODE_CONTINUOUS;
   bool still_image_request_pending = false;
-  EventQueue events;
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
   std::unique_ptr<mbgl::Map> map;
@@ -632,11 +565,16 @@ auto finish_still_image_request(mln_map* map, std::exception_ptr error)
   map->still_image_request_pending = false;
   if (error) {
     const auto message = exception_message(error);
-    map->events.push(MLN_MAP_EVENT_STILL_IMAGE_FAILED, 0, message.c_str());
+    push_runtime_map_event(
+      map->runtime, map, MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED, 0,
+      message.c_str()
+    );
     return;
   }
 
-  map->events.push(MLN_MAP_EVENT_STILL_IMAGE_FINISHED);
+  push_runtime_map_event(
+    map->runtime, map, MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED
+  );
 }
 
 }  // namespace
@@ -737,25 +675,29 @@ auto create_map(
 
   const auto effective = options == nullptr ? map_options_default() : *options;
   auto owned_map = std::make_unique<mln_map>();
+  auto* handle = owned_map.get();
+  register_runtime_map_events(runtime, handle);
   owned_map->runtime = runtime;
   owned_map->owner_thread = std::this_thread::get_id();
   owned_map->map_mode = effective.map_mode;
-  owned_map->observer = std::make_unique<HeadlessObserver>(owned_map->events);
-  owned_map->frontend = std::make_unique<HeadlessFrontend>(owned_map->events);
+  try {
+    owned_map->observer = std::make_unique<HeadlessObserver>(runtime, handle);
+    owned_map->frontend = std::make_unique<HeadlessFrontend>(runtime, handle);
 
-  auto map_options = mbgl::MapOptions{};
-  map_options.withMapMode(to_native_map_mode(effective.map_mode))
-    .withSize(mbgl::Size{effective.width, effective.height})
-    .withPixelRatio(static_cast<float>(effective.scale_factor));
-  owned_map->map = std::make_unique<mbgl::Map>(
-    *owned_map->frontend, *owned_map->observer, map_options,
-    resource_options_for_runtime(runtime)
-  );
+    auto map_options = mbgl::MapOptions{};
+    map_options.withMapMode(to_native_map_mode(effective.map_mode))
+      .withSize(mbgl::Size{effective.width, effective.height})
+      .withPixelRatio(static_cast<float>(effective.scale_factor));
+    owned_map->map = std::make_unique<mbgl::Map>(
+      *owned_map->frontend, *owned_map->observer, map_options,
+      resource_options_for_runtime(runtime)
+    );
 
-  auto* handle = owned_map.get();
-  {
     const std::scoped_lock lock(map_registry_mutex());
     map_registry().emplace(handle, std::move(owned_map));
+  } catch (...) {
+    discard_runtime_map_events(runtime, handle);
+    throw;
   }
   *out_map = handle;
   retain_guard.dismiss();
@@ -781,6 +723,7 @@ auto destroy_map(mln_map* map) -> mln_status {
     owned_map = std::move(found->second);
     map_registry().erase(found);
   }
+  discard_runtime_map_events(runtime, map);
   owned_map.reset();
   release_runtime_map(runtime);
   return MLN_STATUS_OK;
@@ -905,10 +848,12 @@ auto map_set_style_url(mln_map* map, const char* url) -> mln_status {
     set_thread_error("url must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  map->events.clear_failure();
+  clear_runtime_map_loading_failure(map->runtime, map);
   map->map->getStyle().loadURL(url);
-  if (map->events.failed()) {
-    set_thread_error(map->events.failure_message().c_str());
+  if (runtime_map_loading_failed(map->runtime, map)) {
+    set_thread_error(
+      runtime_map_loading_failure_message(map->runtime, map).c_str()
+    );
     return MLN_STATUS_NATIVE_ERROR;
   }
   return MLN_STATUS_OK;
@@ -924,15 +869,20 @@ auto map_set_style_json(mln_map* map, const char* json) -> mln_status {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   try {
-    map->events.clear_failure();
+    clear_runtime_map_loading_failure(map->runtime, map);
     map->map->getStyle().loadJSON(json);
   } catch (const std::exception& exception) {
     set_thread_error(exception.what());
-    map->events.push(MLN_MAP_EVENT_MAP_LOADING_FAILED, 0, exception.what());
+    push_runtime_map_event(
+      map->runtime, map, MLN_RUNTIME_EVENT_MAP_LOADING_FAILED, 0,
+      exception.what()
+    );
     return MLN_STATUS_NATIVE_ERROR;
   }
-  if (map->events.failed()) {
-    set_thread_error(map->events.failure_message().c_str());
+  if (runtime_map_loading_failed(map->runtime, map)) {
+    set_thread_error(
+      runtime_map_loading_failure_message(map->runtime, map).c_str()
+    );
     return MLN_STATUS_NATIVE_ERROR;
   }
   return MLN_STATUS_OK;
@@ -1345,27 +1295,6 @@ auto map_cancel_transitions(mln_map* map) -> mln_status {
     return status;
   }
   map->map->cancelTransitions();
-  return MLN_STATUS_OK;
-}
-
-auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
-  -> mln_status {
-  const auto status = validate_map(map);
-  if (status != MLN_STATUS_OK) {
-    return status;
-  }
-  if (
-    out_event == nullptr || out_has_event == nullptr ||
-    out_event->size < sizeof(mln_map_event)
-  ) {
-    set_thread_error(
-      "out_event and out_has_event must not be null, and out_event must have a "
-      "valid size"
-    );
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-
-  *out_has_event = map->events.poll(out_event);
   return MLN_STATUS_OK;
 }
 

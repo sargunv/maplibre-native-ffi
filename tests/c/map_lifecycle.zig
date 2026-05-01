@@ -3,12 +3,6 @@ const testing = std.testing;
 const support = @import("support.zig");
 const c = support.c;
 
-fn pollMapOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
-    var event = support.emptyEvent();
-    var has_event = false;
-    out_status.* = c.mln_map_poll_event(map, &event, &has_event);
-}
-
 fn requestRepaintOnThread(map: *c.mln_map, out_status: *c.mln_status) void {
     out_status.* = c.mln_map_request_repaint(map);
 }
@@ -74,10 +68,6 @@ test "map lifecycle rejects invalid state and stale handles" {
     var camera = c.mln_camera_options_default();
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_get_camera(map, &camera));
 
-    var event = support.emptyEvent();
-    var has_event = true;
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_poll_event(map, &event, &has_event));
-
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_destroy(runtime));
 }
 
@@ -88,10 +78,10 @@ test "continuous repaint request makes render update available" {
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    _ = try support.drainEvents(map);
+    _ = try support.drainEvents(runtime);
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_still_image(map));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_repaint(map));
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE));
 }
 
 test "runtime supports multiple maps" {
@@ -115,11 +105,6 @@ test "map rejects wrong-thread calls" {
     defer support.destroyMap(map);
 
     var status: c.mln_status = c.MLN_STATUS_OK;
-    const thread = try std.Thread.spawn(.{}, pollMapOnThread, .{ map, &status });
-    thread.join();
-
-    try testing.expectEqual(c.MLN_STATUS_WRONG_THREAD, status);
-
     const request_thread = try std.Thread.spawn(.{}, requestRepaintOnThread, .{ map, &status });
     request_thread.join();
 

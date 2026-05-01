@@ -155,7 +155,7 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, fixture.acquire(&frame));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
-    _ = try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE);
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(fixture.texture));
     try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
@@ -219,11 +219,12 @@ pub fn expectStillModeStillImageRequest(comptime Backend: type, map_mode: u32) !
         while (true) {
             var event = support.emptyEvent();
             var has_event = false;
-            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_poll_event(map, &event, &has_event));
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_poll_event(runtime, &event, &has_event));
             if (!has_event) break;
+            if (event.source_type != c.MLN_RUNTIME_EVENT_SOURCE_MAP or event.source != @as(?*anyopaque, @ptrCast(map))) continue;
 
             switch (event.type) {
-                c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE => {
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE => {
                     const render_status = c.mln_texture_render_update(fixture.texture);
                     if (render_status == c.MLN_STATUS_OK) {
                         rendered_frame = true;
@@ -231,7 +232,7 @@ pub fn expectStillModeStillImageRequest(comptime Backend: type, map_mode: u32) !
                         try testing.expectEqual(c.MLN_STATUS_OK, render_status);
                     }
                 },
-                c.MLN_MAP_EVENT_STILL_IMAGE_FINISHED => {
+                c.MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED => {
                     try testing.expect(rendered_frame);
                     var frame = Backend.Frame.empty(fixture.texture);
                     try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
@@ -239,7 +240,7 @@ pub fn expectStillModeStillImageRequest(comptime Backend: type, map_mode: u32) !
                     try testing.expectEqual(c.MLN_STATUS_OK, fixture.release(&frame));
                     return;
                 },
-                c.MLN_MAP_EVENT_STILL_IMAGE_FAILED => return error.StillImageFailed,
+                c.MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED => return error.StillImageFailed,
                 else => {},
             }
         }

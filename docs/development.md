@@ -13,9 +13,9 @@ snapshotting and platform integrations such as gestures and device sensors.
 Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
 events, threading, and event draining in the target language. They do not aim to
-provide fully idiomatic APIs, higher-level async models over map events, view
-lifecycle integrations, convenience workflows, or new abstractions beyond the C
-API's concepts.
+provide fully idiomatic APIs, higher-level async models over runtime events,
+view lifecycle integrations, convenience workflows, or new abstractions beyond
+the C API's concepts.
 
 ## Code Layout
 
@@ -77,7 +77,7 @@ entry points use the C API boundary helper to clear thread-local diagnostics on
 entry and convert exceptions to `MLN_STATUS_NATIVE_ERROR`.
 
 Set thread-local diagnostic strings for synchronous non-OK returns. Report
-asynchronous native failures through copied map events.
+asynchronous native failures through copied runtime events.
 
 ## Ownership And Lifetime
 
@@ -117,8 +117,9 @@ Preserve MapLibre Native's imperative, observer-driven model. C API calls return
 status for synchronous acceptance or failure. Later native work is reported
 through drained events.
 
-Map events are copied into map-owned storage and drained with C API calls. Event
-payloads use plain data with documented lifetimes.
+Events are copied into runtime-owned storage and drained with C API calls. Event
+payloads use plain data with documented lifetimes. Each event identifies its
+source kind and source handle.
 
 Classify each operation as one of:
 

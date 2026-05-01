@@ -150,7 +150,7 @@ fn freeTempStyle(fixture: *const TempStyle) void {
 }
 
 fn pumpAndExpectStyleLoaded(runtime: *c.mln_runtime, map: *c.mln_map) !void {
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_STYLE_LOADED));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED));
 }
 
 fn serveOneHttpStyleInner(state: *HttpServerState) !void {
@@ -538,7 +538,7 @@ test "custom provider error response fails style load" {
     defer support.destroyMap(map);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, "custom://style.json"));
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_MAP_LOADING_FAILED));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_LOADING_FAILED));
 }
 
 test "network provider pass-through delegates to native HTTP" {
@@ -801,7 +801,7 @@ test "missing file URL reports map loading failure" {
     defer support.destroyMap(map);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_url(map, missing_url));
-    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_MAP_LOADING_FAILED));
+    try testing.expect(try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_LOADING_FAILED));
 }
 
 test "invalid resource provider settings are rejected" {

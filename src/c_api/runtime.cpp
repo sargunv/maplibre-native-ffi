@@ -82,3 +82,11 @@ auto mln_runtime_run_once(mln_runtime* runtime) noexcept -> mln_status {
     return mln::core::run_runtime_once(runtime);
   });
 }
+
+auto mln_runtime_poll_event(
+  mln_runtime* runtime, mln_runtime_event* out_event, bool* out_has_event
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::poll_runtime_event(runtime, out_event, out_has_event);
+  });
+}

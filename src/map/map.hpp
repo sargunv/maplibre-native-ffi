@@ -80,8 +80,6 @@ auto map_rotate_by(
 ) -> mln_status;
 auto map_pitch_by(mln_map* map, double pitch) -> mln_status;
 auto map_cancel_transitions(mln_map* map) -> mln_status;
-auto map_poll_event(mln_map* map, mln_map_event* out_event, bool* out_has_event)
-  -> mln_status;
 auto validate_map(mln_map* map) -> mln_status;
 auto map_owner_thread(const mln_map* map) -> std::thread::id;
 auto map_native(mln_map* map) -> mbgl::Map*;

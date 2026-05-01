@@ -59,12 +59,15 @@ final class MapState {
   func drainEvents() throws -> Bool {
     var renderUpdateAvailable = false
     while true {
-      var event = mln_map_event()
-      event.size = UInt32(MemoryLayout<mln_map_event>.size)
+      var event = mln_runtime_event()
+      event.size = UInt32(MemoryLayout<mln_runtime_event>.size)
       var hasEvent = false
-      try checkCAPI(mln_map_poll_event(map, &event, &hasEvent), "event poll failed")
+      try checkCAPI(mln_runtime_poll_event(runtime, &event, &hasEvent), "event poll failed")
       if !hasEvent { return renderUpdateAvailable }
-      if event.type == MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE.rawValue {
+      if event.source_type == MLN_RUNTIME_EVENT_SOURCE_MAP.rawValue
+        && event.source == UnsafeMutableRawPointer(map)
+        && event.type == MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE.rawValue
+      {
         renderUpdateAvailable = true
       }
     }
