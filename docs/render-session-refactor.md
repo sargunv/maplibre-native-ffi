@@ -271,7 +271,7 @@ texture-frame acquire/release APIs.
 
 The lowest-risk order is:
 
-- [ ] Generalize map attachment from one `texture_session` to one render target
+- [x] Generalize map attachment from one `texture_session` to one render target
       session.
 - [ ] Move common session lifecycle into shared render-session code.
 - [ ] Add MapLibre-owned/offscreen texture sessions for readback-first server
