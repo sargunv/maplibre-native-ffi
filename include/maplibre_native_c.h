@@ -755,10 +755,10 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
  * Runtime-originated events set out_event->source_type to
  * MLN_RUNTIME_EVENT_SOURCE_RUNTIME.
  *
- * The C API owns returned event storage. When an event is available,
- * out_event->payload points to a struct selected by out_event->payload_type, or
- * null when the payload type is MLN_RUNTIME_EVENT_PAYLOAD_NONE. String pointers
- * inside typed payloads and out_event->message remain valid until the next
+ * When an event is available, out_event->payload points to runtime-owned
+ * storage containing a struct selected by out_event->payload_type, or null when
+ * the payload type is MLN_RUNTIME_EVENT_PAYLOAD_NONE. String pointers inside
+ * typed payloads and out_event->message remain valid until the next
  * mln_runtime_poll_event() call for the same runtime or until the runtime is
  * destroyed. Copy those bytes before then when they must outlive that window.
  * For style-image-missing and tile-action events, out_event->message contains
