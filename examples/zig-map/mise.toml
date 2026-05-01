@@ -11,4 +11,16 @@ run = "zig build"
 
 [tasks.run]
 depends = ["//:build", ":compile-shaders"]
-run = "zig build run"
+run = "zig build run -- --render-target=native-texture"
+
+[tasks."run:native-texture"]
+depends = ["//:build", ":compile-shaders"]
+run = "zig build run -- --render-target=native-texture"
+
+[tasks."run:shared-texture"]
+depends = ["//:build", ":compile-shaders"]
+run = "zig build run -- --render-target=shared-texture"
+
+[tasks."run:native-surface"]
+depends = ["//:build", ":compile-shaders"]
+run = "zig build run -- --render-target=native-surface"

@@ -13,7 +13,8 @@ const viewport = @import("viewport.zig");
 const Backend = render.Backend;
 
 pub fn main(init_args: std.process.Init) !void {
-    _ = init_args;
+    const target_mode = (try parseRenderTargetMode(init_args)) orelse return;
+    std.debug.print("render target: {s}\n", .{target_mode.label()});
 
     _ = c.mln_log_set_callback(diagnostics.logCallback, null);
     defer _ = c.mln_log_clear_callback();
@@ -48,10 +49,10 @@ pub fn main(init_args: std.process.Init) !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var backend = try Backend.init(allocator, window_handle, current_viewport);
+    var backend = try Backend.init(allocator, window_handle, current_viewport, target_mode);
     defer backend.deinit();
 
-    var map = try map_state.MapState.init(current_viewport, &backend);
+    var map = try map_state.MapState.init(current_viewport, &backend, target_mode);
     defer map.deinit();
 
     var running = true;
@@ -98,19 +99,70 @@ pub fn main(init_args: std.process.Init) !void {
         try backend.finishFrame();
 
         if (render_pending) {
-            const render_status = c.mln_texture_render_update(map.texture);
-            if (render_status == c.MLN_STATUS_OK) {
+            if (try map.target.renderUpdate()) {
                 render_pending = false;
                 did_work = true;
-                if (try backend.draw(map.texture, current_viewport)) {
-                    has_presented_frame = true;
+                switch (map.target) {
+                    .texture => |texture| {
+                        if (try backend.draw(texture, target_mode, current_viewport)) {
+                            has_presented_frame = true;
+                        }
+                    },
+                    .surface => has_presented_frame = true,
                 }
-            } else if (render_status != c.MLN_STATUS_INVALID_STATE) {
-                diagnostics.logAbiError("texture render failed");
-                return types.AppError.TextureRenderFailed;
             }
         }
 
         if (!did_work) c.SDL_Delay(if (has_presented_frame) 8 else 1);
     }
+}
+
+fn parseRenderTargetMode(init_args: std.process.Init) !?types.RenderTargetMode {
+    var args = try std.process.Args.Iterator.initAllocator(init_args.minimal.args, init_args.gpa);
+    defer args.deinit();
+    _ = args.skip();
+
+    var mode = types.RenderTargetMode.native_texture;
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            printUsage();
+            return null;
+        }
+        if (std.mem.eql(u8, arg, "--render-target")) {
+            const value = args.next() orelse {
+                printUsage();
+                return types.AppError.InvalidArguments;
+            };
+            mode = types.RenderTargetMode.parse(value) orelse {
+                printUsage();
+                return types.AppError.InvalidArguments;
+            };
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--render-target=")) {
+            const value = arg["--render-target=".len..];
+            mode = types.RenderTargetMode.parse(value) orelse {
+                printUsage();
+                return types.AppError.InvalidArguments;
+            };
+            continue;
+        }
+        mode = types.RenderTargetMode.parse(arg) orelse {
+            printUsage();
+            return types.AppError.InvalidArguments;
+        };
+    }
+    return mode;
+}
+
+fn printUsage() void {
+    std.debug.print(
+        \\Usage: zig build run -- --render-target=<mode>
+        \\
+        \\Modes:
+        \\  native-texture  Metal/Vulkan-specific texture attach/acquire APIs
+        \\  shared-texture  generic shared texture attach/acquire APIs
+        \\  native-surface  Metal/Vulkan native surface presentation APIs
+        \\
+    , .{});
 }

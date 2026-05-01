@@ -1,13 +1,18 @@
 const c = @import("c.zig").c;
 const diagnostics = @import("diagnostics.zig");
+const render_target = @import("render_target.zig");
 const types = @import("types.zig");
 
 pub const MapState = struct {
     runtime: *c.mln_runtime,
     map: *c.mln_map,
-    texture: *c.mln_texture_session,
+    target: render_target.Session,
 
-    pub fn init(viewport: types.Viewport, backend: anytype) !MapState {
+    pub fn init(
+        viewport: types.Viewport,
+        backend: anytype,
+        mode: types.RenderTargetMode,
+    ) !MapState {
         var runtime: ?*c.mln_runtime = null;
         var runtime_options = c.mln_runtime_options_default();
         runtime_options.cache_path = ":memory:";
@@ -34,26 +39,19 @@ pub const MapState = struct {
         try loadStyle(map.?);
         try setCamera(map.?);
 
-        const texture = try backend.attachTexture(map.?, viewport);
-        return .{ .runtime = runtime.?, .map = map.?, .texture = texture };
+        var target = try backend.attachRenderTarget(map.?, viewport, mode);
+        errdefer target.deinit();
+        return .{ .runtime = runtime.?, .map = map.?, .target = target };
     }
 
     pub fn deinit(self: *MapState) void {
-        _ = c.mln_texture_destroy(self.texture);
+        self.target.deinit();
         _ = c.mln_map_destroy(self.map);
         _ = c.mln_runtime_destroy(self.runtime);
     }
 
     pub fn resize(self: *MapState, viewport: types.Viewport) !void {
-        if (c.mln_texture_resize(
-            self.texture,
-            viewport.logical_width,
-            viewport.logical_height,
-            viewport.scale_factor,
-        ) != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("texture resize failed");
-            return types.AppError.TextureResizeFailed;
-        }
+        try self.target.resize(viewport);
     }
 };
 

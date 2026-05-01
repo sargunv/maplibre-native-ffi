@@ -3,6 +3,7 @@ const objc = @import("objc");
 
 const c = @import("../../c.zig").c;
 const diagnostics = @import("../../diagnostics.zig");
+const render_target = @import("../../render_target.zig");
 const types = @import("../../types.zig");
 
 extern "c" fn MTLCreateSystemDefaultDevice() objc.c.id;
@@ -32,6 +33,7 @@ pub const MetalBackend = struct {
         _: std.mem.Allocator,
         window: *c.SDL_Window,
         viewport: types.Viewport,
+        _: types.RenderTargetMode,
     ) !MetalBackend {
         const view = c.SDL_Metal_CreateView(window);
         if (view == null) return types.AppError.BackendSetupFailed;
@@ -78,7 +80,20 @@ pub const MetalBackend = struct {
 
     pub fn finishFrame(_: *MetalBackend) !void {}
 
-    pub fn attachTexture(
+    pub fn attachRenderTarget(
+        self: *MetalBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+        mode: types.RenderTargetMode,
+    ) !render_target.Session {
+        return switch (mode) {
+            .native_texture => .{ .texture = try self.attachNativeTexture(map, viewport) },
+            .shared_texture => .{ .texture = try self.attachSharedTexture(map, viewport) },
+            .native_surface => .{ .surface = try self.attachNativeSurface(map, viewport) },
+        };
+    }
+
+    fn attachNativeTexture(
         self: *MetalBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
@@ -98,10 +113,64 @@ pub const MetalBackend = struct {
         return texture.?;
     }
 
+    fn attachSharedTexture(
+        self: *MetalBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !*c.mln_texture_session {
+        var descriptor = c.mln_shared_texture_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE;
+        descriptor.device = self.device.value.?;
+        var texture: ?*c.mln_texture_session = null;
+        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
+            c.MLN_STATUS_OK or texture == null)
+        {
+            diagnostics.logAbiError("shared texture attach failed");
+            return types.AppError.TextureAttachFailed;
+        }
+        return texture.?;
+    }
+
+    fn attachNativeSurface(
+        self: *MetalBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !*c.mln_surface_session {
+        var descriptor = c.mln_metal_surface_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.layer = self.layer.value.?;
+        descriptor.device = self.device.value.?;
+        var surface: ?*c.mln_surface_session = null;
+        if (c.mln_metal_surface_attach(map, &descriptor, &surface) !=
+            c.MLN_STATUS_OK or surface == null)
+        {
+            diagnostics.logAbiError("Metal surface attach failed");
+            return types.AppError.SurfaceAttachFailed;
+        }
+        return surface.?;
+    }
+
     pub fn draw(
         self: *MetalBackend,
         texture: *c.mln_texture_session,
+        mode: types.RenderTargetMode,
         _: types.Viewport,
+    ) !bool {
+        return switch (mode) {
+            .native_texture => self.drawNativeTexture(texture),
+            .shared_texture => self.drawSharedTexture(texture),
+            .native_surface => true,
+        };
+    }
+
+    fn drawNativeTexture(
+        self: *MetalBackend,
+        texture: *c.mln_texture_session,
     ) !bool {
         var frame: c.mln_metal_texture_frame = .{
             .size = @sizeOf(c.mln_metal_texture_frame),
@@ -122,6 +191,33 @@ pub const MetalBackend = struct {
         }
         defer releaseMetalFrame(texture, &frame);
 
+        return try self.drawMetalTexture(frame.texture.?);
+    }
+
+    fn drawSharedTexture(
+        self: *MetalBackend,
+        texture: *c.mln_texture_session,
+    ) !bool {
+        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
+        frame.size = @sizeOf(c.mln_shared_texture_frame);
+        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
+        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
+        if (acquire_status != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("shared texture acquire failed");
+            return types.AppError.BackendDrawFailed;
+        }
+        defer releaseSharedFrame(texture, &frame);
+
+        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_METAL or
+            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE or
+            frame.native_handle == null)
+        {
+            return types.AppError.BackendDrawFailed;
+        }
+        return try self.drawMetalTexture(frame.native_handle.?);
+    }
+
+    fn drawMetalTexture(self: *MetalBackend, metal_texture: *anyopaque) !bool {
         const drawable = self.layer.msgSend(objc.Object, "nextDrawable", .{});
         if (drawable.value == null) return types.AppError.BackendDrawFailed;
 
@@ -150,7 +246,7 @@ pub const MetalBackend = struct {
 
         encoder.msgSend(void, "setRenderPipelineState:", .{self.pipeline});
         encoder.msgSend(void, "setFragmentTexture:atIndex:", .{
-            objc.Object.fromId(frame.texture.?),
+            objc.Object.fromId(metal_texture),
             @as(c_ulong, 0),
         });
         encoder.msgSend(void, "drawPrimitives:vertexStart:vertexCount:", .{
@@ -171,6 +267,15 @@ pub const MetalBackend = struct {
     ) void {
         if (c.mln_metal_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {
             diagnostics.logAbiError("Metal texture release failed");
+        }
+    }
+
+    fn releaseSharedFrame(
+        texture: *c.mln_texture_session,
+        frame: *const c.mln_shared_texture_frame,
+    ) void {
+        if (c.mln_texture_release_shared_frame(texture, frame) != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("shared texture release failed");
         }
     }
 
