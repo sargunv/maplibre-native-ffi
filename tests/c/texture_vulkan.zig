@@ -267,6 +267,11 @@ test "Vulkan texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
+test "Vulkan texture render emits observer events" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    try common.expectRenderObserverEvents(Backend);
+}
+
 test "Vulkan texture supports static still-image requests" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_STATIC);

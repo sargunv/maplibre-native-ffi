@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -9,6 +11,7 @@
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <mbgl/actor/scheduler.hpp>
 #include <mbgl/storage/database_file_source.hpp>
@@ -117,6 +120,51 @@ auto wait_for_database_operation(
     return MLN_STATUS_NATIVE_ERROR;
   }
   return MLN_STATUS_OK;
+}
+
+auto patch_polled_payload_strings(mln_runtime* runtime, uint32_t payload_type)
+  -> void {
+  const auto* const text = runtime->last_polled_event_message.empty()
+                             ? nullptr
+                             : runtime->last_polled_event_message.c_str();
+  const auto text_size = runtime->last_polled_event_message.size();
+
+  switch (payload_type) {
+    case MLN_RUNTIME_EVENT_PAYLOAD_STYLE_IMAGE_MISSING:
+      if (
+        runtime->last_polled_event_payload.size() >=
+        sizeof(mln_runtime_event_style_image_missing)
+      ) {
+        auto payload = mln_runtime_event_style_image_missing{};
+        std::memcpy(
+          &payload, runtime->last_polled_event_payload.data(), sizeof(payload)
+        );
+        payload.image_id = text;
+        payload.image_id_size = text_size;
+        std::memcpy(
+          runtime->last_polled_event_payload.data(), &payload, sizeof(payload)
+        );
+      }
+      break;
+    case MLN_RUNTIME_EVENT_PAYLOAD_TILE_ACTION:
+      if (
+        runtime->last_polled_event_payload.size() >=
+        sizeof(mln_runtime_event_tile_action)
+      ) {
+        auto payload = mln_runtime_event_tile_action{};
+        std::memcpy(
+          &payload, runtime->last_polled_event_payload.data(), sizeof(payload)
+        );
+        payload.source_id = text;
+        payload.source_id_size = text_size;
+        std::memcpy(
+          runtime->last_polled_event_payload.data(), &payload, sizeof(payload)
+        );
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 }  // namespace
@@ -395,6 +443,7 @@ auto poll_runtime_event(
   runtime->events.pop_front();
   runtime->last_polled_event_payload = std::move(event.payload);
   runtime->last_polled_event_message = std::move(event.message);
+  patch_polled_payload_strings(runtime, event.payload_type);
 
   out_event->type = event.type;
   out_event->source_type = event.source_type;
@@ -468,6 +517,16 @@ auto push_runtime_map_event(
   mln_runtime* runtime, mln_map* map, uint32_t type, int32_t code,
   const char* message
 ) -> void {
+  push_runtime_map_event_payload(
+    runtime, map, type, MLN_RUNTIME_EVENT_PAYLOAD_NONE, {}, code,
+    message == nullptr ? std::string{} : std::string{message}
+  );
+}
+
+auto push_runtime_map_event_payload(
+  mln_runtime* runtime, mln_map* map, uint32_t type, uint32_t payload_type,
+  std::vector<std::byte> payload, int32_t code, std::string message
+) -> void {
   if (runtime == nullptr) {
     return;
   }
@@ -478,9 +537,9 @@ auto push_runtime_map_event(
     .source = map,
     .map = map,
     .code = code,
-    .payload_type = MLN_RUNTIME_EVENT_PAYLOAD_NONE,
-    .payload = {},
-    .message = message == nullptr ? std::string{} : std::string{message}
+    .payload_type = payload_type,
+    .payload = std::move(payload),
+    .message = std::move(message)
   };
 
   const std::scoped_lock lock(runtime->event_mutex);

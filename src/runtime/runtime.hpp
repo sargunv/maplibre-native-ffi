@@ -85,6 +85,10 @@ auto push_runtime_map_event(
   mln_runtime* runtime, mln_map* map, uint32_t type, int32_t code = 0,
   const char* message = nullptr
 ) -> void;
+auto push_runtime_map_event_payload(
+  mln_runtime* runtime, mln_map* map, uint32_t type, uint32_t payload_type,
+  std::vector<std::byte> payload, int32_t code = 0, std::string message = {}
+) -> void;
 auto register_runtime_map_events(mln_runtime* runtime, const mln_map* map)
   -> void;
 auto clear_runtime_map_loading_failure(mln_runtime* runtime, const mln_map* map)

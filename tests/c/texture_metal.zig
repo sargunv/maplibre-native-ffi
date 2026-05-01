@@ -170,6 +170,11 @@ test "Metal texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
+test "Metal texture render emits observer events" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try common.expectRenderObserverEvents(Backend);
+}
+
 test "Metal texture supports static still-image requests" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_STATIC);

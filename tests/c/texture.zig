@@ -194,6 +194,93 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     frame_acquired = false;
 }
 
+pub fn expectRenderObserverEvents(comptime Backend: type) !void {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+    var fixture = try Backend.Fixture.create(map);
+    defer fixture.destroy();
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+
+    var rendered_update = false;
+    var pending_render_update = false;
+    var saw_frame_started = false;
+    var saw_frame_finished = false;
+    var saw_map_started = false;
+    var saw_map_finished = false;
+    for (0..1000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+
+        if (pending_render_update) {
+            pending_render_update = false;
+            const render_status = c.mln_texture_render_update(fixture.texture);
+            if (render_status == c.MLN_STATUS_OK) {
+                rendered_update = true;
+            } else if (render_status != c.MLN_STATUS_INVALID_STATE) {
+                try testing.expectEqual(c.MLN_STATUS_OK, render_status);
+            }
+        }
+
+        while (true) {
+            var event = support.emptyEvent();
+            var has_event = false;
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_poll_event(runtime, &event, &has_event));
+            if (!has_event) break;
+            if (event.source_type != c.MLN_RUNTIME_EVENT_SOURCE_MAP or event.source != @as(?*anyopaque, @ptrCast(map))) continue;
+
+            switch (event.type) {
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE => {
+                    pending_render_update = true;
+                },
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_STARTED => {
+                    saw_frame_started = true;
+                    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_NONE, event.payload_type);
+                    try testing.expectEqual(@as(?*const anyopaque, null), event.payload);
+                },
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_FINISHED => {
+                    saw_frame_finished = true;
+                    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_RENDER_FRAME, event.payload_type);
+                    try testing.expectEqual(@as(usize, @sizeOf(c.mln_runtime_event_render_frame)), event.payload_size);
+                    const payload: *const c.mln_runtime_event_render_frame = @ptrCast(@alignCast(event.payload.?));
+                    try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_event_render_frame)), payload.size);
+                    try testing.expect(payload.mode == c.MLN_RENDER_MODE_PARTIAL or payload.mode == c.MLN_RENDER_MODE_FULL);
+                    try testing.expectEqual(@as(u32, @sizeOf(c.mln_rendering_stats)), payload.stats.size);
+                    try testing.expect(payload.stats.encoding_time >= 0);
+                    try testing.expect(payload.stats.rendering_time >= 0);
+                },
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_MAP_STARTED => {
+                    saw_map_started = true;
+                    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_NONE, event.payload_type);
+                    try testing.expectEqual(@as(?*const anyopaque, null), event.payload);
+                },
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_MAP_FINISHED => {
+                    saw_map_finished = true;
+                    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_RENDER_MAP, event.payload_type);
+                    try testing.expectEqual(@as(usize, @sizeOf(c.mln_runtime_event_render_map)), event.payload_size);
+                    const payload: *const c.mln_runtime_event_render_map = @ptrCast(@alignCast(event.payload.?));
+                    try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_event_render_map)), payload.size);
+                    try testing.expect(payload.mode == c.MLN_RENDER_MODE_PARTIAL or payload.mode == c.MLN_RENDER_MODE_FULL);
+                },
+                else => {},
+            }
+        }
+
+        if (saw_frame_started and saw_frame_finished and saw_map_started and saw_map_finished) break;
+        _ = usleep(1000);
+    }
+
+    try testing.expect(rendered_update);
+    try testing.expect(saw_frame_started);
+    try testing.expect(saw_frame_finished);
+    try testing.expect(saw_map_started);
+    try testing.expect(saw_map_finished);
+}
+
 pub fn expectStillModeStillImageRequest(comptime Backend: type, map_mode: u32) !void {
     try support.suppressLogs();
     defer support.restoreLogs();
