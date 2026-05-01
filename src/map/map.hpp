@@ -90,9 +90,5 @@ auto map_attach_render_target_session(mln_map* map, void* session)
   -> mln_status;
 auto map_detach_render_target_session(mln_map* map, void* session)
   -> mln_status;
-auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
-  -> mln_status;
-auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
-  -> mln_status;
 
 }  // namespace mln::core

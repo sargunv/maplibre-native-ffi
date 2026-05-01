@@ -3,9 +3,6 @@
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <mutex>
-#include <thread>
-#include <unordered_map>
 #include <utility>
 
 #include <mbgl/gfx/backend_scope.hpp>
@@ -22,18 +19,14 @@
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
 #include "maplibre_native_c.h"
+#include "render/render_session_common.hpp"
 
 namespace {
 
-using TextureRegistry = std::unordered_map<
-  mln_texture_session*, std::unique_ptr<mln_texture_session>>;
+using TextureRegistry = mln::core::RenderSessionRegistry<mln_texture_session>;
 
-auto texture_registry_mutex() -> std::mutex& {
-  static auto mutex = std::mutex{};
-  return mutex;
-}
-
-auto texture_registry() -> TextureRegistry& {
+auto texture_registry()
+  -> mln::core::RenderSessionRegistry<mln_texture_session>& {
   static auto registry = TextureRegistry{};
   return registry;
 }
@@ -106,15 +99,10 @@ auto texture_image_info_default() noexcept -> mln_texture_image_info {
 }
 
 auto validate_attach_output(mln_texture_session** out_texture) -> mln_status {
-  if (out_texture == nullptr) {
-    set_thread_error("out_texture must not be null");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  if (*out_texture != nullptr) {
-    set_thread_error("out_texture must point to a null handle");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  return MLN_STATUS_OK;
+  return validate_render_session_attach_output(
+    out_texture, "out_texture must not be null",
+    "out_texture must point to a null handle"
+  );
 }
 
 auto validate_shared_texture_descriptor(
@@ -143,33 +131,18 @@ auto validate_shared_texture_descriptor(
 }
 
 auto validate_texture(mln_texture_session* texture) -> mln_status {
-  if (texture == nullptr) {
-    set_thread_error("texture session must not be null");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  const std::scoped_lock lock(texture_registry_mutex());
-  if (!texture_registry().contains(texture)) {
-    set_thread_error("texture session is not a live handle");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  if (texture->owner_thread != std::this_thread::get_id()) {
-    set_thread_error("texture session call must be made on its owner thread");
-    return MLN_STATUS_WRONG_THREAD;
-  }
-  return MLN_STATUS_OK;
+  return texture_registry().validate(
+    texture, "texture session must not be null",
+    "texture session is not a live handle",
+    "texture session call must be made on its owner thread"
+  );
 }
 
 auto validate_live_attached_texture(mln_texture_session* texture)
   -> mln_status {
-  const auto status = validate_texture(texture);
-  if (status != MLN_STATUS_OK) {
-    return status;
-  }
-  if (!texture->attached || texture->backend == nullptr) {
-    set_thread_error("texture session is detached");
-    return MLN_STATUS_INVALID_STATE;
-  }
-  return MLN_STATUS_OK;
+  return validate_live_attached_render_session(
+    texture, validate_texture, "texture session is detached"
+  );
 }
 
 auto validate_shared_frame_output(mln_shared_texture_frame* out_frame)
@@ -184,56 +157,29 @@ auto validate_shared_frame_output(mln_shared_texture_frame* out_frame)
 }
 
 auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t {
-  return static_cast<uint32_t>(std::ceil(logical * scale_factor));
+  return render_session_physical_dimension(logical, scale_factor);
 }
 
 auto validate_physical_size(
   uint32_t width, uint32_t height, double scale_factor
 ) -> mln_status {
-  constexpr auto max_dimension =
-    static_cast<double>(std::numeric_limits<uint32_t>::max());
-  if (
-    std::ceil(width * scale_factor) > max_dimension ||
-    std::ceil(height * scale_factor) > max_dimension
-  ) {
-    set_thread_error("scaled texture dimensions are too large");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  return MLN_STATUS_OK;
+  return validate_render_session_physical_size(
+    width, height, scale_factor, "scaled texture dimensions are too large"
+  );
 }
 
 auto texture_attach_session(
   std::unique_ptr<mln_texture_session> session,
   mln_texture_session** out_texture
 ) -> mln_status {
-  if (session == nullptr) {
-    set_thread_error("texture session must not be null");
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  const auto output_status = validate_attach_output(out_texture);
-  if (output_status != MLN_STATUS_OK) {
-    return output_status;
-  }
-
-  auto* map = session->map;
-  auto* handle = session.get();
-  const auto attach_status = map_attach_texture_session(map, handle);
-  if (attach_status != MLN_STATUS_OK) {
-    return attach_status;
-  }
-  try {
-    if (auto* native_map = map_native(map); native_map != nullptr) {
-      native_map->setSize(mbgl::Size{session->width, session->height});
+  return attach_render_session(
+    std::move(session), out_texture, texture_registry(),
+    RenderSessionAttachMessages{
+      .null_session = "texture session must not be null",
+      .null_output = "out_texture must not be null",
+      .non_null_output = "out_texture must point to a null handle"
     }
-    const std::scoped_lock lock(texture_registry_mutex());
-    texture_registry().emplace(handle, std::move(session));
-  } catch (...) {
-    static_cast<void>(map_detach_texture_session(map, handle));
-    throw;
-  }
-
-  *out_texture = handle;
-  return MLN_STATUS_OK;
+  );
 }
 
 auto owned_texture_attach(
@@ -453,7 +399,8 @@ auto texture_detach(mln_texture_session* texture) -> mln_status {
     return MLN_STATUS_INVALID_STATE;
   }
 
-  const auto detach_status = map_detach_texture_session(texture->map, texture);
+  const auto detach_status =
+    map_detach_render_target_session(texture->map, texture);
   if (detach_status != MLN_STATUS_OK) {
     return detach_status;
   }
@@ -484,13 +431,7 @@ auto texture_destroy(mln_texture_session* texture) -> mln_status {
     }
   }
 
-  auto owned_texture = std::unique_ptr<mln_texture_session>{};
-  {
-    const std::scoped_lock lock(texture_registry_mutex());
-    auto found = texture_registry().find(texture);
-    owned_texture = std::move(found->second);
-    texture_registry().erase(found);
-  }
+  auto owned_texture = texture_registry().erase(texture);
   owned_texture.reset();
   return MLN_STATUS_OK;
 }

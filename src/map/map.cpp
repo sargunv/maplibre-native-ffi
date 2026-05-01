@@ -996,16 +996,6 @@ auto map_detach_render_target_session(mln_map* map, void* session)
   return MLN_STATUS_OK;
 }
 
-auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
-  -> mln_status {
-  return map_attach_render_target_session(map, texture);
-}
-
-auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
-  -> mln_status {
-  return map_detach_render_target_session(map, texture);
-}
-
 auto map_set_style_url(mln_map* map, const char* url) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
