@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include <mbgl/actor/scheduler.hpp>
+#include <mbgl/gfx/rendering_stats.hpp>
 #include <mbgl/map/camera.hpp>
 #include <mbgl/map/map.hpp>
 #include <mbgl/map/map_observer.hpp>
@@ -24,6 +26,8 @@
 #include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/style/style.hpp>
+#include <mbgl/tile/tile_id.hpp>
+#include <mbgl/tile/tile_operation.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/projection.hpp>
 #include <mbgl/util/size.hpp>
@@ -61,6 +65,107 @@ auto map_projection_registry_mutex() -> std::mutex& {
 auto map_projection_registry() -> ProjectionRegistry& {
   static ProjectionRegistry value;
   return value;
+}
+
+template <typename Payload>
+auto payload_bytes(const Payload& payload) -> std::vector<std::byte> {
+  auto result = std::vector<std::byte>(sizeof(Payload));
+  std::memcpy(result.data(), &payload, sizeof(Payload));
+  return result;
+}
+
+auto to_c_render_mode(mbgl::MapObserver::RenderMode mode) -> uint32_t {
+  switch (mode) {
+    case mbgl::MapObserver::RenderMode::Partial:
+      return MLN_RENDER_MODE_PARTIAL;
+    case mbgl::MapObserver::RenderMode::Full:
+      return MLN_RENDER_MODE_FULL;
+  }
+  return MLN_RENDER_MODE_PARTIAL;
+}
+
+auto to_c_rendering_stats(const mbgl::gfx::RenderingStats& stats)
+  -> mln_rendering_stats {
+  return mln_rendering_stats{
+    .size = sizeof(mln_rendering_stats),
+    .encoding_time = stats.encodingTime,
+    .rendering_time = stats.renderingTime,
+    .frame_count = stats.numFrames,
+    .draw_call_count = stats.numDrawCalls,
+    .total_draw_call_count = stats.totalDrawCalls
+  };
+}
+
+auto render_frame_payload(const mbgl::MapObserver::RenderFrameStatus& status)
+  -> mln_runtime_event_render_frame {
+  return mln_runtime_event_render_frame{
+    .size = sizeof(mln_runtime_event_render_frame),
+    .mode = to_c_render_mode(status.mode),
+    .needs_repaint = status.needsRepaint,
+    .placement_changed = status.placementChanged,
+    .stats = to_c_rendering_stats(status.renderingStats)
+  };
+}
+
+auto render_map_payload(mbgl::MapObserver::RenderMode mode)
+  -> mln_runtime_event_render_map {
+  return mln_runtime_event_render_map{
+    .size = sizeof(mln_runtime_event_render_map), .mode = to_c_render_mode(mode)
+  };
+}
+
+auto style_image_missing_payload() -> mln_runtime_event_style_image_missing {
+  return mln_runtime_event_style_image_missing{
+    .size = sizeof(mln_runtime_event_style_image_missing),
+    .image_id = nullptr,
+    .image_id_size = 0
+  };
+}
+
+auto to_c_tile_operation(mbgl::TileOperation operation) -> uint32_t {
+  switch (operation) {
+    case mbgl::TileOperation::RequestedFromCache:
+      return MLN_TILE_OPERATION_REQUESTED_FROM_CACHE;
+    case mbgl::TileOperation::RequestedFromNetwork:
+      return MLN_TILE_OPERATION_REQUESTED_FROM_NETWORK;
+    case mbgl::TileOperation::LoadFromNetwork:
+      return MLN_TILE_OPERATION_LOAD_FROM_NETWORK;
+    case mbgl::TileOperation::LoadFromCache:
+      return MLN_TILE_OPERATION_LOAD_FROM_CACHE;
+    case mbgl::TileOperation::StartParse:
+      return MLN_TILE_OPERATION_START_PARSE;
+    case mbgl::TileOperation::EndParse:
+      return MLN_TILE_OPERATION_END_PARSE;
+    case mbgl::TileOperation::Error:
+      return MLN_TILE_OPERATION_ERROR;
+    case mbgl::TileOperation::Cancelled:
+      return MLN_TILE_OPERATION_CANCELLED;
+    case mbgl::TileOperation::NullOp:
+      return MLN_TILE_OPERATION_NULL;
+  }
+  return MLN_TILE_OPERATION_NULL;
+}
+
+auto to_c_tile_id(const mbgl::OverscaledTileID& tile_id) -> mln_tile_id {
+  return mln_tile_id{
+    .overscaled_z = tile_id.overscaledZ,
+    .wrap = tile_id.wrap,
+    .canonical_z = tile_id.canonical.z,
+    .canonical_x = tile_id.canonical.x,
+    .canonical_y = tile_id.canonical.y
+  };
+}
+
+auto tile_action_payload(
+  mbgl::TileOperation operation, const mbgl::OverscaledTileID& tile_id
+) -> mln_runtime_event_tile_action {
+  return mln_runtime_event_tile_action{
+    .size = sizeof(mln_runtime_event_tile_action),
+    .operation = to_c_tile_operation(operation),
+    .tile_id = to_c_tile_id(tile_id),
+    .source_id = nullptr,
+    .source_id_size = 0
+  };
 }
 
 class HeadlessObserver final : public mbgl::MapObserver {
@@ -101,7 +206,49 @@ class HeadlessObserver final : public mbgl::MapObserver {
     push(MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
   }
 
+  void onWillStartRenderingFrame() override {
+    push(MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_STARTED);
+  }
+
+  void onDidFinishRenderingFrame(const RenderFrameStatus& status) override {
+    push_payload(
+      MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_FINISHED,
+      MLN_RUNTIME_EVENT_PAYLOAD_RENDER_FRAME,
+      payload_bytes(render_frame_payload(status))
+    );
+  }
+
+  void onWillStartRenderingMap() override {
+    push(MLN_RUNTIME_EVENT_MAP_RENDER_MAP_STARTED);
+  }
+
+  void onDidFinishRenderingMap(RenderMode mode) override {
+    push_payload(
+      MLN_RUNTIME_EVENT_MAP_RENDER_MAP_FINISHED,
+      MLN_RUNTIME_EVENT_PAYLOAD_RENDER_MAP,
+      payload_bytes(render_map_payload(mode))
+    );
+  }
+
   void onDidBecomeIdle() override { push(MLN_RUNTIME_EVENT_MAP_IDLE); }
+
+  void onStyleImageMissing(const std::string& image_id) override {
+    push_payload(
+      MLN_RUNTIME_EVENT_MAP_STYLE_IMAGE_MISSING,
+      MLN_RUNTIME_EVENT_PAYLOAD_STYLE_IMAGE_MISSING,
+      payload_bytes(style_image_missing_payload()), 0, image_id
+    );
+  }
+
+  void onTileAction(
+    mbgl::TileOperation operation, const mbgl::OverscaledTileID& tile_id,
+    const std::string& source_id
+  ) override {
+    push_payload(
+      MLN_RUNTIME_EVENT_MAP_TILE_ACTION, MLN_RUNTIME_EVENT_PAYLOAD_TILE_ACTION,
+      payload_bytes(tile_action_payload(operation, tile_id)), 0, source_id
+    );
+  }
 
   void onRenderError(std::exception_ptr error) override {
     try {
@@ -120,6 +267,16 @@ class HeadlessObserver final : public mbgl::MapObserver {
   auto push(uint32_t type, int32_t code = 0, const char* message = nullptr)
     -> void {
     mln::core::push_runtime_map_event(runtime_, map_, type, code, message);
+  }
+
+  auto push_payload(
+    uint32_t type, uint32_t payload_type, std::vector<std::byte> payload,
+    int32_t code = 0, std::string message = {}
+  ) -> void {
+    mln::core::push_runtime_map_event_payload(
+      runtime_, map_, type, payload_type, std::move(payload), code,
+      std::move(message)
+    );
   }
 
   mln_runtime* runtime_;

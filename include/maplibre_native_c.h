@@ -233,6 +233,12 @@ typedef enum mln_runtime_event_type : uint32_t {
   MLN_RUNTIME_EVENT_MAP_RENDER_ERROR = 10,
   MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED = 11,
   MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED = 12,
+  MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_STARTED = 13,
+  MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_FINISHED = 14,
+  MLN_RUNTIME_EVENT_MAP_RENDER_MAP_STARTED = 15,
+  MLN_RUNTIME_EVENT_MAP_RENDER_MAP_FINISHED = 16,
+  MLN_RUNTIME_EVENT_MAP_STYLE_IMAGE_MISSING = 17,
+  MLN_RUNTIME_EVENT_MAP_TILE_ACTION = 18,
 } mln_runtime_event_type;
 
 /** Source kinds used by mln_runtime_event.source_type. */
@@ -244,7 +250,30 @@ typedef enum mln_runtime_event_source_type : uint32_t {
 /** Payload kinds used by mln_runtime_event.payload_type. */
 typedef enum mln_runtime_event_payload_type : uint32_t {
   MLN_RUNTIME_EVENT_PAYLOAD_NONE = 0,
+  MLN_RUNTIME_EVENT_PAYLOAD_RENDER_FRAME = 1,
+  MLN_RUNTIME_EVENT_PAYLOAD_RENDER_MAP = 2,
+  MLN_RUNTIME_EVENT_PAYLOAD_STYLE_IMAGE_MISSING = 3,
+  MLN_RUNTIME_EVENT_PAYLOAD_TILE_ACTION = 4,
 } mln_runtime_event_payload_type;
+
+/** Render modes reported by render observer events. */
+typedef enum mln_render_mode : uint32_t {
+  MLN_RENDER_MODE_PARTIAL = 0,
+  MLN_RENDER_MODE_FULL = 1,
+} mln_render_mode;
+
+/** Tile operations reported by tile observer events. */
+typedef enum mln_tile_operation : uint32_t {
+  MLN_TILE_OPERATION_REQUESTED_FROM_CACHE = 0,
+  MLN_TILE_OPERATION_REQUESTED_FROM_NETWORK = 1,
+  MLN_TILE_OPERATION_LOAD_FROM_NETWORK = 2,
+  MLN_TILE_OPERATION_LOAD_FROM_CACHE = 3,
+  MLN_TILE_OPERATION_START_PARSE = 4,
+  MLN_TILE_OPERATION_END_PARSE = 5,
+  MLN_TILE_OPERATION_ERROR = 6,
+  MLN_TILE_OPERATION_CANCELLED = 7,
+  MLN_TILE_OPERATION_NULL = 8,
+} mln_tile_operation;
 
 typedef enum mln_resource_kind : uint32_t {
   MLN_RESOURCE_KIND_UNKNOWN = 0,
@@ -337,6 +366,76 @@ typedef struct mln_runtime_options {
   uint64_t maximum_cache_size;
 } mln_runtime_options;
 
+/** Rendering statistics reported in MLN_RUNTIME_EVENT_PAYLOAD_RENDER_FRAME. */
+typedef struct mln_rendering_stats {
+  uint32_t size;
+  /** Frame CPU encoding time in seconds. */
+  double encoding_time;
+  /** Frame CPU rendering time in seconds. */
+  double rendering_time;
+  /** Number of frames rendered by the native renderer. */
+  int64_t frame_count;
+  /** Draw calls executed during the most recent frame. */
+  int64_t draw_call_count;
+  /** Total draw calls executed by the native renderer. */
+  int64_t total_draw_call_count;
+} mln_rendering_stats;
+
+/** Payload for MLN_RUNTIME_EVENT_MAP_RENDER_FRAME_FINISHED. */
+typedef struct mln_runtime_event_render_frame {
+  uint32_t size;
+  /** One of mln_render_mode. */
+  uint32_t mode;
+  /** Whether MapLibre needs another frame after this one. */
+  bool needs_repaint;
+  /** Whether symbol placement changed during this frame. */
+  bool placement_changed;
+  mln_rendering_stats stats;
+} mln_runtime_event_render_frame;
+
+/** Payload for MLN_RUNTIME_EVENT_MAP_RENDER_MAP_FINISHED. */
+typedef struct mln_runtime_event_render_map {
+  uint32_t size;
+  /** One of mln_render_mode. */
+  uint32_t mode;
+} mln_runtime_event_render_map;
+
+/** Payload for MLN_RUNTIME_EVENT_MAP_STYLE_IMAGE_MISSING. */
+typedef struct mln_runtime_event_style_image_missing {
+  uint32_t size;
+  /**
+   * Borrowed image ID bytes. Valid until the next poll for this runtime or
+   * until the runtime is destroyed.
+   */
+  const char* image_id;
+  /** Number of bytes in image_id, excluding the trailing null terminator. */
+  size_t image_id_size;
+} mln_runtime_event_style_image_missing;
+
+/** Overscaled tile identity reported in tile observer events. */
+typedef struct mln_tile_id {
+  uint32_t overscaled_z;
+  int32_t wrap;
+  uint32_t canonical_z;
+  uint32_t canonical_x;
+  uint32_t canonical_y;
+} mln_tile_id;
+
+/** Payload for MLN_RUNTIME_EVENT_MAP_TILE_ACTION. */
+typedef struct mln_runtime_event_tile_action {
+  uint32_t size;
+  /** One of mln_tile_operation. */
+  uint32_t operation;
+  mln_tile_id tile_id;
+  /**
+   * Borrowed source ID bytes. Valid until the next poll for this runtime or
+   * until the runtime is destroyed.
+   */
+  const char* source_id;
+  /** Number of bytes in source_id, excluding the trailing null terminator. */
+  size_t source_id_size;
+} mln_runtime_event_tile_action;
+
 /** Event payload returned by mln_runtime_poll_event(). */
 typedef struct mln_runtime_event {
   uint32_t size;
@@ -352,7 +451,7 @@ typedef struct mln_runtime_event {
   int32_t code;
   /** One of mln_runtime_event_payload_type. */
   uint32_t payload_type;
-  /** Borrowed payload bytes. Null when payload_size is 0. */
+  /** Borrowed payload selected by payload_type. Null when payload_size is 0. */
   const void* payload;
   /** Number of bytes in payload. */
   size_t payload_size;
@@ -656,10 +755,14 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
  * Runtime-originated events set out_event->source_type to
  * MLN_RUNTIME_EVENT_SOURCE_RUNTIME.
  *
- * When an event is available, out_event->payload and out_event->message point
- * to runtime-owned storage that remains valid until the next
+ * The C API owns returned event storage. When an event is available,
+ * out_event->payload points to a struct selected by out_event->payload_type, or
+ * null when the payload type is MLN_RUNTIME_EVENT_PAYLOAD_NONE. String pointers
+ * inside typed payloads and out_event->message remain valid until the next
  * mln_runtime_poll_event() call for the same runtime or until the runtime is
  * destroyed. Copy those bytes before then when they must outlive that window.
+ * For style-image-missing and tile-action events, out_event->message contains
+ * the same ID string exposed by the typed payload.
  *
  * Returns:
  * - MLN_STATUS_OK when the poll completed; out_has_event indicates whether an
