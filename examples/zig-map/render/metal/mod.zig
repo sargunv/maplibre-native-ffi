@@ -8,33 +8,84 @@ const types = @import("../../types.zig");
 
 extern "c" fn MTLCreateSystemDefaultDevice() objc.c.id;
 
-pub const MetalBackend = struct {
+const MTLPixelFormatBGRA8Unorm: u64 = 80;
+const MTLLoadActionClear: u64 = 2;
+const MTLStoreActionStore: u64 = 1;
+const MTLPrimitiveTypeTriangle: u64 = 3;
+
+const CGSize = extern struct { width: f64, height: f64 };
+const MTLClearColor = extern struct {
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+};
+
+pub const MetalBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_METAL;
-    const MTLPixelFormatBGRA8Unorm: u64 = 80;
-    const MTLLoadActionClear: u64 = 2;
-    const MTLStoreActionStore: u64 = 1;
-    const MTLPrimitiveTypeTriangle: u64 = 3;
 
-    const CGSize = extern struct { width: f64, height: f64 };
-    const MTLClearColor = extern struct {
-        red: f64,
-        green: f64,
-        blue: f64,
-        alpha: f64,
-    };
+    texture: MetalTextureBackend,
+    surface: MetalSurfaceBackend,
 
+    pub fn init(
+        allocator: std.mem.Allocator,
+        window: *c.SDL_Window,
+        viewport: types.Viewport,
+        mode: types.RenderTargetMode,
+    ) !MetalBackend {
+        _ = allocator;
+        return switch (mode) {
+            .native_texture => .{ .texture = try MetalTextureBackend.init(window, viewport, .native) },
+            .shared_texture => .{ .texture = try MetalTextureBackend.init(window, viewport, .shared) },
+            .native_surface => .{ .surface = try MetalSurfaceBackend.init(window, viewport) },
+        };
+    }
+
+    pub fn deinit(self: *MetalBackend) void {
+        switch (self.*) {
+            .texture => |*backend| backend.deinit(),
+            .surface => |*backend| backend.deinit(),
+        }
+    }
+
+    pub fn resize(self: *MetalBackend, viewport: types.Viewport) !void {
+        switch (self.*) {
+            .texture => |*backend| try backend.resize(viewport),
+            .surface => |*backend| try backend.resize(viewport),
+        }
+    }
+
+    pub fn finishFrame(_: *MetalBackend) !void {}
+
+    pub fn attachRenderTarget(
+        self: *MetalBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        return switch (self.*) {
+            .texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .surface => |*backend| backend.attachRenderTarget(map, viewport),
+        };
+    }
+
+    pub fn drawTexture(
+        self: *MetalBackend,
+        texture: render_target.TextureSession,
+        viewport: types.Viewport,
+    ) !bool {
+        return switch (self.*) {
+            .texture => |*backend| backend.drawTexture(texture, viewport),
+            .surface => unreachable,
+        };
+    }
+};
+
+const MetalView = struct {
     view: c.SDL_MetalView,
     device: objc.Object,
     layer: objc.Object,
-    queue: objc.Object,
-    pipeline: objc.Object,
 
-    pub fn init(
-        _: std.mem.Allocator,
-        window: *c.SDL_Window,
-        viewport: types.Viewport,
-        _: types.RenderTargetMode,
-    ) !MetalBackend {
+    fn init(window: *c.SDL_Window, viewport: types.Viewport) !MetalView {
         const view = c.SDL_Metal_CreateView(window);
         if (view == null) return types.AppError.BackendSetupFailed;
         errdefer c.SDL_Metal_DestroyView(view);
@@ -51,50 +102,72 @@ pub const MetalBackend = struct {
         layer.setProperty("pixelFormat", @as(u64, MTLPixelFormatBGRA8Unorm));
         layer.setProperty("drawableSize", drawableSize(viewport));
 
-        const queue = device.msgSend(objc.Object, "newCommandQueue", .{});
-        if (queue.value == null) return types.AppError.BackendSetupFailed;
-        errdefer queue.release();
-
-        const pipeline = try createPipeline(device);
-        errdefer pipeline.release();
-
-        return .{
-            .view = view,
-            .device = device,
-            .layer = layer,
-            .queue = queue,
-            .pipeline = pipeline,
-        };
+        return .{ .view = view, .device = device, .layer = layer };
     }
 
-    pub fn deinit(self: *MetalBackend) void {
-        self.pipeline.release();
-        self.queue.release();
+    fn deinit(self: *MetalView) void {
         self.device.release();
         c.SDL_Metal_DestroyView(self.view);
     }
 
-    pub fn resize(self: *MetalBackend, viewport: types.Viewport) !void {
+    fn resize(self: *MetalView, viewport: types.Viewport) void {
         self.layer.setProperty("drawableSize", drawableSize(viewport));
     }
+};
 
-    pub fn finishFrame(_: *MetalBackend) !void {}
+const MetalTextureBackend = struct {
+    view: MetalView,
+    queue: objc.Object,
+    pipeline: objc.Object,
+    mode: render_target.TextureMode,
 
-    pub fn attachRenderTarget(
-        self: *MetalBackend,
+    fn init(
+        window: *c.SDL_Window,
+        viewport: types.Viewport,
+        mode: render_target.TextureMode,
+    ) !MetalTextureBackend {
+        var view = try MetalView.init(window, viewport);
+        errdefer view.deinit();
+
+        const queue = view.device.msgSend(objc.Object, "newCommandQueue", .{});
+        if (queue.value == null) return types.AppError.BackendSetupFailed;
+        errdefer queue.release();
+
+        const pipeline = try createPipeline(view.device);
+        errdefer pipeline.release();
+
+        return .{ .view = view, .queue = queue, .pipeline = pipeline, .mode = mode };
+    }
+
+    fn deinit(self: *MetalTextureBackend) void {
+        self.pipeline.release();
+        self.queue.release();
+        self.view.deinit();
+    }
+
+    fn resize(self: *MetalTextureBackend, viewport: types.Viewport) !void {
+        self.view.resize(viewport);
+    }
+
+    fn attachRenderTarget(
+        self: *MetalTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
-        mode: types.RenderTargetMode,
     ) !render_target.Session {
-        return switch (mode) {
-            .native_texture => .{ .texture = try self.attachNativeTexture(map, viewport) },
-            .shared_texture => .{ .texture = try self.attachSharedTexture(map, viewport) },
-            .native_surface => .{ .surface = try self.attachNativeSurface(map, viewport) },
+        return switch (self.mode) {
+            .native => .{ .texture = .{
+                .handle = try self.attachNativeTexture(map, viewport),
+                .mode = .native,
+            } },
+            .shared => .{ .texture = .{
+                .handle = try self.attachSharedTexture(map, viewport),
+                .mode = .shared,
+            } },
         };
     }
 
     fn attachNativeTexture(
-        self: *MetalBackend,
+        self: *MetalTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !*c.mln_texture_session {
@@ -102,7 +175,7 @@ pub const MetalBackend = struct {
         descriptor.width = viewport.logical_width;
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
-        descriptor.device = self.device.value.?;
+        descriptor.device = self.view.device.value.?;
         var texture: ?*c.mln_texture_session = null;
         if (c.mln_metal_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
@@ -114,7 +187,7 @@ pub const MetalBackend = struct {
     }
 
     fn attachSharedTexture(
-        self: *MetalBackend,
+        self: *MetalTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !*c.mln_texture_session {
@@ -123,7 +196,7 @@ pub const MetalBackend = struct {
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
         descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE;
-        descriptor.device = self.device.value.?;
+        descriptor.device = self.view.device.value.?;
         var texture: ?*c.mln_texture_session = null;
         if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
@@ -134,42 +207,19 @@ pub const MetalBackend = struct {
         return texture.?;
     }
 
-    fn attachNativeSurface(
-        self: *MetalBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_surface_session {
-        var descriptor = c.mln_metal_surface_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.layer = self.layer.value.?;
-        descriptor.device = self.device.value.?;
-        var surface: ?*c.mln_surface_session = null;
-        if (c.mln_metal_surface_attach(map, &descriptor, &surface) !=
-            c.MLN_STATUS_OK or surface == null)
-        {
-            diagnostics.logAbiError("Metal surface attach failed");
-            return types.AppError.SurfaceAttachFailed;
-        }
-        return surface.?;
-    }
-
-    pub fn draw(
-        self: *MetalBackend,
-        texture: *c.mln_texture_session,
-        mode: types.RenderTargetMode,
+    fn drawTexture(
+        self: *MetalTextureBackend,
+        texture: render_target.TextureSession,
         _: types.Viewport,
     ) !bool {
-        return switch (mode) {
-            .native_texture => self.drawNativeTexture(texture),
-            .shared_texture => self.drawSharedTexture(texture),
-            .native_surface => true,
+        return switch (texture.mode) {
+            .native => self.drawNativeTexture(texture.handle),
+            .shared => self.drawSharedTexture(texture.handle),
         };
     }
 
     fn drawNativeTexture(
-        self: *MetalBackend,
+        self: *MetalTextureBackend,
         texture: *c.mln_texture_session,
     ) !bool {
         var frame: c.mln_metal_texture_frame = .{
@@ -195,7 +245,7 @@ pub const MetalBackend = struct {
     }
 
     fn drawSharedTexture(
-        self: *MetalBackend,
+        self: *MetalTextureBackend,
         texture: *c.mln_texture_session,
     ) !bool {
         var frame = std.mem.zeroes(c.mln_shared_texture_frame);
@@ -217,8 +267,8 @@ pub const MetalBackend = struct {
         return try self.drawMetalTexture(frame.native_handle.?);
     }
 
-    fn drawMetalTexture(self: *MetalBackend, metal_texture: *anyopaque) !bool {
-        const drawable = self.layer.msgSend(objc.Object, "nextDrawable", .{});
+    fn drawMetalTexture(self: *MetalTextureBackend, metal_texture: *anyopaque) !bool {
+        const drawable = self.view.layer.msgSend(objc.Object, "nextDrawable", .{});
         if (drawable.value == null) return types.AppError.BackendDrawFailed;
 
         const drawable_texture = drawable.getProperty(objc.Object, "texture");
@@ -260,95 +310,130 @@ pub const MetalBackend = struct {
         command_buffer.msgSend(void, "waitUntilCompleted", .{});
         return true;
     }
+};
 
-    fn releaseMetalFrame(
-        texture: *c.mln_texture_session,
-        frame: *const c.mln_metal_texture_frame,
-    ) void {
-        if (c.mln_metal_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("Metal texture release failed");
+const MetalSurfaceBackend = struct {
+    view: MetalView,
+
+    fn init(window: *c.SDL_Window, viewport: types.Viewport) !MetalSurfaceBackend {
+        return .{ .view = try MetalView.init(window, viewport) };
+    }
+
+    fn deinit(self: *MetalSurfaceBackend) void {
+        self.view.deinit();
+    }
+
+    fn resize(_: *MetalSurfaceBackend, _: types.Viewport) !void {}
+
+    fn attachRenderTarget(
+        self: *MetalSurfaceBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_metal_surface_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.layer = self.view.layer.value.?;
+        descriptor.device = self.view.device.value.?;
+        var surface: ?*c.mln_surface_session = null;
+        if (c.mln_metal_surface_attach(map, &descriptor, &surface) !=
+            c.MLN_STATUS_OK or surface == null)
+        {
+            diagnostics.logAbiError("Metal surface attach failed");
+            return types.AppError.SurfaceAttachFailed;
         }
-    }
-
-    fn releaseSharedFrame(
-        texture: *c.mln_texture_session,
-        frame: *const c.mln_shared_texture_frame,
-    ) void {
-        if (c.mln_texture_release_shared_frame(texture, frame) != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("shared texture release failed");
-        }
-    }
-
-    fn drawableSize(viewport: types.Viewport) CGSize {
-        return .{
-            .width = @floatFromInt(viewport.physical_width),
-            .height = @floatFromInt(viewport.physical_height),
-        };
-    }
-
-    fn clearColor() MTLClearColor {
-        return .{ .red = 0.08, .green = 0.09, .blue = 0.11, .alpha = 1.0 };
-    }
-
-    fn createPipeline(device: objc.Object) !objc.Object {
-        const NSString = objc.getClass("NSString").?;
-        const source = NSString.msgSend(
-            objc.Object,
-            "stringWithUTF8String:",
-            .{metal_shader_source.ptr},
-        );
-        if (source.value == null) return types.AppError.BackendSetupFailed;
-
-        var error_object: objc.c.id = null;
-        const library = device.msgSend(
-            objc.Object,
-            "newLibraryWithSource:options:error:",
-            .{ source, @as(objc.c.id, null), &error_object },
-        );
-        if (library.value == null) return types.AppError.BackendSetupFailed;
-        defer library.release();
-
-        const vertex_name = NSString.msgSend(
-            objc.Object,
-            "stringWithUTF8String:",
-            .{"vertex_main"},
-        );
-        const fragment_name = NSString.msgSend(
-            objc.Object,
-            "stringWithUTF8String:",
-            .{"fragment_main"},
-        );
-        const vertex = library.msgSend(objc.Object, "newFunctionWithName:", .{vertex_name});
-        if (vertex.value == null) return types.AppError.BackendSetupFailed;
-        defer vertex.release();
-        const fragment = library.msgSend(objc.Object, "newFunctionWithName:", .{fragment_name});
-        if (fragment.value == null) return types.AppError.BackendSetupFailed;
-        defer fragment.release();
-
-        const descriptor = objc.getClass("MTLRenderPipelineDescriptor").?
-            .msgSend(objc.Object, "alloc", .{})
-            .msgSend(objc.Object, "init", .{});
-        if (descriptor.value == null) return types.AppError.BackendSetupFailed;
-        defer descriptor.release();
-        descriptor.setProperty("vertexFunction", vertex);
-        descriptor.setProperty("fragmentFunction", fragment);
-        const attachments = descriptor.getProperty(objc.Object, "colorAttachments");
-        const attachment = attachments.msgSend(
-            objc.Object,
-            "objectAtIndexedSubscript:",
-            .{@as(c_ulong, 0)},
-        );
-        attachment.setProperty("pixelFormat", @as(u64, MTLPixelFormatBGRA8Unorm));
-
-        var pipeline_error: objc.c.id = null;
-        const pipeline = device.msgSend(
-            objc.Object,
-            "newRenderPipelineStateWithDescriptor:error:",
-            .{ descriptor, &pipeline_error },
-        );
-        if (pipeline.value == null) return types.AppError.BackendSetupFailed;
-        return pipeline;
+        return .{ .surface = surface.? };
     }
 };
+
+fn releaseMetalFrame(
+    texture: *c.mln_texture_session,
+    frame: *const c.mln_metal_texture_frame,
+) void {
+    if (c.mln_metal_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {
+        diagnostics.logAbiError("Metal texture release failed");
+    }
+}
+
+fn releaseSharedFrame(
+    texture: *c.mln_texture_session,
+    frame: *const c.mln_shared_texture_frame,
+) void {
+    if (c.mln_texture_release_shared_frame(texture, frame) != c.MLN_STATUS_OK) {
+        diagnostics.logAbiError("shared texture release failed");
+    }
+}
+
+fn drawableSize(viewport: types.Viewport) CGSize {
+    return .{
+        .width = @floatFromInt(viewport.physical_width),
+        .height = @floatFromInt(viewport.physical_height),
+    };
+}
+
+fn clearColor() MTLClearColor {
+    return .{ .red = 0.08, .green = 0.09, .blue = 0.11, .alpha = 1.0 };
+}
+
+fn createPipeline(device: objc.Object) !objc.Object {
+    const NSString = objc.getClass("NSString").?;
+    const source = NSString.msgSend(
+        objc.Object,
+        "stringWithUTF8String:",
+        .{metal_shader_source.ptr},
+    );
+    if (source.value == null) return types.AppError.BackendSetupFailed;
+
+    var error_object: objc.c.id = null;
+    const library = device.msgSend(
+        objc.Object,
+        "newLibraryWithSource:options:error:",
+        .{ source, @as(objc.c.id, null), &error_object },
+    );
+    if (library.value == null) return types.AppError.BackendSetupFailed;
+    defer library.release();
+
+    const vertex_name = NSString.msgSend(
+        objc.Object,
+        "stringWithUTF8String:",
+        .{"vertex_main"},
+    );
+    const fragment_name = NSString.msgSend(
+        objc.Object,
+        "stringWithUTF8String:",
+        .{"fragment_main"},
+    );
+    const vertex = library.msgSend(objc.Object, "newFunctionWithName:", .{vertex_name});
+    if (vertex.value == null) return types.AppError.BackendSetupFailed;
+    defer vertex.release();
+    const fragment = library.msgSend(objc.Object, "newFunctionWithName:", .{fragment_name});
+    if (fragment.value == null) return types.AppError.BackendSetupFailed;
+    defer fragment.release();
+
+    const descriptor = objc.getClass("MTLRenderPipelineDescriptor").?
+        .msgSend(objc.Object, "alloc", .{})
+        .msgSend(objc.Object, "init", .{});
+    if (descriptor.value == null) return types.AppError.BackendSetupFailed;
+    defer descriptor.release();
+    descriptor.setProperty("vertexFunction", vertex);
+    descriptor.setProperty("fragmentFunction", fragment);
+    const attachments = descriptor.getProperty(objc.Object, "colorAttachments");
+    const attachment = attachments.msgSend(
+        objc.Object,
+        "objectAtIndexedSubscript:",
+        .{@as(c_ulong, 0)},
+    );
+    attachment.setProperty("pixelFormat", @as(u64, MTLPixelFormatBGRA8Unorm));
+
+    var pipeline_error: objc.c.id = null;
+    const pipeline = device.msgSend(
+        objc.Object,
+        "newRenderPipelineStateWithDescriptor:error:",
+        .{ descriptor, &pipeline_error },
+    );
+    if (pipeline.value == null) return types.AppError.BackendSetupFailed;
+    return pipeline;
+}
 
 const metal_shader_source = @embedFile("shader.metal");

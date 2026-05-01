@@ -12,17 +12,11 @@ const util = @import("util.zig");
 
 const PendingFrameKind = enum { none, vulkan, shared };
 
-pub const VulkanBackend = struct {
+pub const VulkanBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_VULKAN;
 
-    context: Context,
-    swapchain: ?Swapchain,
-    pipeline: ?Pipeline,
-    commands: ?Commands,
-    pending_texture: ?*c.mln_texture_session,
-    pending_frame_kind: PendingFrameKind,
-    pending_vulkan_frame: ?c.mln_vulkan_texture_frame,
-    pending_shared_frame: ?c.mln_shared_texture_frame,
+    texture: VulkanTextureBackend,
+    surface: VulkanSurfaceBackend,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -30,21 +24,76 @@ pub const VulkanBackend = struct {
         viewport: types.Viewport,
         mode: types.RenderTargetMode,
     ) !VulkanBackend {
+        return switch (mode) {
+            .native_texture => .{ .texture = try VulkanTextureBackend.init(allocator, window, viewport, .native) },
+            .shared_texture => .{ .texture = try VulkanTextureBackend.init(allocator, window, viewport, .shared) },
+            .native_surface => .{ .surface = try VulkanSurfaceBackend.init(allocator, window) },
+        };
+    }
+
+    pub fn deinit(self: *VulkanBackend) void {
+        switch (self.*) {
+            .texture => |*backend| backend.deinit(),
+            .surface => |*backend| backend.deinit(),
+        }
+    }
+
+    pub fn resize(self: *VulkanBackend, viewport: types.Viewport) !void {
+        switch (self.*) {
+            .texture => |*backend| try backend.resize(viewport),
+            .surface => |*backend| try backend.resize(viewport),
+        }
+    }
+
+    pub fn finishFrame(self: *VulkanBackend) !void {
+        switch (self.*) {
+            .texture => |*backend| try backend.finishFrame(),
+            .surface => |*backend| try backend.finishFrame(),
+        }
+    }
+
+    pub fn attachRenderTarget(
+        self: *VulkanBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        return switch (self.*) {
+            .texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .surface => |*backend| backend.attachRenderTarget(map, viewport),
+        };
+    }
+
+    pub fn drawTexture(
+        self: *VulkanBackend,
+        texture: render_target.TextureSession,
+        viewport: types.Viewport,
+    ) !bool {
+        return switch (self.*) {
+            .texture => |*backend| backend.drawTexture(texture, viewport),
+            .surface => unreachable,
+        };
+    }
+};
+
+const VulkanTextureBackend = struct {
+    context: Context,
+    swapchain: Swapchain,
+    pipeline: Pipeline,
+    commands: Commands,
+    mode: render_target.TextureMode,
+    pending_texture: ?*c.mln_texture_session,
+    pending_frame_kind: PendingFrameKind,
+    pending_vulkan_frame: ?c.mln_vulkan_texture_frame,
+    pending_shared_frame: ?c.mln_shared_texture_frame,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        window: *c.SDL_Window,
+        viewport: types.Viewport,
+        mode: render_target.TextureMode,
+    ) !VulkanTextureBackend {
         var context = try Context.init(allocator, window);
         errdefer context.deinit();
-
-        if (mode == .native_surface) {
-            return .{
-                .context = context,
-                .swapchain = null,
-                .pipeline = null,
-                .commands = null,
-                .pending_texture = null,
-                .pending_frame_kind = .none,
-                .pending_vulkan_frame = null,
-                .pending_shared_frame = null,
-            };
-        }
 
         var swapchain = try Swapchain.init(allocator, &context, viewport);
         errdefer swapchain.deinit(context.device);
@@ -61,6 +110,7 @@ pub const VulkanBackend = struct {
             .swapchain = swapchain,
             .pipeline = pipeline,
             .commands = commands,
+            .mode = mode,
             .pending_texture = null,
             .pending_frame_kind = .none,
             .pending_vulkan_frame = null,
@@ -68,58 +118,66 @@ pub const VulkanBackend = struct {
         };
     }
 
-    pub fn deinit(self: *VulkanBackend) void {
+    fn deinit(self: *VulkanTextureBackend) void {
         self.context.waitIdle();
         self.releasePendingFrame();
-        if (self.commands) |*commands| commands.deinit(self.context.device);
-        if (self.swapchain) |*swapchain| swapchain.deinit(self.context.device);
-        if (self.pipeline) |*pipeline| pipeline.deinit(self.context.device);
+        self.commands.deinit(self.context.device);
+        self.swapchain.deinit(self.context.device);
+        self.pipeline.deinit(self.context.device);
         self.context.deinit();
     }
 
-    pub fn resize(self: *VulkanBackend, viewport: types.Viewport) !void {
-        const swapchain = if (self.swapchain) |*value| value else return;
-        const pipeline = if (self.pipeline) |*value| value else return;
+    fn resize(self: *VulkanTextureBackend, viewport: types.Viewport) !void {
         self.context.waitIdle();
         self.releasePendingFrame();
 
-        const previous_format = swapchain.format;
-        swapchain.deinit(self.context.device);
-        swapchain.* = try Swapchain.init(
-            swapchain.allocator,
+        const previous_format = self.swapchain.format;
+        self.swapchain.deinit(self.context.device);
+        self.swapchain = try Swapchain.init(
+            self.swapchain.allocator,
             &self.context,
             viewport,
         );
 
-        if (swapchain.format != previous_format) {
-            pipeline.deinit(self.context.device);
-            pipeline.* = try Pipeline.init(
-                pipeline.allocator,
+        if (self.swapchain.format != previous_format) {
+            self.pipeline.deinit(self.context.device);
+            self.pipeline = try Pipeline.init(
+                self.pipeline.allocator,
                 self.context.device,
-                swapchain.format,
+                self.swapchain.format,
             );
         }
-        try swapchain.createFramebuffers(
+        try self.swapchain.createFramebuffers(
             self.context.device,
-            pipeline.render_pass,
+            self.pipeline.render_pass,
         );
     }
 
-    pub fn attachRenderTarget(
-        self: *VulkanBackend,
+    fn finishFrame(self: *VulkanTextureBackend) !void {
+        if (self.pending_frame_kind == .none) return;
+        try self.commands.waitForFrameFence(self.context.device);
+        self.releasePendingFrame();
+    }
+
+    fn attachRenderTarget(
+        self: *VulkanTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
-        mode: types.RenderTargetMode,
     ) !render_target.Session {
-        return switch (mode) {
-            .native_texture => .{ .texture = try self.attachNativeTexture(map, viewport) },
-            .shared_texture => .{ .texture = try self.attachSharedTexture(map, viewport) },
-            .native_surface => .{ .surface = try self.attachNativeSurface(map, viewport) },
+        return switch (self.mode) {
+            .native => .{ .texture = .{
+                .handle = try self.attachNativeTexture(map, viewport),
+                .mode = .native,
+            } },
+            .shared => .{ .texture = .{
+                .handle = try self.attachSharedTexture(map, viewport),
+                .mode = .shared,
+            } },
         };
     }
 
     fn attachNativeTexture(
-        self: *VulkanBackend,
+        self: *VulkanTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !*c.mln_texture_session {
@@ -144,7 +202,7 @@ pub const VulkanBackend = struct {
     }
 
     fn attachSharedTexture(
-        _: *VulkanBackend,
+        _: *VulkanTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !*c.mln_texture_session {
@@ -164,46 +222,21 @@ pub const VulkanBackend = struct {
         return texture.?;
     }
 
-    fn attachNativeSurface(
-        self: *VulkanBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_surface_session {
-        var descriptor = c.mln_vulkan_surface_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.instance = self.context.instance;
-        descriptor.physical_device = self.context.physical_device;
-        descriptor.device = self.context.device;
-        descriptor.graphics_queue = self.context.queue;
-        descriptor.graphics_queue_family_index = self.context.queue_family_index;
-        descriptor.surface = self.context.surface;
-
-        var surface: ?*c.mln_surface_session = null;
-        if (c.mln_vulkan_surface_attach(map, &descriptor, &surface) !=
-            c.MLN_STATUS_OK or surface == null)
-        {
-            diagnostics.logAbiError("Vulkan surface attach failed");
-            return types.AppError.SurfaceAttachFailed;
-        }
-        return surface.?;
-    }
-
-    pub fn draw(
-        self: *VulkanBackend,
-        texture: *c.mln_texture_session,
-        mode: types.RenderTargetMode,
+    fn drawTexture(
+        self: *VulkanTextureBackend,
+        texture: render_target.TextureSession,
         _: types.Viewport,
     ) !bool {
-        return switch (mode) {
-            .native_texture => self.drawNativeTexture(texture),
-            .shared_texture => self.drawSharedTexture(texture),
-            .native_surface => true,
+        return switch (texture.mode) {
+            .native => self.drawNativeTexture(texture.handle),
+            .shared => self.drawSharedTexture(texture.handle),
         };
     }
 
-    fn drawNativeTexture(self: *VulkanBackend, texture: *c.mln_texture_session) !bool {
+    fn drawNativeTexture(
+        self: *VulkanTextureBackend,
+        texture: *c.mln_texture_session,
+    ) !bool {
         var frame: c.mln_vulkan_texture_frame = .{
             .size = @sizeOf(c.mln_vulkan_texture_frame),
             .generation = 0,
@@ -238,7 +271,10 @@ pub const VulkanBackend = struct {
         return true;
     }
 
-    fn drawSharedTexture(self: *VulkanBackend, texture: *c.mln_texture_session) !bool {
+    fn drawSharedTexture(
+        self: *VulkanTextureBackend,
+        texture: *c.mln_texture_session,
+    ) !bool {
         var frame = std.mem.zeroes(c.mln_shared_texture_frame);
         frame.size = @sizeOf(c.mln_shared_texture_frame);
         const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
@@ -267,45 +303,41 @@ pub const VulkanBackend = struct {
         return true;
     }
 
-    fn presentImageView(self: *VulkanBackend, image_view: c.VkImageView) !bool {
-        const swapchain = if (self.swapchain) |*value| value else return types.AppError.BackendDrawFailed;
-        const pipeline = if (self.pipeline) |*value| value else return types.AppError.BackendDrawFailed;
-        const commands = if (self.commands) |*value| value else return types.AppError.BackendDrawFailed;
-
-        if (image_view != pipeline.descriptor_image_view) {
-            pipeline.updateDescriptor(self.context.device, image_view);
+    fn presentImageView(self: *VulkanTextureBackend, image_view: c.VkImageView) !bool {
+        if (image_view != self.pipeline.descriptor_image_view) {
+            self.pipeline.updateDescriptor(self.context.device, image_view);
         }
 
-        try commands.waitForFrameFence(self.context.device);
+        try self.commands.waitForFrameFence(self.context.device);
 
         var image_index: u32 = 0;
         const acquire = c.vkAcquireNextImageKHR(
             self.context.device,
-            swapchain.handle,
+            self.swapchain.handle,
             std.math.maxInt(u64),
-            commands.image_available,
+            self.commands.image_available,
             null,
             &image_index,
         );
         if (acquire == c.VK_ERROR_OUT_OF_DATE_KHR) return false;
         try util.expectVkOrSuboptimal(acquire);
-        try commands.resetFence(self.context.device);
+        try self.commands.resetFence(self.context.device);
 
-        try commands.record(
+        try self.commands.record(
             self.context.device,
-            swapchain,
-            pipeline,
+            &self.swapchain,
+            &self.pipeline,
             image_index,
         );
-        try commands.submit(self.context.queue);
+        try self.commands.submit(self.context.queue);
 
         const present_info = c.VkPresentInfoKHR{
             .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .pNext = null,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &commands.render_finished,
+            .pWaitSemaphores = &self.commands.render_finished,
             .swapchainCount = 1,
-            .pSwapchains = &swapchain.handle,
+            .pSwapchains = &self.swapchain.handle,
             .pImageIndices = &image_index,
             .pResults = null,
         };
@@ -314,23 +346,13 @@ pub const VulkanBackend = struct {
             present != c.VK_SUBOPTIMAL_KHR and
             present != c.VK_ERROR_OUT_OF_DATE_KHR)
         {
-            commands.waitForFrameFence(self.context.device) catch {};
+            self.commands.waitForFrameFence(self.context.device) catch {};
             try util.expectVk(present);
         }
         return true;
     }
 
-    pub fn finishFrame(self: *VulkanBackend) !void {
-        if (self.pending_frame_kind == .none) return;
-        const commands = if (self.commands) |*value| value else {
-            self.releasePendingFrame();
-            return;
-        };
-        try commands.waitForFrameFence(self.context.device);
-        self.releasePendingFrame();
-    }
-
-    fn releasePendingFrame(self: *VulkanBackend) void {
+    fn releasePendingFrame(self: *VulkanTextureBackend) void {
         if (self.pending_texture) |texture| switch (self.pending_frame_kind) {
             .none => {},
             .vulkan => if (self.pending_vulkan_frame) |*frame| {
@@ -344,6 +366,49 @@ pub const VulkanBackend = struct {
         self.pending_frame_kind = .none;
         self.pending_vulkan_frame = null;
         self.pending_shared_frame = null;
+    }
+};
+
+const VulkanSurfaceBackend = struct {
+    context: Context,
+
+    fn init(allocator: std.mem.Allocator, window: *c.SDL_Window) !VulkanSurfaceBackend {
+        return .{ .context = try Context.init(allocator, window) };
+    }
+
+    fn deinit(self: *VulkanSurfaceBackend) void {
+        self.context.waitIdle();
+        self.context.deinit();
+    }
+
+    fn resize(_: *VulkanSurfaceBackend, _: types.Viewport) !void {}
+
+    fn finishFrame(_: *VulkanSurfaceBackend) !void {}
+
+    fn attachRenderTarget(
+        self: *VulkanSurfaceBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_vulkan_surface_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.instance = self.context.instance;
+        descriptor.physical_device = self.context.physical_device;
+        descriptor.device = self.context.device;
+        descriptor.graphics_queue = self.context.queue;
+        descriptor.graphics_queue_family_index = self.context.queue_family_index;
+        descriptor.surface = self.context.surface;
+
+        var surface: ?*c.mln_surface_session = null;
+        if (c.mln_vulkan_surface_attach(map, &descriptor, &surface) !=
+            c.MLN_STATUS_OK or surface == null)
+        {
+            diagnostics.logAbiError("Vulkan surface attach failed");
+            return types.AppError.SurfaceAttachFailed;
+        }
+        return .{ .surface = surface.? };
     }
 };
 

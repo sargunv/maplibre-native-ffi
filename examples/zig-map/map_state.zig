@@ -8,11 +8,7 @@ pub const MapState = struct {
     map: *c.mln_map,
     target: render_target.Session,
 
-    pub fn init(
-        viewport: types.Viewport,
-        backend: anytype,
-        mode: types.RenderTargetMode,
-    ) !MapState {
+    pub fn init(viewport: types.Viewport, backend: anytype) !MapState {
         var runtime: ?*c.mln_runtime = null;
         var runtime_options = c.mln_runtime_options_default();
         runtime_options.cache_path = ":memory:";
@@ -39,7 +35,7 @@ pub const MapState = struct {
         try loadStyle(map.?);
         try setCamera(map.?);
 
-        var target = try backend.attachRenderTarget(map.?, viewport, mode);
+        var target = try backend.attachRenderTarget(map.?, viewport);
         errdefer target.deinit();
         return .{ .runtime = runtime.?, .map = map.?, .target = target };
     }

@@ -2,13 +2,23 @@ const c = @import("c.zig").c;
 const diagnostics = @import("diagnostics.zig");
 const types = @import("types.zig");
 
+pub const TextureMode = enum {
+    native,
+    shared,
+};
+
+pub const TextureSession = struct {
+    handle: *c.mln_texture_session,
+    mode: TextureMode,
+};
+
 pub const Session = union(enum) {
-    texture: *c.mln_texture_session,
+    texture: TextureSession,
     surface: *c.mln_surface_session,
 
     pub fn deinit(self: *Session) void {
         switch (self.*) {
-            .texture => |texture| _ = c.mln_texture_destroy(texture),
+            .texture => |texture| _ = c.mln_texture_destroy(texture.handle),
             .surface => |surface| _ = c.mln_surface_destroy(surface),
         }
     }
@@ -16,7 +26,7 @@ pub const Session = union(enum) {
     pub fn resize(self: *Session, viewport: types.Viewport) !void {
         const status = switch (self.*) {
             .texture => |texture| c.mln_texture_resize(
-                texture,
+                texture.handle,
                 viewport.logical_width,
                 viewport.logical_height,
                 viewport.scale_factor,
@@ -43,7 +53,7 @@ pub const Session = union(enum) {
 
     pub fn renderUpdate(self: *Session) !bool {
         const status = switch (self.*) {
-            .texture => |texture| c.mln_texture_render_update(texture),
+            .texture => |texture| c.mln_texture_render_update(texture.handle),
             .surface => |surface| c.mln_surface_render_update(surface),
         };
         if (status == c.MLN_STATUS_OK) return true;

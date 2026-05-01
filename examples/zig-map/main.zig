@@ -52,7 +52,7 @@ pub fn main(init_args: std.process.Init) !void {
     var backend = try Backend.init(allocator, window_handle, current_viewport, target_mode);
     defer backend.deinit();
 
-    var map = try map_state.MapState.init(current_viewport, &backend, target_mode);
+    var map = try map_state.MapState.init(current_viewport, &backend);
     defer map.deinit();
 
     var running = true;
@@ -104,7 +104,7 @@ pub fn main(init_args: std.process.Init) !void {
                 did_work = true;
                 switch (map.target) {
                     .texture => |texture| {
-                        if (try backend.draw(texture, target_mode, current_viewport)) {
+                        if (try backend.drawTexture(texture, current_viewport)) {
                             has_presented_frame = true;
                         }
                     },
