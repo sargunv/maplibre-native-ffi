@@ -1,20 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const testing = std.testing;
+const metal_support = @import("metal_support.zig");
 const support = @import("support.zig");
 const c = support.c;
-
-const objc = struct {
-    extern "c" fn objc_getClass(name: [*:0]const u8) ?*anyopaque;
-    extern "c" fn sel_registerName(name: [*:0]const u8) ?*anyopaque;
-    extern "c" fn objc_msgSend(receiver: ?*anyopaque, selector: ?*anyopaque) ?*anyopaque;
-};
-
-fn createMetalLayer() !*anyopaque {
-    const cls = objc.objc_getClass("CAMetalLayer") orelse return error.MetalLayerUnavailable;
-    const sel = objc.sel_registerName("layer") orelse return error.MetalLayerUnavailable;
-    return objc.objc_msgSend(cls, sel) orelse return error.MetalLayerUnavailable;
-}
 
 test "surface descriptors expose defaults" {
     const metal = c.mln_metal_surface_descriptor_default();
@@ -58,7 +47,7 @@ test "Metal surface attach rejects invalid arguments" {
     surface = null;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_surface_attach(map, &descriptor, &surface));
 
-    descriptor.layer = try createMetalLayer();
+    descriptor.layer = try metal_support.createLayer();
     var small_descriptor = descriptor;
     small_descriptor.size = @sizeOf(c.mln_metal_surface_descriptor) - 1;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_surface_attach(map, &small_descriptor, &surface));
@@ -89,7 +78,7 @@ test "Metal surface lifecycle and render update" {
     var descriptor = c.mln_metal_surface_descriptor_default();
     descriptor.width = 64;
     descriptor.height = 64;
-    descriptor.layer = try createMetalLayer();
+    descriptor.layer = try metal_support.createLayer();
 
     var surface: ?*c.mln_surface_session = null;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_surface_attach(map, &descriptor, &surface));

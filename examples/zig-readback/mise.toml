@@ -1,0 +1,13 @@
+[env]
+DYLD_LIBRARY_PATH = "{{config_root}}/../../build"
+LD_LIBRARY_PATH = "{{config_root}}/../../build"
+PKG_CONFIG = "{{config_root}}/../../.pixi/envs/default/bin/pkg-config"
+PKG_CONFIG_PATH = "{{config_root}}/../../build/pkgconfig"
+
+[tasks.build]
+depends = ["//:build"]
+run = "zig build"
+
+[tasks.run]
+depends = ["//:build"]
+run = "zig build run"

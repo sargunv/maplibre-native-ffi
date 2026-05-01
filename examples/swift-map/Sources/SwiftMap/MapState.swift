@@ -1,6 +1,6 @@
 import CMapLibreNativeC
 import Foundation
-import Metal
+import QuartzCore
 
 struct Viewport: Equatable {
   var logicalWidth: UInt32
@@ -14,21 +14,21 @@ struct Viewport: Equatable {
 final class MapState {
   nonisolated(unsafe) private(set) var runtime: OpaquePointer? = nil
   nonisolated(unsafe) private(set) var map: OpaquePointer? = nil
-  nonisolated(unsafe) private(set) var texture: OpaquePointer? = nil
+  nonisolated(unsafe) private(set) var surface: OpaquePointer? = nil
 
-  init(viewport: Viewport, device: MTLDevice) throws {
+  init(viewport: Viewport, layer: CAMetalLayer) throws {
     var createdRuntime: OpaquePointer?
     var createdMap: OpaquePointer?
-    var createdTexture: OpaquePointer?
+    var createdSurface: OpaquePointer?
 
     do {
       try Self.createRuntime(&createdRuntime)
       try Self.createMap(runtime: createdRuntime, viewport: viewport, outMap: &createdMap)
       try Self.loadStyle(map: createdMap)
       try Self.setInitialCamera(map: createdMap)
-      try Self.attachTexture(map: createdMap, viewport: viewport, device: device, outTexture: &createdTexture)
+      try Self.attachSurface(map: createdMap, viewport: viewport, layer: layer, outSurface: &createdSurface)
     } catch {
-      if let createdTexture { _ = mln_texture_destroy(createdTexture) }
+      if let createdSurface { _ = mln_surface_destroy(createdSurface) }
       if let createdMap { _ = mln_map_destroy(createdMap) }
       if let createdRuntime { _ = mln_runtime_destroy(createdRuntime) }
       throw error
@@ -36,19 +36,19 @@ final class MapState {
 
     runtime = createdRuntime
     map = createdMap
-    texture = createdTexture
+    surface = createdSurface
   }
 
   deinit {
-    if let texture { _ = mln_texture_destroy(texture) }
+    if let surface { _ = mln_surface_destroy(surface) }
     if let map { _ = mln_map_destroy(map) }
     if let runtime { _ = mln_runtime_destroy(runtime) }
   }
 
   func resize(_ viewport: Viewport) throws {
     try checkCAPI(
-      mln_texture_resize(texture, viewport.logicalWidth, viewport.logicalHeight, viewport.scaleFactor),
-      "texture resize failed"
+      mln_surface_resize(surface, viewport.logicalWidth, viewport.logicalHeight, viewport.scaleFactor),
+      "surface resize failed"
     )
   }
 
@@ -74,10 +74,10 @@ final class MapState {
   }
 
   func render() throws -> Bool {
-    let status = mln_texture_render_update(texture)
+    let status = mln_surface_render_update(surface)
     if status == MLN_STATUS_OK { return true }
     if status == MLN_STATUS_INVALID_STATE { return false }
-    try checkCAPI(status, "texture render failed")
+    try checkCAPI(status, "surface render failed")
     return false
   }
 
@@ -122,17 +122,17 @@ final class MapState {
     try checkCAPI(mln_map_jump_to(map, &camera), "camera jump failed")
   }
 
-  private static func attachTexture(
+  private static func attachSurface(
     map: OpaquePointer?,
     viewport: Viewport,
-    device: MTLDevice,
-    outTexture: inout OpaquePointer?
+    layer: CAMetalLayer,
+    outSurface: inout OpaquePointer?
   ) throws {
-    var descriptor = mln_metal_texture_descriptor_default()
+    var descriptor = mln_metal_surface_descriptor_default()
     descriptor.width = viewport.logicalWidth
     descriptor.height = viewport.logicalHeight
     descriptor.scale_factor = viewport.scaleFactor
-    descriptor.device = Unmanaged.passUnretained(device).toOpaque()
-    try checkCAPI(mln_metal_texture_attach(map, &descriptor, &outTexture), "Metal texture attach failed")
+    descriptor.layer = Unmanaged.passUnretained(layer).toOpaque()
+    try checkCAPI(mln_metal_surface_attach(map, &descriptor, &outSurface), "Metal surface attach failed")
   }
 }

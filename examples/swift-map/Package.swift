@@ -16,7 +16,6 @@ let package = Package(
     .executableTarget(
       name: "SwiftMap",
       dependencies: ["CMapLibreNativeC"],
-      resources: [.process("Shaders")],
       linkerSettings: [
         .linkedFramework("AppKit"),
         .linkedFramework("Metal"),
