@@ -62,6 +62,13 @@ auto validate_owned_descriptor(const mln_owned_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
+auto is_known_shared_handle_type(uint32_t handle_type) -> bool {
+  return handle_type == MLN_SHARED_TEXTURE_HANDLE_NONE ||
+         handle_type == MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE ||
+         handle_type == MLN_SHARED_TEXTURE_HANDLE_METAL_SHARED_TEXTURE_HANDLE ||
+         handle_type == MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE;
+}
+
 }  // namespace
 
 namespace mln::core {
@@ -73,6 +80,18 @@ auto owned_texture_descriptor_default() noexcept
     .width = 256,
     .height = 256,
     .scale_factor = 1.0
+  };
+}
+
+auto shared_texture_descriptor_default() noexcept
+  -> mln_shared_texture_descriptor {
+  return mln_shared_texture_descriptor{
+    .size = sizeof(mln_shared_texture_descriptor),
+    .width = 256,
+    .height = 256,
+    .scale_factor = 1.0,
+    .required_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
+    .device = nullptr
   };
 }
 
@@ -93,6 +112,31 @@ auto validate_attach_output(mln_texture_session** out_texture) -> mln_status {
   }
   if (*out_texture != nullptr) {
     set_thread_error("out_texture must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_shared_texture_descriptor(
+  const mln_shared_texture_descriptor* descriptor
+) -> mln_status {
+  if (descriptor == nullptr) {
+    set_thread_error("texture descriptor must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (descriptor->size < sizeof(mln_shared_texture_descriptor)) {
+    set_thread_error("mln_shared_texture_descriptor.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    descriptor->width == 0 || descriptor->height == 0 ||
+    !std::isfinite(descriptor->scale_factor) || descriptor->scale_factor <= 0.0
+  ) {
+    set_thread_error("texture dimensions and scale_factor must be positive");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!is_known_shared_handle_type(descriptor->required_handle_type)) {
+    set_thread_error("shared texture handle type is invalid");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   return MLN_STATUS_OK;
@@ -124,6 +168,17 @@ auto validate_live_attached_texture(mln_texture_session* texture)
   if (!texture->attached || texture->backend == nullptr) {
     set_thread_error("texture session is detached");
     return MLN_STATUS_INVALID_STATE;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_shared_frame_output(mln_shared_texture_frame* out_frame)
+  -> mln_status {
+  if (
+    out_frame == nullptr || out_frame->size < sizeof(mln_shared_texture_frame)
+  ) {
+    set_thread_error("out_frame must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
   }
   return MLN_STATUS_OK;
 }
@@ -257,6 +312,7 @@ auto texture_resize(
   texture->rendered_native_texture = nullptr;
   texture->acquired_native_texture = nullptr;
   texture->rendered_generation = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
   texture->width = width;
   texture->height = height;
   texture->physical_width = physical_width;
@@ -407,6 +463,7 @@ auto texture_detach(mln_texture_session* texture) -> mln_status {
   texture->backend.reset();
   texture->attached = false;
   texture->rendered_generation = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
   ++texture->generation;
   return MLN_STATUS_OK;
 }

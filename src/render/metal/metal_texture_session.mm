@@ -3,6 +3,7 @@
 
 #include <mbgl/util/size.hpp>
 
+#include <Foundation/NSSharedPtr.hpp>
 #include <Metal/MTLDevice.hpp>
 #include <Metal/MTLPixelFormat.hpp>
 #include <Metal/MTLTexture.hpp>
@@ -167,6 +168,66 @@ auto metal_texture_attach(
   return texture_attach_session(std::move(session), out_texture);
 }
 
+auto shared_texture_attach(
+  mln_map* map, const mln_shared_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) -> mln_status {
+  const auto map_status = validate_map(map);
+  if (map_status != MLN_STATUS_OK) {
+    return map_status;
+  }
+  const auto descriptor_status = validate_shared_texture_descriptor(descriptor);
+  if (descriptor_status != MLN_STATUS_OK) {
+    return descriptor_status;
+  }
+  const auto output_status = validate_attach_output(out_texture);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
+  }
+  if (
+    descriptor->required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
+    descriptor->required_handle_type != MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE
+  ) {
+    set_thread_error("requested shared texture handle type is unsupported");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+
+  auto default_device = NS::SharedPtr<MTL::Device>{};
+  auto* device = static_cast<MTL::Device*>(descriptor->device);
+  if (device == nullptr) {
+    default_device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
+    device = default_device.get();
+  }
+  if (device == nullptr) {
+    set_thread_error("Metal system default device is not available");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+
+  auto session = std::make_unique<mln_texture_session>();
+  session->map = map;
+  session->owner_thread = map_owner_thread(map);
+  session->width = descriptor->width;
+  session->height = descriptor->height;
+  session->scale_factor = descriptor->scale_factor;
+  session->physical_width =
+    physical_dimension(descriptor->width, descriptor->scale_factor);
+  session->physical_height =
+    physical_dimension(descriptor->height, descriptor->scale_factor);
+  session->backend_kind = TextureSessionBackend::Metal;
+  session->shared_required_handle_type = descriptor->required_handle_type;
+  session->backend = std::make_unique<MetalTextureBackend>(
+    device, mbgl::Size{session->physical_width, session->physical_height}
+  );
+  session->after_render = finish_metal_render;
+  return texture_attach_session(std::move(session), out_texture);
+}
+
 auto metal_texture_acquire_frame(
   mln_texture_session* texture, mln_metal_texture_frame* out_frame
 ) -> mln_status {
@@ -196,6 +257,7 @@ auto metal_texture_acquire_frame(
   texture->acquired_native_texture = texture->rendered_native_texture;
   texture->acquired = true;
   texture->acquired_frame_id = out_frame->frame_id;
+  texture->acquired_frame_kind = TextureSessionFrameKind::Metal;
   ++texture->next_frame_id;
   return MLN_STATUS_OK;
 }
@@ -211,7 +273,10 @@ auto metal_texture_release_frame(
     set_thread_error("frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (!texture->acquired) {
+  if (
+    !texture->acquired ||
+    texture->acquired_frame_kind != TextureSessionFrameKind::Metal
+  ) {
     set_thread_error("no texture frame is currently acquired");
     return MLN_STATUS_INVALID_STATE;
   }
@@ -225,6 +290,105 @@ auto metal_texture_release_frame(
   }
   texture->acquired = false;
   texture->acquired_frame_id = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
+  texture->acquired_native_texture = nullptr;
+  return MLN_STATUS_OK;
+}
+
+auto texture_acquire_shared_frame(
+  mln_texture_session* texture, mln_shared_texture_frame* out_frame
+) -> mln_status {
+  const auto status = validate_live_attached_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto output_status = validate_shared_frame_output(out_frame);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  if (texture->acquired) {
+    set_thread_error("a texture frame is already acquired");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->rendered_generation != texture->generation) {
+    set_thread_error("no rendered frame is available for this generation");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->backend_kind != TextureSessionBackend::Metal) {
+    set_thread_error("texture session cannot expose a shared texture frame");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  if (
+    texture->shared_required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
+    texture->shared_required_handle_type !=
+      MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE
+  ) {
+    set_thread_error("requested shared texture handle type is unsupported");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+
+  auto* metal_texture =
+    static_cast<MTL::Texture*>(texture->rendered_native_texture);
+  if (metal_texture == nullptr) {
+    set_thread_error("rendered Metal texture is not available");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  *out_frame = mln_shared_texture_frame{
+    .size = sizeof(mln_shared_texture_frame),
+    .generation = texture->generation,
+    .width = texture->physical_width,
+    .height = texture->physical_height,
+    .scale_factor = texture->scale_factor,
+    .frame_id = texture->next_frame_id,
+    .producer_backend = MLN_TEXTURE_BACKEND_METAL,
+    .native_handle_type = MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE,
+    .native_handle = metal_texture,
+    .native_view = nullptr,
+    .native_device = metal_texture->device(),
+    .export_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
+    .export_handle = nullptr,
+    .format = static_cast<uint64_t>(metal_texture->pixelFormat()),
+    .layout = 0,
+    .plane = 0
+  };
+  texture->acquired_native_texture = texture->rendered_native_texture;
+  texture->acquired = true;
+  texture->acquired_frame_id = out_frame->frame_id;
+  texture->acquired_frame_kind = TextureSessionFrameKind::Shared;
+  ++texture->next_frame_id;
+  return MLN_STATUS_OK;
+}
+
+auto texture_release_shared_frame(
+  mln_texture_session* texture, const mln_shared_texture_frame* frame
+) -> mln_status {
+  const auto status = validate_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (frame == nullptr || frame->size < sizeof(mln_shared_texture_frame)) {
+    set_thread_error("frame must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    !texture->acquired ||
+    texture->acquired_frame_kind != TextureSessionFrameKind::Shared
+  ) {
+    set_thread_error("no shared texture frame is currently acquired");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (frame->generation != texture->generation) {
+    set_thread_error("frame generation does not match acquired frame");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (frame->frame_id != texture->acquired_frame_id) {
+    set_thread_error("frame identity does not match acquired frame");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  texture->acquired = false;
+  texture->acquired_frame_id = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
   texture->acquired_native_texture = nullptr;
   return MLN_STATUS_OK;
 }

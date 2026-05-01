@@ -127,6 +127,23 @@ const Backend = struct {
         try testing.expectEqual(@as(f64, 2.0), frame.metal.scale_factor);
         try testing.expectEqual(@as(u64, 2), frame.metal.generation);
     }
+
+    pub fn expectSharedFrame(frame: *const c.mln_shared_texture_frame) !void {
+        try testing.expectEqual(@as(u32, c.MLN_TEXTURE_BACKEND_METAL), frame.producer_backend);
+        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE), frame.native_handle_type);
+        try testing.expect(frame.native_handle != null);
+        try testing.expectEqual(@as(?*anyopaque, null), frame.native_view);
+        try testing.expect(frame.native_device != null);
+        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_NONE), frame.export_handle_type);
+        try testing.expectEqual(@as(?*anyopaque, null), frame.export_handle);
+        try testing.expectEqual(expected_pixel_format_rgba8_unorm, frame.format);
+        try testing.expectEqual(@as(u32, 0), frame.layout);
+        try testing.expectEqual(@as(u32, 0), frame.plane);
+        try testing.expectEqual(@as(u32, 256), frame.width);
+        try testing.expectEqual(@as(u32, 256), frame.height);
+        try testing.expectEqual(@as(u64, 1), frame.generation);
+        try testing.expect(frame.frame_id != 0);
+    }
 };
 
 test "Metal texture unsupported backend validates arguments" {
@@ -168,6 +185,61 @@ test "Metal texture rejects wrong-thread calls" {
 test "Metal texture render acquire release and resize generation" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
+}
+
+test "Metal texture exposes shared frame metadata" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try common.expectSharedFrameMetadata(Backend);
+}
+
+test "Metal shared texture attach renders shared frames" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_shared_texture_descriptor_default();
+    descriptor.width = 64;
+    descriptor.height = 32;
+
+    var texture: ?*c.mln_texture_session = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_shared_texture_attach(map, &descriptor, &texture));
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?)) catch @panic("texture destroy failed");
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+
+    var frame = common.emptySharedFrame();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_acquire_shared_frame(texture.?, &frame));
+    try testing.expectEqual(@as(u32, c.MLN_TEXTURE_BACKEND_METAL), frame.producer_backend);
+    try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE), frame.native_handle_type);
+    try testing.expect(frame.native_handle != null);
+    try testing.expect(frame.native_device != null);
+    try testing.expectEqual(@as(u32, 64), frame.width);
+    try testing.expectEqual(@as(u32, 32), frame.height);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_release_shared_frame(texture.?, &frame));
+}
+
+test "Metal shared texture attach rejects unsupported export handles" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_shared_texture_descriptor_default();
+    descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_SHARED_TEXTURE_HANDLE;
+
+    var texture: ?*c.mln_texture_session = null;
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_shared_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }
 
 test "Metal texture render emits observer events" {

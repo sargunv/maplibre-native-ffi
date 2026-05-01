@@ -263,6 +263,10 @@ shared frame contract must include producer backend, native handle kind,
 ownership, format, dimensions, layout/state, adapter/device compatibility, and
 acquire/release synchronization.
 
+The current C ABI exposes that frame metadata for backend-native texture/image
+handles and rejects unsupported export handle kinds instead of silently falling
+back to a non-exportable allocation.
+
 Surface sessions should be direct-present targets. They should share map/style,
 camera, and event ownership with texture sessions, but they should not expose
 texture-frame acquire/release APIs.
@@ -277,7 +281,7 @@ The lowest-risk order is:
 - [x] Add MapLibre-owned/offscreen texture sessions for readback-first server
       use.
 - [x] Add `mln_texture_read_premultiplied_rgba8` on rendered texture sessions.
-- [ ] Add shared/exportable texture descriptors and frame metadata for cross-API
+- [x] Add shared/exportable texture descriptors and frame metadata for cross-API
       UI sharing.
 - [ ] Add native surface sessions as a sibling render target mode.
 

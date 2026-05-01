@@ -217,6 +217,23 @@ const Backend = struct {
         try testing.expectEqual(@as(f64, 2.0), frame.vulkan.scale_factor);
         try testing.expectEqual(@as(u64, 2), frame.vulkan.generation);
     }
+
+    pub fn expectSharedFrame(frame: *const c.mln_shared_texture_frame) !void {
+        try testing.expectEqual(@as(u32, c.MLN_TEXTURE_BACKEND_VULKAN), frame.producer_backend);
+        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE), frame.native_handle_type);
+        try testing.expect(frame.native_handle != null);
+        try testing.expect(frame.native_view != null);
+        try testing.expect(frame.native_device != null);
+        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_NONE), frame.export_handle_type);
+        try testing.expectEqual(@as(?*anyopaque, null), frame.export_handle);
+        try testing.expectEqual(@as(u64, vk.VK_FORMAT_R8G8B8A8_UNORM), frame.format);
+        try testing.expectEqual(@as(u32, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), frame.layout);
+        try testing.expectEqual(@as(u32, 0), frame.plane);
+        try testing.expectEqual(@as(u32, 256), frame.width);
+        try testing.expectEqual(@as(u32, 256), frame.height);
+        try testing.expectEqual(@as(u64, 1), frame.generation);
+        try testing.expect(frame.frame_id != 0);
+    }
 };
 
 test "Vulkan texture unsupported backend validates arguments" {
@@ -265,6 +282,11 @@ test "Vulkan texture rejects wrong-thread calls" {
 test "Vulkan texture render acquire release and resize generation" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
+}
+
+test "Vulkan texture exposes shared frame metadata" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    try common.expectSharedFrameMetadata(Backend);
 }
 
 test "Vulkan texture render emits observer events" {

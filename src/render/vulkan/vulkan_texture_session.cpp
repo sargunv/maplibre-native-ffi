@@ -212,6 +212,32 @@ auto vulkan_texture_attach(
   return texture_attach_session(std::move(session), out_texture);
 }
 
+auto shared_texture_attach(
+  mln_map* map, const mln_shared_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) -> mln_status {
+  const auto map_status = validate_map(map);
+  if (map_status != MLN_STATUS_OK) {
+    return map_status;
+  }
+  const auto descriptor_status = validate_shared_texture_descriptor(descriptor);
+  if (descriptor_status != MLN_STATUS_OK) {
+    return descriptor_status;
+  }
+  const auto output_status = validate_attach_output(out_texture);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
+  }
+  set_thread_error("shared texture sessions are not supported by this build");
+  return MLN_STATUS_UNSUPPORTED;
+}
+
 auto vulkan_texture_acquire_frame(
   mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
 ) -> mln_status {
@@ -254,6 +280,7 @@ auto vulkan_texture_acquire_frame(
   };
   texture->acquired = true;
   texture->acquired_frame_id = out_frame->frame_id;
+  texture->acquired_frame_kind = TextureSessionFrameKind::Vulkan;
   ++texture->next_frame_id;
   return MLN_STATUS_OK;
 }
@@ -269,7 +296,10 @@ auto vulkan_texture_release_frame(
     set_thread_error("frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (!texture->acquired) {
+  if (
+    !texture->acquired ||
+    texture->acquired_frame_kind != TextureSessionFrameKind::Vulkan
+  ) {
     set_thread_error("no texture frame is currently acquired");
     return MLN_STATUS_INVALID_STATE;
   }
@@ -283,6 +313,99 @@ auto vulkan_texture_release_frame(
   }
   texture->acquired = false;
   texture->acquired_frame_id = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
+  return MLN_STATUS_OK;
+}
+
+auto texture_acquire_shared_frame(
+  mln_texture_session* texture, mln_shared_texture_frame* out_frame
+) -> mln_status {
+  const auto status = validate_live_attached_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto output_status = validate_shared_frame_output(out_frame);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  if (texture->acquired) {
+    set_thread_error("a texture frame is already acquired");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->rendered_generation != texture->generation) {
+    set_thread_error("no rendered frame is available for this generation");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->backend_kind != TextureSessionBackend::Vulkan) {
+    set_thread_error("texture session cannot expose a shared texture frame");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  if (
+    texture->shared_required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
+    texture->shared_required_handle_type !=
+      MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE
+  ) {
+    set_thread_error("requested shared texture handle type is unsupported");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+  auto& backend = static_cast<VulkanTextureBackend&>(*texture->backend);
+  const auto resources = backend.frame_resources();
+  *out_frame = mln_shared_texture_frame{
+    .size = sizeof(mln_shared_texture_frame),
+    .generation = texture->generation,
+    .width = texture->physical_width,
+    .height = texture->physical_height,
+    .scale_factor = texture->scale_factor,
+    .frame_id = texture->next_frame_id,
+    .producer_backend = MLN_TEXTURE_BACKEND_VULKAN,
+    .native_handle_type = MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE,
+    .native_handle = resources.image,
+    .native_view = resources.image_view,
+    .native_device = resources.device,
+    .export_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
+    .export_handle = nullptr,
+    .format = static_cast<uint64_t>(resources.format),
+    .layout = static_cast<uint32_t>(vk::ImageLayout::eShaderReadOnlyOptimal),
+    .plane = 0,
+  };
+  texture->acquired = true;
+  texture->acquired_frame_id = out_frame->frame_id;
+  texture->acquired_frame_kind = TextureSessionFrameKind::Shared;
+  ++texture->next_frame_id;
+  return MLN_STATUS_OK;
+}
+
+auto texture_release_shared_frame(
+  mln_texture_session* texture, const mln_shared_texture_frame* frame
+) -> mln_status {
+  const auto status = validate_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (frame == nullptr || frame->size < sizeof(mln_shared_texture_frame)) {
+    set_thread_error("frame must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    !texture->acquired ||
+    texture->acquired_frame_kind != TextureSessionFrameKind::Shared
+  ) {
+    set_thread_error("no shared texture frame is currently acquired");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  if (frame->generation != texture->generation) {
+    set_thread_error("frame generation does not match acquired frame");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (frame->frame_id != texture->acquired_frame_id) {
+    set_thread_error("frame identity does not match acquired frame");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  texture->acquired = false;
+  texture->acquired_frame_id = 0;
+  texture->acquired_frame_kind = TextureSessionFrameKind::None;
   return MLN_STATUS_OK;
 }
 

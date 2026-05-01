@@ -1397,6 +1397,45 @@ typedef struct mln_owned_texture_descriptor {
   double scale_factor;
 } mln_owned_texture_descriptor;
 
+/** Backend that produced a shared texture frame. */
+typedef enum mln_texture_backend : uint32_t {
+  MLN_TEXTURE_BACKEND_NONE = 0,
+  MLN_TEXTURE_BACKEND_METAL = 1,
+  MLN_TEXTURE_BACKEND_VULKAN = 2,
+} mln_texture_backend;
+
+/** Native or exported handle kind carried by a shared texture frame. */
+typedef enum mln_shared_texture_handle_type : uint32_t {
+  MLN_SHARED_TEXTURE_HANDLE_NONE = 0,
+  /** id<MTLTexture> / MTL::Texture*. */
+  MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE = 1,
+  /** MTLSharedTextureHandle / MTL::SharedTextureHandle*. */
+  MLN_SHARED_TEXTURE_HANDLE_METAL_SHARED_TEXTURE_HANDLE = 2,
+  /** VkImage. */
+  MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE = 3,
+} mln_shared_texture_handle_type;
+
+/** Shared texture session attachment options. */
+typedef struct mln_shared_texture_descriptor {
+  uint32_t size;
+  /** Logical map width in UI pixels. */
+  uint32_t width;
+  /** Logical map height in UI pixels. */
+  uint32_t height;
+  /** UI-to-device pixel scale. Must be positive and finite. */
+  double scale_factor;
+  /**
+   * Required exported handle kind. NONE means the build's native texture
+   * handle.
+   */
+  uint32_t required_handle_type;
+  /**
+   * Optional borrowed producer device. On Metal this is id<MTLDevice> /
+   * MTL::Device*. Null lets the wrapper choose the system default device.
+   */
+  void* device;
+} mln_shared_texture_descriptor;
+
 /** Metal texture session attachment options. */
 typedef struct mln_metal_texture_descriptor {
   uint32_t size;
@@ -1477,6 +1516,41 @@ typedef struct mln_vulkan_texture_frame {
   uint32_t layout;
 } mln_vulkan_texture_frame;
 
+/** Shared texture frame acquired from a texture session. */
+typedef struct mln_shared_texture_frame {
+  uint32_t size;
+  /** Session generation that produced this frame. */
+  uint64_t generation;
+  /** Physical texture/image width in device pixels. */
+  uint32_t width;
+  /** Physical texture/image height in device pixels. */
+  uint32_t height;
+  /** UI-to-device pixel scale used for this frame. */
+  double scale_factor;
+  /** Opaque frame identity used to reject stale releases. */
+  uint64_t frame_id;
+  /** mln_texture_backend value for the producer backend. */
+  uint32_t producer_backend;
+  /** mln_shared_texture_handle_type value for native_handle. */
+  uint32_t native_handle_type;
+  /** Borrowed native texture/image handle. Valid until frame release. */
+  void* native_handle;
+  /** Optional borrowed native view handle, such as VkImageView. */
+  void* native_view;
+  /** Borrowed native device handle. Valid until frame release. */
+  void* native_device;
+  /** mln_shared_texture_handle_type value for export_handle, or NONE. */
+  uint32_t export_handle_type;
+  /** Optional borrowed export handle. Valid until frame release. */
+  void* export_handle;
+  /** Backend-native pixel format value. */
+  uint64_t format;
+  /** Backend-native layout/state value. Zero when not applicable. */
+  uint32_t layout;
+  /** Backend-native plane index. Zero for single-plane textures. */
+  uint32_t plane;
+} mln_shared_texture_frame;
+
 /** CPU image readback metadata for a texture session frame. */
 typedef struct mln_texture_image_info {
   size_t size;
@@ -1496,6 +1570,12 @@ typedef struct mln_texture_image_info {
  */
 MLN_API mln_owned_texture_descriptor
 mln_owned_texture_descriptor_default(void) MLN_NOEXCEPT;
+
+/**
+ * Returns shared texture descriptor values initialized for this C API version.
+ */
+MLN_API mln_shared_texture_descriptor
+mln_shared_texture_descriptor_default(void) MLN_NOEXCEPT;
 
 /**
  * Returns Metal texture descriptor values initialized for this C API version.
@@ -1589,6 +1669,35 @@ MLN_API mln_status mln_metal_texture_attach(
  */
 MLN_API mln_status mln_vulkan_texture_attach(
   mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) MLN_NOEXCEPT;
+
+/**
+ * Attaches a shared offscreen texture render target to a map.
+ *
+ * The map may have at most one live texture session. The session and every
+ * texture-session call are owner-thread affine to the map owner thread. The
+ * wrapper renders into a texture/image that can be acquired through
+ * mln_texture_acquire_shared_frame().
+ *
+ * Exportability is requested through descriptor->required_handle_type because
+ * some backends must choose exportable allocation paths up front. A value of
+ * MLN_SHARED_TEXTURE_HANDLE_NONE requests the build's native texture handle.
+ * Unsupported export handle requests fail during attach.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
+ *   null or invalid, out_texture is null, or *out_texture is not null.
+ * - MLN_STATUS_INVALID_STATE when the map already has a texture session.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_UNSUPPORTED when shared texture sessions or the requested handle
+ *   kind are not supported by this build.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_shared_texture_attach(
+  mln_map* map, const mln_shared_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) MLN_NOEXCEPT;
 
@@ -1710,6 +1819,30 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
 ) MLN_NOEXCEPT;
 
 /**
+ * Acquires the most recently rendered shared texture frame.
+ *
+ * The returned native and export handles are borrowed and remain valid only
+ * until mln_texture_release_shared_frame() is called for the same frame. While
+ * acquired, resize, mln_texture_render_update(), detach, destroy, and a second
+ * acquire return MLN_STATUS_INVALID_STATE.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, out_frame is
+ *   null, or out_frame->size is too small.
+ * - MLN_STATUS_INVALID_STATE when no rendered frame is available, the session
+ *   is detached, or another frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when the session cannot expose a shared texture
+ *   frame or the requested handle kind is not supported.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_acquire_shared_frame(
+  mln_texture_session* texture, mln_shared_texture_frame* out_frame
+) MLN_NOEXCEPT;
+
+/**
  * Releases a previously acquired Metal texture frame.
  *
  * The frame must be the active acquired frame for this session. A successful
@@ -1752,6 +1885,26 @@ MLN_API mln_status mln_metal_texture_release_frame(
  */
 MLN_API mln_status mln_vulkan_texture_release_frame(
   mln_texture_session* texture, const mln_vulkan_texture_frame* frame
+) MLN_NOEXCEPT;
+
+/**
+ * Releases a previously acquired shared texture frame.
+ *
+ * The frame must be the active acquired shared frame for this session. A
+ * successful release ends the borrow of native and export handles.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
+ *   null, frame->size is too small, or the frame generation or frame_id does
+ *   not match the active acquired frame.
+ * - MLN_STATUS_INVALID_STATE when no shared frame is currently acquired.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_texture_release_shared_frame(
+  mln_texture_session* texture, const mln_shared_texture_frame* frame
 ) MLN_NOEXCEPT;
 
 /**
