@@ -38,6 +38,8 @@ fn addCTests(b: *std.Build, options: BuildOptions) *std.Build.Step.Compile {
 
     linkMapLibreC(b, c_tests.root_module, options.cmake_artifact_dir);
     if (options.target.result.os.tag == .macos) {
+        c_tests.root_module.addCSourceFile(.{ .file = b.path("tests/c/metal_support_macos.m") });
+        c_tests.root_module.linkFramework("AppKit", .{});
         c_tests.root_module.linkFramework("Metal", .{});
         c_tests.root_module.linkFramework("QuartzCore", .{});
     } else if (options.target.result.os.tag == .linux) {

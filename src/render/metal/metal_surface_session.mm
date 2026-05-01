@@ -78,15 +78,15 @@ class MetalSurfaceBackend final : public mbgl::mtl::RendererBackend,
     }
 
     void bind() override {
-      drawable = NS::TransferPtr(layer->nextDrawable());
-      if (!drawable) {
+      auto* next_drawable = layer->nextDrawable();
+      if (next_drawable == nullptr) {
         throw std::runtime_error("Metal surface did not provide a drawable");
       }
+      drawable = NS::RetainPtr(next_drawable);
 
-      commandBuffer =
-        NS::TransferPtr(backend.getCommandQueue()->commandBuffer());
+      commandBuffer = NS::RetainPtr(backend.getCommandQueue()->commandBuffer());
       renderPassDescriptor =
-        NS::TransferPtr(MTL::RenderPassDescriptor::renderPassDescriptor());
+        NS::TransferPtr(MTL::RenderPassDescriptor::alloc()->init());
       renderPassDescriptor->colorAttachments()->object(0)->setTexture(
         drawable->texture()
       );

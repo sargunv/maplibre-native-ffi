@@ -99,6 +99,36 @@ test "Metal surface lifecycle and render update" {
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_surface_destroy(surface.?));
 }
 
+test "Metal surface renders to window-attached layer under autorelease pool" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const pool = try metal_support.AutoreleasePool.init();
+    defer pool.deinit();
+
+    var window_layer = metal_support.createWindowLayer(64, 64) catch return error.SkipZigTest;
+    defer window_layer.deinit();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_metal_surface_descriptor_default();
+    descriptor.width = 64;
+    descriptor.height = 64;
+    descriptor.layer = window_layer.layer.?;
+
+    var surface: ?*c.mln_surface_session = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_surface_attach(map, &descriptor, &surface));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_render_update(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_destroy(surface.?));
+}
+
 test "Vulkan surface unsupported backend validates arguments" {
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
