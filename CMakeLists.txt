@@ -190,6 +190,7 @@ add_library(
     src/diagnostics/diagnostics.cpp
     src/logging/logging.cpp
     src/map/map.cpp
+    src/render/texture_session.cpp
     src/resources/custom_resource_provider.cpp
     src/resources/file_source_manager.cpp
     src/resources/network_status.cpp
