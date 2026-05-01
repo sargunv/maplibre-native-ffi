@@ -24,8 +24,9 @@ const MTLClearColor = extern struct {
 pub const MetalBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_METAL;
 
-    texture: MetalTextureBackend,
-    surface: MetalSurfaceBackend,
+    native_texture: MetalNativeTextureBackend,
+    shared_texture: MetalSharedTextureBackend,
+    native_surface: MetalSurfaceBackend,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -35,23 +36,25 @@ pub const MetalBackend = union(enum) {
     ) !MetalBackend {
         _ = allocator;
         return switch (mode) {
-            .native_texture => .{ .texture = try MetalTextureBackend.init(window, viewport, .native) },
-            .shared_texture => .{ .texture = try MetalTextureBackend.init(window, viewport, .shared) },
-            .native_surface => .{ .surface = try MetalSurfaceBackend.init(window, viewport) },
+            .native_texture => .{ .native_texture = try MetalNativeTextureBackend.init(window, viewport) },
+            .shared_texture => .{ .shared_texture = try MetalSharedTextureBackend.init(window, viewport) },
+            .native_surface => .{ .native_surface = try MetalSurfaceBackend.init(window, viewport) },
         };
     }
 
     pub fn deinit(self: *MetalBackend) void {
         switch (self.*) {
-            .texture => |*backend| backend.deinit(),
-            .surface => |*backend| backend.deinit(),
+            .native_texture => |*backend| backend.deinit(),
+            .shared_texture => |*backend| backend.deinit(),
+            .native_surface => |*backend| backend.deinit(),
         }
     }
 
     pub fn resize(self: *MetalBackend, viewport: types.Viewport) !void {
         switch (self.*) {
-            .texture => |*backend| try backend.resize(viewport),
-            .surface => |*backend| try backend.resize(viewport),
+            .native_texture => |*backend| try backend.resize(viewport),
+            .shared_texture => |*backend| try backend.resize(viewport),
+            .native_surface => |*backend| try backend.resize(viewport),
         }
     }
 
@@ -63,19 +66,21 @@ pub const MetalBackend = union(enum) {
         viewport: types.Viewport,
     ) !render_target.Session {
         return switch (self.*) {
-            .texture => |*backend| backend.attachRenderTarget(map, viewport),
-            .surface => |*backend| backend.attachRenderTarget(map, viewport),
+            .native_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .shared_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .native_surface => |*backend| backend.attachRenderTarget(map, viewport),
         };
     }
 
     pub fn drawTexture(
         self: *MetalBackend,
-        texture: render_target.TextureSession,
+        texture: *c.mln_texture_session,
         viewport: types.Viewport,
     ) !bool {
         return switch (self.*) {
-            .texture => |*backend| backend.drawTexture(texture, viewport),
-            .surface => unreachable,
+            .native_texture => |*backend| backend.drawTexture(texture, viewport),
+            .shared_texture => |*backend| backend.drawTexture(texture, viewport),
+            .native_surface => unreachable,
         };
     }
 };
@@ -115,17 +120,12 @@ const MetalView = struct {
     }
 };
 
-const MetalTextureBackend = struct {
+const MetalTextureCompositor = struct {
     view: MetalView,
     queue: objc.Object,
     pipeline: objc.Object,
-    mode: render_target.TextureMode,
 
-    fn init(
-        window: *c.SDL_Window,
-        viewport: types.Viewport,
-        mode: render_target.TextureMode,
-    ) !MetalTextureBackend {
+    fn init(window: *c.SDL_Window, viewport: types.Viewport) !MetalTextureCompositor {
         var view = try MetalView.init(window, viewport);
         errdefer view.deinit();
 
@@ -136,138 +136,20 @@ const MetalTextureBackend = struct {
         const pipeline = try createPipeline(view.device);
         errdefer pipeline.release();
 
-        return .{ .view = view, .queue = queue, .pipeline = pipeline, .mode = mode };
+        return .{ .view = view, .queue = queue, .pipeline = pipeline };
     }
 
-    fn deinit(self: *MetalTextureBackend) void {
+    fn deinit(self: *MetalTextureCompositor) void {
         self.pipeline.release();
         self.queue.release();
         self.view.deinit();
     }
 
-    fn resize(self: *MetalTextureBackend, viewport: types.Viewport) !void {
+    fn resize(self: *MetalTextureCompositor, viewport: types.Viewport) void {
         self.view.resize(viewport);
     }
 
-    fn attachRenderTarget(
-        self: *MetalTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !render_target.Session {
-        return switch (self.mode) {
-            .native => .{ .texture = .{
-                .handle = try self.attachNativeTexture(map, viewport),
-                .mode = .native,
-            } },
-            .shared => .{ .texture = .{
-                .handle = try self.attachSharedTexture(map, viewport),
-                .mode = .shared,
-            } },
-        };
-    }
-
-    fn attachNativeTexture(
-        self: *MetalTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_texture_session {
-        var descriptor = c.mln_metal_texture_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.device = self.view.device.value.?;
-        var texture: ?*c.mln_texture_session = null;
-        if (c.mln_metal_texture_attach(map, &descriptor, &texture) !=
-            c.MLN_STATUS_OK or texture == null)
-        {
-            diagnostics.logAbiError("Metal texture attach failed");
-            return types.AppError.TextureAttachFailed;
-        }
-        return texture.?;
-    }
-
-    fn attachSharedTexture(
-        self: *MetalTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_texture_session {
-        var descriptor = c.mln_shared_texture_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE;
-        descriptor.device = self.view.device.value.?;
-        var texture: ?*c.mln_texture_session = null;
-        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
-            c.MLN_STATUS_OK or texture == null)
-        {
-            diagnostics.logAbiError("shared texture attach failed");
-            return types.AppError.TextureAttachFailed;
-        }
-        return texture.?;
-    }
-
-    fn drawTexture(
-        self: *MetalTextureBackend,
-        texture: render_target.TextureSession,
-        _: types.Viewport,
-    ) !bool {
-        return switch (texture.mode) {
-            .native => self.drawNativeTexture(texture.handle),
-            .shared => self.drawSharedTexture(texture.handle),
-        };
-    }
-
-    fn drawNativeTexture(
-        self: *MetalTextureBackend,
-        texture: *c.mln_texture_session,
-    ) !bool {
-        var frame: c.mln_metal_texture_frame = .{
-            .size = @sizeOf(c.mln_metal_texture_frame),
-            .generation = 0,
-            .width = 0,
-            .height = 0,
-            .scale_factor = 0,
-            .frame_id = 0,
-            .texture = null,
-            .device = null,
-            .pixel_format = 0,
-        };
-        const acquire_status = c.mln_metal_texture_acquire_frame(texture, &frame);
-        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
-        if (acquire_status != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("Metal texture acquire failed");
-            return types.AppError.BackendDrawFailed;
-        }
-        defer releaseMetalFrame(texture, &frame);
-
-        return try self.drawMetalTexture(frame.texture.?);
-    }
-
-    fn drawSharedTexture(
-        self: *MetalTextureBackend,
-        texture: *c.mln_texture_session,
-    ) !bool {
-        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
-        frame.size = @sizeOf(c.mln_shared_texture_frame);
-        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
-        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
-        if (acquire_status != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("shared texture acquire failed");
-            return types.AppError.BackendDrawFailed;
-        }
-        defer releaseSharedFrame(texture, &frame);
-
-        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_METAL or
-            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE or
-            frame.native_handle == null)
-        {
-            return types.AppError.BackendDrawFailed;
-        }
-        return try self.drawMetalTexture(frame.native_handle.?);
-    }
-
-    fn drawMetalTexture(self: *MetalTextureBackend, metal_texture: *anyopaque) !bool {
+    fn drawMetalTexture(self: *MetalTextureCompositor, metal_texture: *anyopaque) !bool {
         const drawable = self.view.layer.msgSend(objc.Object, "nextDrawable", .{});
         if (drawable.value == null) return types.AppError.BackendDrawFailed;
 
@@ -309,6 +191,130 @@ const MetalTextureBackend = struct {
         command_buffer.msgSend(void, "commit", .{});
         command_buffer.msgSend(void, "waitUntilCompleted", .{});
         return true;
+    }
+};
+
+const MetalNativeTextureBackend = struct {
+    compositor: MetalTextureCompositor,
+
+    fn init(window: *c.SDL_Window, viewport: types.Viewport) !MetalNativeTextureBackend {
+        return .{ .compositor = try MetalTextureCompositor.init(window, viewport) };
+    }
+
+    fn deinit(self: *MetalNativeTextureBackend) void {
+        self.compositor.deinit();
+    }
+
+    fn resize(self: *MetalNativeTextureBackend, viewport: types.Viewport) !void {
+        self.compositor.resize(viewport);
+    }
+
+    fn attachRenderTarget(
+        self: *MetalNativeTextureBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_metal_texture_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.device = self.compositor.view.device.value.?;
+        var texture: ?*c.mln_texture_session = null;
+        if (c.mln_metal_texture_attach(map, &descriptor, &texture) !=
+            c.MLN_STATUS_OK or texture == null)
+        {
+            diagnostics.logAbiError("Metal texture attach failed");
+            return types.AppError.TextureAttachFailed;
+        }
+        return .{ .texture = texture.? };
+    }
+
+    fn drawTexture(
+        self: *MetalNativeTextureBackend,
+        texture: *c.mln_texture_session,
+        _: types.Viewport,
+    ) !bool {
+        var frame: c.mln_metal_texture_frame = .{
+            .size = @sizeOf(c.mln_metal_texture_frame),
+            .generation = 0,
+            .width = 0,
+            .height = 0,
+            .scale_factor = 0,
+            .frame_id = 0,
+            .texture = null,
+            .device = null,
+            .pixel_format = 0,
+        };
+        const acquire_status = c.mln_metal_texture_acquire_frame(texture, &frame);
+        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
+        if (acquire_status != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("Metal texture acquire failed");
+            return types.AppError.BackendDrawFailed;
+        }
+        defer releaseMetalFrame(texture, &frame);
+
+        return try self.compositor.drawMetalTexture(frame.texture.?);
+    }
+};
+
+const MetalSharedTextureBackend = struct {
+    compositor: MetalTextureCompositor,
+
+    fn init(window: *c.SDL_Window, viewport: types.Viewport) !MetalSharedTextureBackend {
+        return .{ .compositor = try MetalTextureCompositor.init(window, viewport) };
+    }
+
+    fn deinit(self: *MetalSharedTextureBackend) void {
+        self.compositor.deinit();
+    }
+
+    fn resize(self: *MetalSharedTextureBackend, viewport: types.Viewport) !void {
+        self.compositor.resize(viewport);
+    }
+
+    fn attachRenderTarget(
+        self: *MetalSharedTextureBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_shared_texture_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE;
+        descriptor.device = self.compositor.view.device.value.?;
+        var texture: ?*c.mln_texture_session = null;
+        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
+            c.MLN_STATUS_OK or texture == null)
+        {
+            diagnostics.logAbiError("shared texture attach failed");
+            return types.AppError.TextureAttachFailed;
+        }
+        return .{ .texture = texture.? };
+    }
+
+    fn drawTexture(
+        self: *MetalSharedTextureBackend,
+        texture: *c.mln_texture_session,
+        _: types.Viewport,
+    ) !bool {
+        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
+        frame.size = @sizeOf(c.mln_shared_texture_frame);
+        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
+        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
+        if (acquire_status != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("shared texture acquire failed");
+            return types.AppError.BackendDrawFailed;
+        }
+        defer releaseSharedFrame(texture, &frame);
+
+        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_METAL or
+            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE or
+            frame.native_handle == null)
+        {
+            return types.AppError.BackendDrawFailed;
+        }
+        return try self.compositor.drawMetalTexture(frame.native_handle.?);
     }
 };
 

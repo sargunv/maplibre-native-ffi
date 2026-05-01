@@ -10,13 +10,12 @@ const Pipeline = @import("pipeline.zig").Pipeline;
 const Swapchain = @import("swapchain.zig").Swapchain;
 const util = @import("util.zig");
 
-const PendingFrameKind = enum { none, vulkan, shared };
-
 pub const VulkanBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_VULKAN;
 
-    texture: VulkanTextureBackend,
-    surface: VulkanSurfaceBackend,
+    native_texture: VulkanNativeTextureBackend,
+    shared_texture: VulkanSharedTextureBackend,
+    native_surface: VulkanSurfaceBackend,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -25,30 +24,33 @@ pub const VulkanBackend = union(enum) {
         mode: types.RenderTargetMode,
     ) !VulkanBackend {
         return switch (mode) {
-            .native_texture => .{ .texture = try VulkanTextureBackend.init(allocator, window, viewport, .native) },
-            .shared_texture => .{ .texture = try VulkanTextureBackend.init(allocator, window, viewport, .shared) },
-            .native_surface => .{ .surface = try VulkanSurfaceBackend.init(allocator, window) },
+            .native_texture => .{ .native_texture = try VulkanNativeTextureBackend.init(allocator, window, viewport) },
+            .shared_texture => .{ .shared_texture = try VulkanSharedTextureBackend.init(allocator, window, viewport) },
+            .native_surface => .{ .native_surface = try VulkanSurfaceBackend.init(allocator, window) },
         };
     }
 
     pub fn deinit(self: *VulkanBackend) void {
         switch (self.*) {
-            .texture => |*backend| backend.deinit(),
-            .surface => |*backend| backend.deinit(),
+            .native_texture => |*backend| backend.deinit(),
+            .shared_texture => |*backend| backend.deinit(),
+            .native_surface => |*backend| backend.deinit(),
         }
     }
 
     pub fn resize(self: *VulkanBackend, viewport: types.Viewport) !void {
         switch (self.*) {
-            .texture => |*backend| try backend.resize(viewport),
-            .surface => |*backend| try backend.resize(viewport),
+            .native_texture => |*backend| try backend.resize(viewport),
+            .shared_texture => |*backend| try backend.resize(viewport),
+            .native_surface => |*backend| try backend.resize(viewport),
         }
     }
 
     pub fn finishFrame(self: *VulkanBackend) !void {
         switch (self.*) {
-            .texture => |*backend| try backend.finishFrame(),
-            .surface => |*backend| try backend.finishFrame(),
+            .native_texture => |*backend| try backend.finishFrame(),
+            .shared_texture => |*backend| try backend.finishFrame(),
+            .native_surface => |*backend| try backend.finishFrame(),
         }
     }
 
@@ -58,40 +60,36 @@ pub const VulkanBackend = union(enum) {
         viewport: types.Viewport,
     ) !render_target.Session {
         return switch (self.*) {
-            .texture => |*backend| backend.attachRenderTarget(map, viewport),
-            .surface => |*backend| backend.attachRenderTarget(map, viewport),
+            .native_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .shared_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .native_surface => |*backend| backend.attachRenderTarget(map, viewport),
         };
     }
 
     pub fn drawTexture(
         self: *VulkanBackend,
-        texture: render_target.TextureSession,
+        texture: *c.mln_texture_session,
         viewport: types.Viewport,
     ) !bool {
         return switch (self.*) {
-            .texture => |*backend| backend.drawTexture(texture, viewport),
-            .surface => unreachable,
+            .native_texture => |*backend| backend.drawTexture(texture, viewport),
+            .shared_texture => |*backend| backend.drawTexture(texture, viewport),
+            .native_surface => unreachable,
         };
     }
 };
 
-const VulkanTextureBackend = struct {
+const VulkanTextureCompositor = struct {
     context: Context,
     swapchain: Swapchain,
     pipeline: Pipeline,
     commands: Commands,
-    mode: render_target.TextureMode,
-    pending_texture: ?*c.mln_texture_session,
-    pending_frame_kind: PendingFrameKind,
-    pending_vulkan_frame: ?c.mln_vulkan_texture_frame,
-    pending_shared_frame: ?c.mln_shared_texture_frame,
 
     fn init(
         allocator: std.mem.Allocator,
         window: *c.SDL_Window,
         viewport: types.Viewport,
-        mode: render_target.TextureMode,
-    ) !VulkanTextureBackend {
+    ) !VulkanTextureCompositor {
         var context = try Context.init(allocator, window);
         errdefer context.deinit();
 
@@ -110,27 +108,22 @@ const VulkanTextureBackend = struct {
             .swapchain = swapchain,
             .pipeline = pipeline,
             .commands = commands,
-            .mode = mode,
-            .pending_texture = null,
-            .pending_frame_kind = .none,
-            .pending_vulkan_frame = null,
-            .pending_shared_frame = null,
         };
     }
 
-    fn deinit(self: *VulkanTextureBackend) void {
+    fn deinit(self: *VulkanTextureCompositor) void {
         self.context.waitIdle();
-        self.releasePendingFrame();
         self.commands.deinit(self.context.device);
         self.swapchain.deinit(self.context.device);
         self.pipeline.deinit(self.context.device);
         self.context.deinit();
     }
 
-    fn resize(self: *VulkanTextureBackend, viewport: types.Viewport) !void {
+    fn waitIdle(self: *VulkanTextureCompositor) void {
         self.context.waitIdle();
-        self.releasePendingFrame();
+    }
 
+    fn resize(self: *VulkanTextureCompositor, viewport: types.Viewport) !void {
         const previous_format = self.swapchain.format;
         self.swapchain.deinit(self.context.device);
         self.swapchain = try Swapchain.init(
@@ -153,162 +146,16 @@ const VulkanTextureBackend = struct {
         );
     }
 
-    fn finishFrame(self: *VulkanTextureBackend) !void {
-        if (self.pending_frame_kind == .none) return;
+    fn waitForFrame(self: *VulkanTextureCompositor) !void {
         try self.commands.waitForFrameFence(self.context.device);
-        self.releasePendingFrame();
     }
 
-    fn attachRenderTarget(
-        self: *VulkanTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !render_target.Session {
-        return switch (self.mode) {
-            .native => .{ .texture = .{
-                .handle = try self.attachNativeTexture(map, viewport),
-                .mode = .native,
-            } },
-            .shared => .{ .texture = .{
-                .handle = try self.attachSharedTexture(map, viewport),
-                .mode = .shared,
-            } },
-        };
-    }
-
-    fn attachNativeTexture(
-        self: *VulkanTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_texture_session {
-        var descriptor = c.mln_vulkan_texture_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.instance = self.context.instance;
-        descriptor.physical_device = self.context.physical_device;
-        descriptor.device = self.context.device;
-        descriptor.graphics_queue = self.context.queue;
-        descriptor.graphics_queue_family_index = self.context.queue_family_index;
-
-        var texture: ?*c.mln_texture_session = null;
-        if (c.mln_vulkan_texture_attach(map, &descriptor, &texture) !=
-            c.MLN_STATUS_OK or texture == null)
-        {
-            diagnostics.logAbiError("Vulkan texture attach failed");
-            return types.AppError.TextureAttachFailed;
-        }
-        return texture.?;
-    }
-
-    fn attachSharedTexture(
-        _: *VulkanTextureBackend,
-        map: *c.mln_map,
-        viewport: types.Viewport,
-    ) !*c.mln_texture_session {
-        var descriptor = c.mln_shared_texture_descriptor_default();
-        descriptor.width = viewport.logical_width;
-        descriptor.height = viewport.logical_height;
-        descriptor.scale_factor = viewport.scale_factor;
-        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE;
-
-        var texture: ?*c.mln_texture_session = null;
-        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
-            c.MLN_STATUS_OK or texture == null)
-        {
-            diagnostics.logAbiError("shared texture attach failed");
-            return types.AppError.TextureAttachFailed;
-        }
-        return texture.?;
-    }
-
-    fn drawTexture(
-        self: *VulkanTextureBackend,
-        texture: render_target.TextureSession,
-        _: types.Viewport,
-    ) !bool {
-        return switch (texture.mode) {
-            .native => self.drawNativeTexture(texture.handle),
-            .shared => self.drawSharedTexture(texture.handle),
-        };
-    }
-
-    fn drawNativeTexture(
-        self: *VulkanTextureBackend,
-        texture: *c.mln_texture_session,
-    ) !bool {
-        var frame: c.mln_vulkan_texture_frame = .{
-            .size = @sizeOf(c.mln_vulkan_texture_frame),
-            .generation = 0,
-            .width = 0,
-            .height = 0,
-            .scale_factor = 0,
-            .frame_id = 0,
-            .image = null,
-            .image_view = null,
-            .device = null,
-            .format = 0,
-            .layout = 0,
-        };
-        const acquire_status = c.mln_vulkan_texture_acquire_frame(texture, &frame);
-        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
-        if (acquire_status != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("Vulkan texture acquire failed");
-            return types.AppError.BackendDrawFailed;
-        }
-        errdefer releaseVulkanFrame(texture, &frame);
-
-        if (frame.image_view == null) return types.AppError.BackendDrawFailed;
-        const image_view: c.VkImageView = @ptrCast(frame.image_view.?);
-        if (!try self.presentImageView(image_view)) {
-            releaseVulkanFrame(texture, &frame);
-            return false;
-        }
-
-        self.pending_texture = texture;
-        self.pending_frame_kind = .vulkan;
-        self.pending_vulkan_frame = frame;
-        return true;
-    }
-
-    fn drawSharedTexture(
-        self: *VulkanTextureBackend,
-        texture: *c.mln_texture_session,
-    ) !bool {
-        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
-        frame.size = @sizeOf(c.mln_shared_texture_frame);
-        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
-        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
-        if (acquire_status != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("shared texture acquire failed");
-            return types.AppError.BackendDrawFailed;
-        }
-        errdefer releaseSharedFrame(texture, &frame);
-
-        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_VULKAN or
-            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE or
-            frame.native_view == null)
-        {
-            return types.AppError.BackendDrawFailed;
-        }
-        const image_view: c.VkImageView = @ptrCast(frame.native_view.?);
-        if (!try self.presentImageView(image_view)) {
-            releaseSharedFrame(texture, &frame);
-            return false;
-        }
-
-        self.pending_texture = texture;
-        self.pending_frame_kind = .shared;
-        self.pending_shared_frame = frame;
-        return true;
-    }
-
-    fn presentImageView(self: *VulkanTextureBackend, image_view: c.VkImageView) !bool {
+    fn presentImageView(self: *VulkanTextureCompositor, image_view: c.VkImageView) !bool {
         if (image_view != self.pipeline.descriptor_image_view) {
             self.pipeline.updateDescriptor(self.context.device, image_view);
         }
 
-        try self.commands.waitForFrameFence(self.context.device);
+        try self.waitForFrame();
 
         var image_index: u32 = 0;
         const acquire = c.vkAcquireNextImageKHR(
@@ -346,26 +193,214 @@ const VulkanTextureBackend = struct {
             present != c.VK_SUBOPTIMAL_KHR and
             present != c.VK_ERROR_OUT_OF_DATE_KHR)
         {
-            self.commands.waitForFrameFence(self.context.device) catch {};
+            self.waitForFrame() catch {};
             try util.expectVk(present);
         }
         return true;
     }
+};
 
-    fn releasePendingFrame(self: *VulkanTextureBackend) void {
-        if (self.pending_texture) |texture| switch (self.pending_frame_kind) {
-            .none => {},
-            .vulkan => if (self.pending_vulkan_frame) |*frame| {
-                releaseVulkanFrame(texture, frame);
-            },
-            .shared => if (self.pending_shared_frame) |*frame| {
-                releaseSharedFrame(texture, frame);
-            },
+const VulkanNativeTextureBackend = struct {
+    compositor: VulkanTextureCompositor,
+    pending_texture: ?*c.mln_texture_session,
+    pending_frame: ?c.mln_vulkan_texture_frame,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        window: *c.SDL_Window,
+        viewport: types.Viewport,
+    ) !VulkanNativeTextureBackend {
+        return .{
+            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport),
+            .pending_texture = null,
+            .pending_frame = null,
         };
+    }
+
+    fn deinit(self: *VulkanNativeTextureBackend) void {
+        self.compositor.waitIdle();
+        self.releasePendingFrame();
+        self.compositor.deinit();
+    }
+
+    fn resize(self: *VulkanNativeTextureBackend, viewport: types.Viewport) !void {
+        self.compositor.waitIdle();
+        self.releasePendingFrame();
+        try self.compositor.resize(viewport);
+    }
+
+    fn finishFrame(self: *VulkanNativeTextureBackend) !void {
+        if (self.pending_frame == null) return;
+        try self.compositor.waitForFrame();
+        self.releasePendingFrame();
+    }
+
+    fn attachRenderTarget(
+        self: *VulkanNativeTextureBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_vulkan_texture_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.instance = self.compositor.context.instance;
+        descriptor.physical_device = self.compositor.context.physical_device;
+        descriptor.device = self.compositor.context.device;
+        descriptor.graphics_queue = self.compositor.context.queue;
+        descriptor.graphics_queue_family_index = self.compositor.context.queue_family_index;
+
+        var texture: ?*c.mln_texture_session = null;
+        if (c.mln_vulkan_texture_attach(map, &descriptor, &texture) !=
+            c.MLN_STATUS_OK or texture == null)
+        {
+            diagnostics.logAbiError("Vulkan texture attach failed");
+            return types.AppError.TextureAttachFailed;
+        }
+        return .{ .texture = texture.? };
+    }
+
+    fn drawTexture(
+        self: *VulkanNativeTextureBackend,
+        texture: *c.mln_texture_session,
+        _: types.Viewport,
+    ) !bool {
+        var frame: c.mln_vulkan_texture_frame = .{
+            .size = @sizeOf(c.mln_vulkan_texture_frame),
+            .generation = 0,
+            .width = 0,
+            .height = 0,
+            .scale_factor = 0,
+            .frame_id = 0,
+            .image = null,
+            .image_view = null,
+            .device = null,
+            .format = 0,
+            .layout = 0,
+        };
+        const acquire_status = c.mln_vulkan_texture_acquire_frame(texture, &frame);
+        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
+        if (acquire_status != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("Vulkan texture acquire failed");
+            return types.AppError.BackendDrawFailed;
+        }
+        errdefer releaseVulkanFrame(texture, &frame);
+
+        if (frame.image_view == null) return types.AppError.BackendDrawFailed;
+        const image_view: c.VkImageView = @ptrCast(frame.image_view.?);
+        if (!try self.compositor.presentImageView(image_view)) {
+            releaseVulkanFrame(texture, &frame);
+            return false;
+        }
+
+        self.pending_texture = texture;
+        self.pending_frame = frame;
+        return true;
+    }
+
+    fn releasePendingFrame(self: *VulkanNativeTextureBackend) void {
+        if (self.pending_texture) |texture| {
+            if (self.pending_frame) |*frame| releaseVulkanFrame(texture, frame);
+        }
         self.pending_texture = null;
-        self.pending_frame_kind = .none;
-        self.pending_vulkan_frame = null;
-        self.pending_shared_frame = null;
+        self.pending_frame = null;
+    }
+};
+
+const VulkanSharedTextureBackend = struct {
+    compositor: VulkanTextureCompositor,
+    pending_texture: ?*c.mln_texture_session,
+    pending_frame: ?c.mln_shared_texture_frame,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        window: *c.SDL_Window,
+        viewport: types.Viewport,
+    ) !VulkanSharedTextureBackend {
+        return .{
+            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport),
+            .pending_texture = null,
+            .pending_frame = null,
+        };
+    }
+
+    fn deinit(self: *VulkanSharedTextureBackend) void {
+        self.compositor.waitIdle();
+        self.releasePendingFrame();
+        self.compositor.deinit();
+    }
+
+    fn resize(self: *VulkanSharedTextureBackend, viewport: types.Viewport) !void {
+        self.compositor.waitIdle();
+        self.releasePendingFrame();
+        try self.compositor.resize(viewport);
+    }
+
+    fn finishFrame(self: *VulkanSharedTextureBackend) !void {
+        if (self.pending_frame == null) return;
+        try self.compositor.waitForFrame();
+        self.releasePendingFrame();
+    }
+
+    fn attachRenderTarget(
+        _: *VulkanSharedTextureBackend,
+        map: *c.mln_map,
+        viewport: types.Viewport,
+    ) !render_target.Session {
+        var descriptor = c.mln_shared_texture_descriptor_default();
+        descriptor.width = viewport.logical_width;
+        descriptor.height = viewport.logical_height;
+        descriptor.scale_factor = viewport.scale_factor;
+        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE;
+
+        var texture: ?*c.mln_texture_session = null;
+        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
+            c.MLN_STATUS_OK or texture == null)
+        {
+            diagnostics.logAbiError("shared texture attach failed");
+            return types.AppError.TextureAttachFailed;
+        }
+        return .{ .texture = texture.? };
+    }
+
+    fn drawTexture(
+        self: *VulkanSharedTextureBackend,
+        texture: *c.mln_texture_session,
+        _: types.Viewport,
+    ) !bool {
+        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
+        frame.size = @sizeOf(c.mln_shared_texture_frame);
+        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
+        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
+        if (acquire_status != c.MLN_STATUS_OK) {
+            diagnostics.logAbiError("shared texture acquire failed");
+            return types.AppError.BackendDrawFailed;
+        }
+        errdefer releaseSharedFrame(texture, &frame);
+
+        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_VULKAN or
+            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE or
+            frame.native_view == null)
+        {
+            return types.AppError.BackendDrawFailed;
+        }
+        const image_view: c.VkImageView = @ptrCast(frame.native_view.?);
+        if (!try self.compositor.presentImageView(image_view)) {
+            releaseSharedFrame(texture, &frame);
+            return false;
+        }
+
+        self.pending_texture = texture;
+        self.pending_frame = frame;
+        return true;
+    }
+
+    fn releasePendingFrame(self: *VulkanSharedTextureBackend) void {
+        if (self.pending_texture) |texture| {
+            if (self.pending_frame) |*frame| releaseSharedFrame(texture, frame);
+        }
+        self.pending_texture = null;
+        self.pending_frame = null;
     }
 };
 
