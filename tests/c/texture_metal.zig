@@ -170,14 +170,14 @@ test "Metal texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
-test "Metal texture supports static render requests" {
+test "Metal texture supports static still-image requests" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
-    try common.expectStillModeRenderRequest(Backend, c.MLN_MAP_MODE_STATIC);
+    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_STATIC);
 }
 
-test "Metal texture supports tile render requests" {
+test "Metal texture supports tile still-image requests" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
-    try common.expectStillModeRenderRequest(Backend, c.MLN_MAP_MODE_TILE);
+    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_TILE);
 }
 
 test "Metal texture detach leaves handle live but unusable for rendering" {

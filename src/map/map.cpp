@@ -216,7 +216,7 @@ class HeadlessFrontend final : public mbgl::RendererFrontend {
   void update(std::shared_ptr<mbgl::UpdateParameters> update) override {
     const std::scoped_lock lock(latest_update_mutex_);
     latest_update_ = std::move(update);
-    events_->push(MLN_MAP_EVENT_RENDER_INVALIDATED);
+    events_->push(MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE);
   }
 
   [[nodiscard]] auto latest_update() const
@@ -302,7 +302,7 @@ auto exception_message(std::exception_ptr error) -> std::string {
   } catch (const std::exception& exception) {
     return exception.what();
   } catch (...) {
-    return "unknown render request error";
+    return "unknown still-image request error";
   }
 }
 
@@ -591,7 +591,7 @@ struct mln_map {
   mln_runtime* runtime = nullptr;
   std::thread::id owner_thread;
   uint32_t map_mode = MLN_MAP_MODE_CONTINUOUS;
-  bool render_request_pending = false;
+  bool still_image_request_pending = false;
   EventQueue events;
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
@@ -627,15 +627,16 @@ class RuntimeMapRetainGuard final {
   mln_runtime* runtime_ = nullptr;
 };
 
-auto finish_render_request(mln_map* map, std::exception_ptr error) -> void {
-  map->render_request_pending = false;
+auto finish_still_image_request(mln_map* map, std::exception_ptr error)
+  -> void {
+  map->still_image_request_pending = false;
   if (error) {
     const auto message = exception_message(error);
-    map->events.push(MLN_MAP_EVENT_RENDER_REQUEST_FAILED, 0, message.c_str());
+    map->events.push(MLN_MAP_EVENT_STILL_IMAGE_FAILED, 0, message.c_str());
     return;
   }
 
-  map->events.push(MLN_MAP_EVENT_RENDER_REQUEST_FINISHED);
+  map->events.push(MLN_MAP_EVENT_STILL_IMAGE_FINISHED);
 }
 
 }  // namespace
@@ -785,25 +786,40 @@ auto destroy_map(mln_map* map) -> mln_status {
   return MLN_STATUS_OK;
 }
 
-auto map_request_render(mln_map* map) -> mln_status {
+auto map_request_repaint(mln_map* map) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  if (map->map_mode != MLN_MAP_MODE_CONTINUOUS) {
+    set_thread_error("map is not in continuous mode");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  map->map->triggerRepaint();
+  return MLN_STATUS_OK;
+}
+
+auto map_request_still_image(mln_map* map) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
 
   if (!is_still_map_mode(map->map_mode)) {
-    map->map->triggerRepaint();
-    return MLN_STATUS_OK;
-  }
-
-  if (map->render_request_pending) {
-    set_thread_error("map already has a pending render request");
+    set_thread_error("map is not in static or tile mode");
     return MLN_STATUS_INVALID_STATE;
   }
 
-  map->render_request_pending = true;
+  if (map->still_image_request_pending) {
+    set_thread_error("map already has a pending still-image request");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  map->still_image_request_pending = true;
   map->map->renderStill([map](std::exception_ptr error) -> void {
-    finish_render_request(map, error);
+    finish_still_image_request(map, error);
   });
   return MLN_STATUS_OK;
 }

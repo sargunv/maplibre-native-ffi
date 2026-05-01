@@ -91,14 +91,14 @@ pub fn main(init_args: std.process.Init) !void {
         }
 
         _ = c.mln_runtime_run_once(map.runtime);
-        const render_invalidated = try map_state.drainEvents(map.map);
-        render_pending = render_pending or render_invalidated;
-        did_work = did_work or render_invalidated;
+        const render_update_available = try map_state.drainEvents(map.map);
+        render_pending = render_pending or render_update_available;
+        did_work = did_work or render_update_available;
 
         try backend.finishFrame();
 
         if (render_pending) {
-            const render_status = c.mln_texture_render(map.texture);
+            const render_status = c.mln_texture_render_update(map.texture);
             if (render_status == c.MLN_STATUS_OK) {
                 render_pending = false;
                 did_work = true;

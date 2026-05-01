@@ -5,7 +5,7 @@ const c = support.c;
 
 extern fn usleep(useconds: c_uint) c_int;
 
-const ThreadCall = enum { resize, render, acquire, release, detach, destroy };
+const ThreadCall = enum { resize, render_update, acquire, release, detach, destroy };
 
 pub fn expectDescriptorDefaults() !void {
     const metal = c.mln_metal_texture_descriptor_default();
@@ -88,7 +88,7 @@ pub fn expectLifecycleEnforcesActiveSessionAndStaleHandles(comptime Backend: typ
 
     fixture.destroy();
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_destroy(fixture.texture));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_render(fixture.texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_render_update(fixture.texture));
 
     var replacement = try Backend.Fixture.create(map);
     replacement.destroy();
@@ -105,7 +105,7 @@ pub fn expectWrongThreadCallsRejected(comptime Backend: type) !void {
         fn callTextureOnThread(args: ThreadCallArgs) void {
             args.out_status.* = switch (args.call) {
                 .resize => c.mln_texture_resize(args.fixture.texture, 128, 128, 1.0),
-                .render => c.mln_texture_render(args.fixture.texture),
+                .render_update => c.mln_texture_render_update(args.fixture.texture),
                 .acquire => args.fixture.acquire(args.frame),
                 .release => args.fixture.release(args.frame),
                 .detach => c.mln_texture_detach(args.fixture.texture),
@@ -114,7 +114,7 @@ pub fn expectWrongThreadCallsRejected(comptime Backend: type) !void {
         }
 
         fn renderTextureOnThread(texture: *c.mln_texture_session, out_status: *c.mln_status) void {
-            out_status.* = c.mln_texture_render(texture);
+            out_status.* = c.mln_texture_render_update(texture);
         }
     };
 
@@ -155,9 +155,9 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, fixture.acquire(&frame));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
-    _ = try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_INVALIDATED);
+    _ = try support.waitForEvent(runtime, map, c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE);
 
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render(fixture.texture));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(fixture.texture));
     try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
     var frame_acquired = true;
     errdefer {
@@ -184,7 +184,7 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_resize(fixture.texture, 128, 64, 2.0));
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, fixture.release(&old_frame));
 
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render(fixture.texture));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(fixture.texture));
     frame.resetSize();
     try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
     frame_acquired = true;
@@ -194,7 +194,7 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     frame_acquired = false;
 }
 
-pub fn expectStillModeRenderRequest(comptime Backend: type, map_mode: u32) !void {
+pub fn expectStillModeStillImageRequest(comptime Backend: type, map_mode: u32) !void {
     try support.suppressLogs();
     defer support.restoreLogs();
 
@@ -206,10 +206,11 @@ pub fn expectStillModeRenderRequest(comptime Backend: type, map_mode: u32) !void
     defer fixture.destroy();
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_render(fixture.texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_render_update(fixture.texture));
 
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_render(map));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_render(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_repaint(map));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_request_still_image(map));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_map_request_still_image(map));
 
     var rendered_frame = false;
     for (0..1000) |_| {
@@ -222,15 +223,15 @@ pub fn expectStillModeRenderRequest(comptime Backend: type, map_mode: u32) !void
             if (!has_event) break;
 
             switch (event.type) {
-                c.MLN_MAP_EVENT_RENDER_INVALIDATED => {
-                    const render_status = c.mln_texture_render(fixture.texture);
+                c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE => {
+                    const render_status = c.mln_texture_render_update(fixture.texture);
                     if (render_status == c.MLN_STATUS_OK) {
                         rendered_frame = true;
                     } else if (render_status != c.MLN_STATUS_INVALID_STATE) {
                         try testing.expectEqual(c.MLN_STATUS_OK, render_status);
                     }
                 },
-                c.MLN_MAP_EVENT_RENDER_REQUEST_FINISHED => {
+                c.MLN_MAP_EVENT_STILL_IMAGE_FINISHED => {
                     try testing.expect(rendered_frame);
                     var frame = Backend.Frame.empty(fixture.texture);
                     try testing.expectEqual(c.MLN_STATUS_OK, fixture.acquire(&frame));
@@ -238,7 +239,7 @@ pub fn expectStillModeRenderRequest(comptime Backend: type, map_mode: u32) !void
                     try testing.expectEqual(c.MLN_STATUS_OK, fixture.release(&frame));
                     return;
                 },
-                c.MLN_MAP_EVENT_RENDER_REQUEST_FAILED => return error.RenderRequestFailed,
+                c.MLN_MAP_EVENT_STILL_IMAGE_FAILED => return error.StillImageFailed,
                 else => {},
             }
         }
@@ -257,7 +258,7 @@ pub fn expectDetachLeavesHandleLiveButUnusable(comptime Backend: type) !void {
     defer fixture.deinitContextOnly();
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_detach(fixture.texture));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_render(fixture.texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_render_update(fixture.texture));
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_detach(fixture.texture));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(fixture.texture));
     fixture.markDestroyed();

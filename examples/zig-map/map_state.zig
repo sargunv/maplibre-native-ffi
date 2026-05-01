@@ -58,7 +58,7 @@ pub const MapState = struct {
 };
 
 pub fn drainEvents(map: *c.mln_map) !bool {
-    var render_invalidated = false;
+    var render_update_available = false;
     while (true) {
         var event: c.mln_map_event = .{
             .size = @sizeOf(c.mln_map_event),
@@ -72,8 +72,8 @@ pub fn drainEvents(map: *c.mln_map) !bool {
             diagnostics.logAbiError("event poll failed");
             return types.AppError.TextureRenderFailed;
         }
-        if (!has_event) return render_invalidated;
-        if (event.type == c.MLN_MAP_EVENT_RENDER_INVALIDATED) render_invalidated = true;
+        if (!has_event) return render_update_available;
+        if (event.type == c.MLN_MAP_EVENT_RENDER_UPDATE_AVAILABLE) render_update_available = true;
     }
 }
 
