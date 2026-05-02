@@ -31,7 +31,10 @@ run = [
 run = "mise run docs:c"
 
 [tasks."ci:examples:zig-map"]
-run = "mise run --skip-deps //examples/zig-map:build"
+run = [
+  "mise run //examples/zig-map:compile-shaders",
+  "mise run --skip-deps //examples/zig-map:build",
+]
 
 [tasks."ci:examples:zig-readback"]
 run = "mise run --skip-deps //examples/zig-readback:run"
