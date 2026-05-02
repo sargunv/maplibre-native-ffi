@@ -160,7 +160,7 @@ auto owned_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Owned;
+  session->api_kind = TextureSessionApi::Generic;
   session->mode = TextureSessionMode::Owned;
   session->backend = mbgl::gfx::HeadlessBackend::Create(
     mbgl::Size{session->physical_width, session->physical_height},

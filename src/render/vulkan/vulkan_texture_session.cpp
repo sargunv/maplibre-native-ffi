@@ -297,7 +297,7 @@ auto vulkan_owned_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Vulkan;
+  session->api_kind = TextureSessionApi::Vulkan;
   session->mode = TextureSessionMode::Owned;
   session->backend = std::make_unique<VulkanTextureBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
@@ -354,7 +354,7 @@ auto vulkan_borrowed_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Vulkan;
+  session->api_kind = TextureSessionApi::Vulkan;
   session->mode = TextureSessionMode::Borrowed;
   session->backend = std::make_unique<VulkanTextureBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
@@ -387,7 +387,7 @@ auto vulkan_owned_texture_acquire_frame(
   }
   if (
     texture->mode != TextureSessionMode::Owned ||
-    texture->backend_kind != TextureSessionBackend::Vulkan
+    texture->api_kind != TextureSessionApi::Vulkan
   ) {
     set_thread_error("texture session cannot expose a Vulkan texture frame");
     return MLN_STATUS_UNSUPPORTED;

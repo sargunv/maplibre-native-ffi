@@ -14,7 +14,7 @@ struct mln_texture_session;
 
 namespace mln::core {
 
-enum class TextureSessionBackend : uint8_t { Owned, Metal, Vulkan };
+enum class TextureSessionApi : uint8_t { Generic, Metal, Vulkan };
 enum class TextureSessionFrameKind : uint8_t { None, MetalOwned, VulkanOwned };
 enum class TextureSessionMode : uint8_t { Owned, Borrowed };
 
@@ -39,8 +39,7 @@ struct mln_texture_session {
   bool acquired = false;
   mln::core::TextureSessionFrameKind acquired_frame_kind =
     mln::core::TextureSessionFrameKind::None;
-  mln::core::TextureSessionBackend backend_kind =
-    mln::core::TextureSessionBackend::Owned;
+  mln::core::TextureSessionApi api_kind = mln::core::TextureSessionApi::Generic;
   mln::core::TextureSessionMode mode = mln::core::TextureSessionMode::Owned;
   std::unique_ptr<mbgl::gfx::HeadlessBackend> backend = nullptr;
   std::unique_ptr<mbgl::Renderer> renderer = nullptr;

@@ -263,7 +263,7 @@ auto metal_owned_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Metal;
+  session->api_kind = TextureSessionApi::Metal;
   session->mode = TextureSessionMode::Owned;
   session->backend = std::make_unique<MetalTextureBackend>(
     static_cast<MTL::Device*>(descriptor->device),
@@ -300,7 +300,7 @@ auto metal_borrowed_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Metal;
+  session->api_kind = TextureSessionApi::Metal;
   session->mode = TextureSessionMode::Borrowed;
   session->backend = std::make_unique<MetalTextureBackend>(
     static_cast<MTL::Texture*>(descriptor->texture),
@@ -334,7 +334,7 @@ auto metal_owned_texture_acquire_frame(
   }
   if (
     texture->mode != TextureSessionMode::Owned ||
-    texture->backend_kind != TextureSessionBackend::Metal
+    texture->api_kind != TextureSessionApi::Metal
   ) {
     set_thread_error("texture session cannot expose a Metal texture frame");
     return MLN_STATUS_UNSUPPORTED;
