@@ -191,6 +191,7 @@ add_library(
     src/c_api/logging.cpp
     src/c_api/map.cpp
     src/c_api/network.cpp
+    src/c_api/render_session.cpp
     src/c_api/runtime.cpp
     src/c_api/surface.cpp
     src/c_api/texture.cpp

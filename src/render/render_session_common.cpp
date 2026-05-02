@@ -71,11 +71,6 @@ auto register_render_session(
   render_sessions().emplace(handle, std::move(session));
 }
 
-auto unregister_render_session(mln_render_session* session) -> void {
-  const auto lock = std::scoped_lock{render_session_mutex()};
-  render_sessions().erase(session);
-}
-
 auto validate_render_session(mln_render_session* session) -> mln_status {
   if (session == nullptr) {
     set_thread_error("render session must not be null");
@@ -242,7 +237,10 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
     return MLN_STATUS_INVALID_STATE;
   }
 
-  if (session->texture.prepare_render_resources != nullptr) {
+  if (
+    session->kind == RenderSessionKind::Texture &&
+    session->texture.prepare_render_resources != nullptr
+  ) {
     session->texture.prepare_render_resources(session);
   }
   auto* backend = renderer_backend(session);
@@ -262,7 +260,10 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
   }
 
   session->renderer->render(update);
-  if (session->texture.after_render != nullptr) {
+  if (
+    session->kind == RenderSessionKind::Texture &&
+    session->texture.after_render != nullptr
+  ) {
     const auto after_status = session->texture.after_render(session);
     if (after_status != MLN_STATUS_OK) {
       return after_status;

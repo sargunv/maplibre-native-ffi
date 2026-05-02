@@ -251,13 +251,6 @@ auto metal_owned_texture_attach(
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
-
-  auto session = std::make_unique<mln_render_session>();
-  session->map = map;
-  session->owner_thread = map_owner_thread(map);
-  session->width = descriptor->width;
-  session->height = descriptor->height;
-  session->scale_factor = descriptor->scale_factor;
   const auto physical_status = validate_physical_size(
     descriptor->width, descriptor->height, descriptor->scale_factor,
     "scaled texture dimensions are too large"
@@ -265,6 +258,13 @@ auto metal_owned_texture_attach(
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
   }
+
+  auto session = std::make_unique<mln_render_session>();
+  session->map = map;
+  session->owner_thread = map_owner_thread(map);
+  session->width = descriptor->width;
+  session->height = descriptor->height;
+  session->scale_factor = descriptor->scale_factor;
   session->physical_width =
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =

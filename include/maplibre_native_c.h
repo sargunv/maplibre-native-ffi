@@ -1491,6 +1491,10 @@ MLN_API mln_status mln_vulkan_surface_attach(
   mln_render_session** out_session
 ) MLN_NOEXCEPT;
 
+#pragma endregion
+
+#pragma region Render sessions
+
 /**
  * Resizes an attached render session.
  *

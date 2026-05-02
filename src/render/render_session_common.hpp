@@ -75,7 +75,6 @@ struct RenderSessionAttachMessages {
 auto register_render_session(
   mln_render_session* handle, std::unique_ptr<mln_render_session> session
 ) -> void;
-auto unregister_render_session(mln_render_session* session) -> void;
 auto validate_render_session(mln_render_session* session) -> mln_status;
 auto validate_live_attached_render_session(mln_render_session* session)
   -> mln_status;
