@@ -191,6 +191,7 @@ add_library(
     src/c_api/logging.cpp
     src/c_api/map.cpp
     src/c_api/network.cpp
+    src/c_api/render_session.cpp
     src/c_api/runtime.cpp
     src/c_api/surface.cpp
     src/c_api/texture.cpp
@@ -198,6 +199,7 @@ add_library(
     src/diagnostics/diagnostics.cpp
     src/logging/logging.cpp
     src/map/map.cpp
+    src/render/render_session_common.cpp
     src/render/surface_session.cpp
     src/render/texture_session.cpp
     src/resources/custom_resource_provider.cpp

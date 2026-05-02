@@ -75,7 +75,7 @@ pub const VulkanBackend = union(enum) {
 
     pub fn drawTexture(
         self: *VulkanBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         viewport: types.Viewport,
     ) !bool {
         return switch (self.*) {
@@ -210,7 +210,7 @@ const VulkanTextureCompositor = struct {
 
 const VulkanOwnedTextureBackend = struct {
     compositor: VulkanTextureCompositor,
-    pending_texture: ?*c.mln_texture_session,
+    pending_texture: ?*c.mln_render_session,
     pending_frame: ?c.mln_vulkan_owned_texture_frame,
 
     fn init(
@@ -258,7 +258,7 @@ const VulkanOwnedTextureBackend = struct {
         descriptor.graphics_queue = self.compositor.context.queue;
         descriptor.graphics_queue_family_index = self.compositor.context.queue_family_index;
 
-        var texture: ?*c.mln_texture_session = null;
+        var texture: ?*c.mln_render_session = null;
         if (c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
@@ -270,7 +270,7 @@ const VulkanOwnedTextureBackend = struct {
 
     fn drawTexture(
         self: *VulkanOwnedTextureBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         _: types.Viewport,
     ) !bool {
         var frame: c.mln_vulkan_owned_texture_frame = .{
@@ -452,7 +452,7 @@ const VulkanBorrowedTextureBackend = struct {
         descriptor.initial_layout = c.VK_IMAGE_LAYOUT_UNDEFINED;
         descriptor.final_layout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        var texture: ?*c.mln_texture_session = null;
+        var texture: ?*c.mln_render_session = null;
         if (c.mln_vulkan_borrowed_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
@@ -464,7 +464,7 @@ const VulkanBorrowedTextureBackend = struct {
 
     fn drawTexture(
         self: *VulkanBorrowedTextureBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         _: types.Viewport,
     ) !bool {
         _ = texture;
@@ -504,7 +504,7 @@ const VulkanSurfaceBackend = struct {
         descriptor.graphics_queue_family_index = self.context.queue_family_index;
         descriptor.surface = self.context.surface;
 
-        var surface: ?*c.mln_surface_session = null;
+        var surface: ?*c.mln_render_session = null;
         if (c.mln_vulkan_surface_attach(map, &descriptor, &surface) !=
             c.MLN_STATUS_OK or surface == null)
         {
@@ -516,7 +516,7 @@ const VulkanSurfaceBackend = struct {
 };
 
 fn releaseVulkanFrame(
-    texture: *c.mln_texture_session,
+    texture: *c.mln_render_session,
     frame: *const c.mln_vulkan_owned_texture_frame,
 ) void {
     if (c.mln_vulkan_owned_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {

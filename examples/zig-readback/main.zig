@@ -31,13 +31,13 @@ pub fn main(init_args: std.process.Init) !void {
     try check(c.mln_map_create(runtime.?, &map_options, &map), "map create failed");
     defer _ = c.mln_map_destroy(map.?);
 
-    var texture: ?*c.mln_texture_session = null;
+    var texture: ?*c.mln_render_session = null;
     var texture_descriptor = c.mln_owned_texture_descriptor_default();
     texture_descriptor.width = width;
     texture_descriptor.height = height;
     texture_descriptor.scale_factor = 1.0;
     try check(c.mln_owned_texture_attach(map.?, &texture_descriptor, &texture), "owned texture attach failed");
-    defer _ = c.mln_texture_destroy(texture.?);
+    defer _ = c.mln_render_session_destroy(texture.?);
 
     try setInitialCamera(map.?);
     try check(c.mln_map_set_style_url(map.?, style_url), "style load failed");
@@ -71,7 +71,7 @@ fn setInitialCamera(map: *c.mln_map) !void {
     try check(c.mln_map_jump_to(map, &camera), "camera jump failed");
 }
 
-fn renderTexture(runtime: *c.mln_runtime, map: *c.mln_map, texture: *c.mln_texture_session) !void {
+fn renderTexture(runtime: *c.mln_runtime, map: *c.mln_map, texture: *c.mln_render_session) !void {
     var rendered_frame = false;
     while (true) {
         try check(c.mln_runtime_run_once(runtime), "runtime pump failed");
@@ -86,7 +86,7 @@ fn renderTexture(runtime: *c.mln_runtime, map: *c.mln_map, texture: *c.mln_textu
 
             switch (event.type) {
                 c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE => {
-                    const status = c.mln_texture_render_update(texture);
+                    const status = c.mln_render_session_render_update(texture);
                     if (status == c.MLN_STATUS_OK) {
                         rendered_frame = true;
                     } else if (status != c.MLN_STATUS_INVALID_STATE) {

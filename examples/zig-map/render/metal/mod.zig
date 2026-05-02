@@ -84,7 +84,7 @@ pub const MetalBackend = union(enum) {
 
     pub fn drawTexture(
         self: *MetalBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         viewport: types.Viewport,
     ) !bool {
         return switch (self.*) {
@@ -229,7 +229,7 @@ const MetalOwnedTextureBackend = struct {
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
         descriptor.device = self.compositor.view.device.value.?;
-        var texture: ?*c.mln_texture_session = null;
+        var texture: ?*c.mln_render_session = null;
         if (c.mln_metal_owned_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
@@ -241,7 +241,7 @@ const MetalOwnedTextureBackend = struct {
 
     fn drawTexture(
         self: *MetalOwnedTextureBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         _: types.Viewport,
     ) !bool {
         var frame: c.mln_metal_owned_texture_frame = .{
@@ -302,7 +302,7 @@ const MetalBorrowedTextureBackend = struct {
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
         descriptor.texture = self.borrowed_texture.value.?;
-        var texture: ?*c.mln_texture_session = null;
+        var texture: ?*c.mln_render_session = null;
         if (c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
@@ -314,7 +314,7 @@ const MetalBorrowedTextureBackend = struct {
 
     fn drawTexture(
         self: *MetalBorrowedTextureBackend,
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         _: types.Viewport,
     ) !bool {
         _ = texture;
@@ -346,7 +346,7 @@ const MetalSurfaceBackend = struct {
         descriptor.scale_factor = viewport.scale_factor;
         descriptor.layer = self.view.layer.value.?;
         descriptor.device = self.view.device.value.?;
-        var surface: ?*c.mln_surface_session = null;
+        var surface: ?*c.mln_render_session = null;
         if (c.mln_metal_surface_attach(map, &descriptor, &surface) !=
             c.MLN_STATUS_OK or surface == null)
         {
@@ -358,7 +358,7 @@ const MetalSurfaceBackend = struct {
 };
 
 fn releaseMetalFrame(
-    texture: *c.mln_texture_session,
+    texture: *c.mln_render_session,
     frame: *const c.mln_metal_owned_texture_frame,
 ) void {
     if (c.mln_metal_owned_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {

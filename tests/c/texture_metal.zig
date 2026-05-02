@@ -29,7 +29,7 @@ const Backend = struct {
     };
 
     pub const Fixture = struct {
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         context: ?AttachContext,
 
         pub fn create(map: *c.mln_map) !Fixture {
@@ -38,7 +38,7 @@ const Backend = struct {
             texture_descriptor.width = 256;
             texture_descriptor.height = 256;
 
-            var texture: ?*c.mln_texture_session = null;
+            var texture: ?*c.mln_render_session = null;
             try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_owned_texture_attach(map, &texture_descriptor, &texture));
             return .{ .texture = texture orelse return error.TextureCreateFailed, .context = context };
         }
@@ -48,7 +48,7 @@ const Backend = struct {
         }
 
         pub fn destroy(self: *Fixture) void {
-            testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(self.texture)) catch @panic("texture destroy failed");
+            testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(self.texture)) catch @panic("texture destroy failed");
             self.context = null;
         }
 
@@ -70,10 +70,10 @@ const Backend = struct {
     };
 
     pub const Frame = struct {
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         metal: c.mln_metal_owned_texture_frame,
 
-        pub fn empty(texture: *c.mln_texture_session) Frame {
+        pub fn empty(texture: *c.mln_render_session) Frame {
             return .{
                 .texture = texture,
                 .metal = .{
@@ -104,7 +104,7 @@ const Backend = struct {
         }
     };
 
-    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_owned_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
+    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_owned_texture_descriptor, out_texture: ?*?*c.mln_render_session) c.mln_status {
         return c.mln_metal_owned_texture_attach(map, descriptor, out_texture);
     }
 
@@ -153,13 +153,13 @@ test "Metal texture unsupported backend validates arguments" {
     var descriptor = c.mln_metal_owned_texture_descriptor_default();
     descriptor.device = @ptrFromInt(1);
 
-    var texture: ?*c.mln_texture_session = @ptrFromInt(1);
+    var texture: ?*c.mln_render_session = @ptrFromInt(1);
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
     try testing.expect(texture != null);
 
     texture = null;
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), texture);
 }
 
 test "Metal texture attach rejects invalid arguments" {
@@ -212,21 +212,21 @@ test "Metal borrowed texture renders into caller texture" {
     descriptor.width = 128;
     descriptor.height = 128;
 
-    var texture: ?*c.mln_texture_session = null;
+    var texture: ?*c.mln_render_session = null;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
 
     descriptor.texture = borrowed;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
-    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?)) catch @panic("texture destroy failed");
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(texture.?)) catch @panic("texture destroy failed");
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(texture.?));
     try expectPixelApprox(try metal_support.readTexturePixelRGBA8(borrowed, 0, 0), .{ 0xd8, 0xf1, 0xff, 0xff }, 8);
 
     var frame = Backend.Frame.empty(texture.?);
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_acquire_frame(texture.?, &frame.metal));
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_resize(texture.?, 64, 64, 1.0));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_render_session_resize(texture.?, 64, 64, 1.0));
 
     var image_info = c.mln_texture_image_info_default();
     var pixel: [4]u8 = .{ 0, 0, 0, 0 };
