@@ -13,7 +13,8 @@ struct mln_surface_session;
 
 namespace mln::core {
 
-using SurfaceSessionResizeCallback = void (*)(mln_surface_session*);
+using SurfaceSessionResizeCallback =
+  void (*)(mln_surface_session*, uint32_t, uint32_t);
 
 }  // namespace mln::core
 

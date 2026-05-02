@@ -46,6 +46,13 @@ pub const VulkanBackend = union(enum) {
         }
     }
 
+    pub fn needsRenderTargetReattachOnResize(self: *const VulkanBackend) bool {
+        return switch (self.*) {
+            .owned_texture, .native_surface => false,
+            .borrowed_texture => true,
+        };
+    }
+
     pub fn finishFrame(self: *VulkanBackend) !void {
         switch (self.*) {
             .owned_texture => |*backend| try backend.finishFrame(),
@@ -414,7 +421,11 @@ const VulkanBorrowedTextureBackend = struct {
 
     fn resize(self: *VulkanBorrowedTextureBackend, viewport: types.Viewport) !void {
         self.compositor.waitIdle();
+        var borrowed_image = try BorrowedImage.init(&self.compositor.context, viewport);
+        errdefer borrowed_image.deinit(self.compositor.context.device);
         try self.compositor.resize(viewport);
+        self.borrowed_image.deinit(self.compositor.context.device);
+        self.borrowed_image = borrowed_image;
     }
 
     fn finishFrame(self: *VulkanBorrowedTextureBackend) !void {

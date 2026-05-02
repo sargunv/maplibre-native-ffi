@@ -1,5 +1,6 @@
+const std = @import("std");
 const builtin = @import("builtin");
-const testing = @import("std").testing;
+const testing = std.testing;
 const support = @import("support.zig");
 const metal_support = @import("metal_support.zig");
 const common = @import("texture.zig");
@@ -130,6 +131,16 @@ const Backend = struct {
     }
 };
 
+fn expectPixelApprox(actual: [4]u8, expected: [4]u8, tolerance: u8) !void {
+    for (actual, expected) |actual_channel, expected_channel| {
+        const delta = if (actual_channel > expected_channel)
+            actual_channel - expected_channel
+        else
+            expected_channel - actual_channel;
+        try testing.expect(delta <= tolerance);
+    }
+}
+
 test "Metal texture unsupported backend validates arguments" {
     if (builtin.os.tag == .macos) return error.SkipZigTest;
 
@@ -189,6 +200,8 @@ test "Metal borrowed texture renders into caller texture" {
 
     const borrowed = try metal_support.createTexture(context.device, 128, 128);
     defer metal_support.releaseObject(borrowed);
+    try metal_support.clearTextureRGBA8(borrowed, .{ 255, 0, 255, 255 });
+    try expectPixelApprox(try metal_support.readTexturePixelRGBA8(borrowed, 0, 0), .{ 255, 0, 255, 255 }, 0);
 
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
@@ -209,6 +222,7 @@ test "Metal borrowed texture renders into caller texture" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+    try expectPixelApprox(try metal_support.readTexturePixelRGBA8(borrowed, 0, 0), .{ 0xd8, 0xf1, 0xff, 0xff }, 8);
 
     var frame = Backend.Frame.empty(texture.?);
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_acquire_frame(texture.?, &frame.metal));
@@ -222,6 +236,13 @@ test "Metal borrowed texture renders into caller texture" {
 test "Metal texture render emits observer events" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     try common.expectRenderObserverEvents(Backend);
+}
+
+test "Metal texture still modes render requested still images" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    inline for (.{ c.MLN_MAP_MODE_STATIC, c.MLN_MAP_MODE_TILE }) |map_mode| {
+        try common.expectStillModeStillImageRequest(Backend, map_mode);
+    }
 }
 
 test "Metal texture detach leaves handle live but unusable for rendering" {

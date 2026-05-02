@@ -3,6 +3,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 typedef struct mln_test_window_metal_layer {
   void* window;
@@ -46,6 +47,96 @@ void* mln_test_create_metal_texture(
                              mipmapped:NO];
   descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
   return [(id<MTLDevice>)device newTextureWithDescriptor:descriptor];
+}
+
+bool mln_test_metal_texture_clear_rgba8(
+  void* texture, uint8_t r, uint8_t g, uint8_t b, uint8_t a
+) {
+  id<MTLTexture> metal_texture = (id<MTLTexture>)texture;
+  if (metal_texture == nil) {
+    return false;
+  }
+
+  id<MTLCommandQueue> queue = [[metal_texture device] newCommandQueue];
+  if (queue == nil) {
+    return false;
+  }
+
+  MTLRenderPassDescriptor* descriptor =
+    [MTLRenderPassDescriptor renderPassDescriptor];
+  MTLRenderPassColorAttachmentDescriptor* color_attachment =
+    [[descriptor colorAttachments] objectAtIndexedSubscript:0];
+  [color_attachment setTexture:metal_texture];
+  [color_attachment setLoadAction:MTLLoadActionClear];
+  [color_attachment setStoreAction:MTLStoreActionStore];
+  [color_attachment setClearColor:MTLClearColorMake(
+                                    (double)r / 255.0, (double)g / 255.0,
+                                    (double)b / 255.0, (double)a / 255.0
+                                  )];
+
+  id<MTLCommandBuffer> command_buffer = [queue commandBuffer];
+  id<MTLRenderCommandEncoder> encoder =
+    [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+  if (encoder == nil) {
+    [queue release];
+    return false;
+  }
+  [encoder endEncoding];
+  [command_buffer commit];
+  [command_buffer waitUntilCompleted];
+  const bool success =
+    [command_buffer status] == MTLCommandBufferStatusCompleted;
+  [queue release];
+  return success;
+}
+
+bool mln_test_metal_texture_read_pixel_rgba8(
+  void* texture, uint32_t x, uint32_t y, uint8_t* out_rgba
+) {
+  id<MTLTexture> metal_texture = (id<MTLTexture>)texture;
+  if (
+    metal_texture == nil || out_rgba == NULL || x >= [metal_texture width] ||
+    y >= [metal_texture height]
+  ) {
+    return false;
+  }
+
+  id<MTLCommandQueue> queue = [[metal_texture device] newCommandQueue];
+  if (queue == nil) {
+    return false;
+  }
+  const NSUInteger bytes_per_row = 256;
+  id<MTLBuffer> buffer =
+    [[metal_texture device] newBufferWithLength:bytes_per_row
+                                        options:MTLResourceStorageModeShared];
+  if (buffer == nil) {
+    [queue release];
+    return false;
+  }
+
+  id<MTLCommandBuffer> command_buffer = [queue commandBuffer];
+  id<MTLBlitCommandEncoder> encoder = [command_buffer blitCommandEncoder];
+  [encoder copyFromTexture:metal_texture
+                 sourceSlice:0
+                 sourceLevel:0
+                sourceOrigin:MTLOriginMake(x, y, 0)
+                  sourceSize:MTLSizeMake(1, 1, 1)
+                    toBuffer:buffer
+           destinationOffset:0
+      destinationBytesPerRow:bytes_per_row
+    destinationBytesPerImage:bytes_per_row];
+  [encoder endEncoding];
+  [command_buffer commit];
+  [command_buffer waitUntilCompleted];
+
+  const bool success =
+    [command_buffer status] == MTLCommandBufferStatusCompleted;
+  if (success) {
+    memcpy(out_rgba, [buffer contents], 4);
+  }
+  [buffer release];
+  [queue release];
+  return success;
 }
 
 void mln_test_release_metal_object(void* object) { [(id)object release]; }

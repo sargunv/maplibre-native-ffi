@@ -76,8 +76,12 @@ pub fn main(init_args: std.process.Init) !void {
                 => {
                     current_viewport = viewport.get(window_handle);
                     viewport.log("resized viewport", current_viewport);
-                    try backend.resize(current_viewport);
-                    try map.resize(current_viewport);
+                    if (backend.needsRenderTargetReattachOnResize()) {
+                        try map.resizeWithReattachedTarget(current_viewport, &backend);
+                    } else {
+                        try backend.resize(current_viewport);
+                        try map.resize(current_viewport);
+                    }
                     render_pending = true;
                 },
                 else => {
@@ -103,6 +107,7 @@ pub fn main(init_args: std.process.Init) !void {
                 render_pending = false;
                 did_work = true;
                 switch (map.target) {
+                    .none => {},
                     .texture => |texture| {
                         if (try backend.drawTexture(texture, current_viewport)) {
                             has_presented_frame = true;

@@ -49,6 +49,16 @@ pub const MapState = struct {
     pub fn resize(self: *MapState, viewport: types.Viewport) !void {
         try self.target.resize(viewport);
     }
+
+    pub fn resizeWithReattachedTarget(
+        self: *MapState,
+        viewport: types.Viewport,
+        backend: anytype,
+    ) !void {
+        self.target.deinit();
+        try backend.resize(viewport);
+        self.target = try backend.attachRenderTarget(self.map, viewport);
+    }
 };
 
 pub fn drainEvents(runtime: *c.mln_runtime, map: *c.mln_map) !bool {

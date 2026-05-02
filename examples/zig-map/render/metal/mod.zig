@@ -61,6 +61,13 @@ pub const MetalBackend = union(enum) {
         }
     }
 
+    pub fn needsRenderTargetReattachOnResize(self: *const MetalBackend) bool {
+        return switch (self.*) {
+            .owned_texture, .native_surface => false,
+            .borrowed_texture => true,
+        };
+    }
+
     pub fn finishFrame(_: *MetalBackend) !void {}
 
     pub fn attachRenderTarget(
@@ -279,6 +286,9 @@ const MetalBorrowedTextureBackend = struct {
     }
 
     fn resize(self: *MetalBorrowedTextureBackend, viewport: types.Viewport) !void {
+        const new_texture = try createBorrowedTexture(self.compositor.view.device, viewport);
+        self.borrowed_texture.release();
+        self.borrowed_texture = new_texture;
         self.compositor.resize(viewport);
     }
 

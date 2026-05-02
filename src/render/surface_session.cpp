@@ -128,20 +128,22 @@ auto surface_resize(
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
   }
+  const auto physical_width = surface_physical_dimension(width, scale_factor);
+  const auto physical_height = surface_physical_dimension(height, scale_factor);
 
-  surface->width = width;
-  surface->height = height;
-  surface->physical_width = surface_physical_dimension(width, scale_factor);
-  surface->physical_height = surface_physical_dimension(height, scale_factor);
-  surface->scale_factor = scale_factor;
   if (surface->resize_backend != nullptr) {
-    surface->resize_backend(surface);
+    surface->resize_backend(surface, physical_width, physical_height);
   }
   if (auto* map = map_native(surface->map); map != nullptr) {
     map->setSize(mbgl::Size{width, height});
   }
   surface->renderer.reset();
   surface->rendered_generation = 0;
+  surface->width = width;
+  surface->height = height;
+  surface->physical_width = physical_width;
+  surface->physical_height = physical_height;
+  surface->scale_factor = scale_factor;
   ++surface->generation;
   return MLN_STATUS_OK;
 }

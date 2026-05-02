@@ -225,6 +225,101 @@ const Backend = struct {
     }
 };
 
+const BorrowedImage = struct {
+    context: Backend.AttachContext,
+    image: vk.VkImage,
+    image_view: vk.VkImageView,
+    memory: vk.VkDeviceMemory,
+    width: u32,
+    height: u32,
+
+    pub fn create(width: u32, height: u32) !BorrowedImage {
+        var context = try Backend.AttachContext.init();
+        errdefer context.deinit();
+
+        var image: vk.VkImage = null;
+        var memory: vk.VkDeviceMemory = null;
+        var image_view: vk.VkImageView = null;
+        errdefer {
+            if (image_view != null) vk.vkDestroyImageView(context.device, image_view, null);
+            if (image != null) vk.vkDestroyImage(context.device, image, null);
+            if (memory != null) vk.vkFreeMemory(context.device, memory, null);
+        }
+
+        var image_info = std.mem.zeroes(vk.VkImageCreateInfo);
+        image_info.sType = vk.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        image_info.imageType = vk.VK_IMAGE_TYPE_2D;
+        image_info.format = vk.VK_FORMAT_R8G8B8A8_UNORM;
+        image_info.extent = .{ .width = width, .height = height, .depth = 1 };
+        image_info.mipLevels = 1;
+        image_info.arrayLayers = 1;
+        image_info.samples = vk.VK_SAMPLE_COUNT_1_BIT;
+        image_info.tiling = vk.VK_IMAGE_TILING_OPTIMAL;
+        image_info.usage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | vk.VK_IMAGE_USAGE_SAMPLED_BIT | vk.VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        image_info.sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE;
+        image_info.initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED;
+        try expectVk(vk.vkCreateImage(context.device, &image_info, null, &image));
+
+        var requirements: vk.VkMemoryRequirements = undefined;
+        vk.vkGetImageMemoryRequirements(context.device, image, &requirements);
+
+        var allocate_info = std.mem.zeroes(vk.VkMemoryAllocateInfo);
+        allocate_info.sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocate_info.allocationSize = requirements.size;
+        allocate_info.memoryTypeIndex = try findMemoryType(context.physical_device, requirements.memoryTypeBits, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        try expectVk(vk.vkAllocateMemory(context.device, &allocate_info, null, &memory));
+        try expectVk(vk.vkBindImageMemory(context.device, image, memory, 0));
+
+        var view_info = std.mem.zeroes(vk.VkImageViewCreateInfo);
+        view_info.sType = vk.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_info.image = image;
+        view_info.viewType = vk.VK_IMAGE_VIEW_TYPE_2D;
+        view_info.format = vk.VK_FORMAT_R8G8B8A8_UNORM;
+        view_info.subresourceRange = .{
+            .aspectMask = vk.VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        };
+        try expectVk(vk.vkCreateImageView(context.device, &view_info, null, &image_view));
+
+        return .{
+            .context = context,
+            .image = image,
+            .image_view = image_view,
+            .memory = memory,
+            .width = width,
+            .height = height,
+        };
+    }
+
+    pub fn deinit(self: *BorrowedImage) void {
+        _ = vk.vkDeviceWaitIdle(self.context.device);
+        vk.vkDestroyImageView(self.context.device, self.image_view, null);
+        vk.vkDestroyImage(self.context.device, self.image, null);
+        vk.vkFreeMemory(self.context.device, self.memory, null);
+        self.context.deinit();
+    }
+
+    pub fn descriptor(self: *const BorrowedImage) c.mln_vulkan_borrowed_texture_descriptor {
+        var value = c.mln_vulkan_borrowed_texture_descriptor_default();
+        value.width = self.width;
+        value.height = self.height;
+        value.instance = self.context.instance;
+        value.physical_device = self.context.physical_device;
+        value.device = self.context.device;
+        value.graphics_queue = self.context.queue;
+        value.graphics_queue_family_index = self.context.queue_family_index;
+        value.image = self.image;
+        value.image_view = self.image_view;
+        value.format = @as(u32, vk.VK_FORMAT_R8G8B8A8_UNORM);
+        value.initial_layout = @as(u32, vk.VK_IMAGE_LAYOUT_UNDEFINED);
+        value.final_layout = @as(u32, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        return value;
+    }
+};
+
 test "Vulkan texture unsupported backend validates arguments" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
 
@@ -253,6 +348,20 @@ fn expectVk(result: vk.VkResult) !void {
     try testing.expectEqual(vk.VK_SUCCESS, result);
 }
 
+fn findMemoryType(physical_device: vk.VkPhysicalDevice, type_filter: u32, properties: vk.VkMemoryPropertyFlags) !u32 {
+    var memory_properties: vk.VkPhysicalDeviceMemoryProperties = undefined;
+    vk.vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+    for (0..memory_properties.memoryTypeCount) |index| {
+        const type_bit = @as(u32, 1) << @as(u5, @intCast(index));
+        const memory_type = memory_properties.memoryTypes[index];
+        if ((type_filter & type_bit) != 0 and (memory_type.propertyFlags & properties) == properties) {
+            return @intCast(index);
+        }
+    }
+    return error.NoSuitableVulkanMemoryType;
+}
+
 test "Vulkan texture attach rejects invalid arguments" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectAttachRejectsInvalidArguments(Backend);
@@ -278,9 +387,57 @@ test "Vulkan owned texture supports readback" {
     try common.expectOwnedTextureReadback(Backend);
 }
 
+test "Vulkan borrowed texture renders into caller image" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    var borrowed = try BorrowedImage.create(128, 128);
+    defer borrowed.deinit();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = borrowed.descriptor();
+    var texture: ?*c.mln_texture_session = null;
+    var missing_image_descriptor = descriptor;
+    missing_image_descriptor.image = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_borrowed_texture_attach(map, &missing_image_descriptor, &texture));
+    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_vulkan_borrowed_texture_attach(map, &descriptor, &texture));
+    defer if (texture) |live_texture| {
+        testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(live_texture)) catch @panic("texture destroy failed");
+    };
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+
+    var frame = Backend.Frame.empty(texture.?);
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_owned_texture_acquire_frame(texture.?, &frame.vulkan));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_resize(texture.?, 64, 64, 1.0));
+
+    var image_info = c.mln_texture_image_info_default();
+    var pixel: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_read_premultiplied_rgba8(texture.?, pixel[0..].ptr, pixel.len, &image_info));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?));
+    texture = null;
+}
+
 test "Vulkan texture render emits observer events" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectRenderObserverEvents(Backend);
+}
+
+test "Vulkan texture still modes render requested still images" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+    inline for (.{ c.MLN_MAP_MODE_STATIC, c.MLN_MAP_MODE_TILE }) |map_mode| {
+        try common.expectStillModeStillImageRequest(Backend, map_mode);
+    }
 }
 
 test "Vulkan texture detach leaves handle live but unusable for rendering" {

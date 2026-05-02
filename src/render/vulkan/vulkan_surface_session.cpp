@@ -378,9 +378,12 @@ class VulkanSurfaceBackend final : public mbgl::vulkan::RendererBackend,
   mln_vulkan_surface_descriptor descriptor_;
 };
 
-void resize_vulkan_surface(mln_surface_session* surface) {
+void resize_vulkan_surface(
+  mln_surface_session* surface, uint32_t physical_width,
+  uint32_t physical_height
+) {
   static_cast<VulkanSurfaceBackend&>(*surface->backend)
-    .setSize(mbgl::Size{surface->physical_width, surface->physical_height});
+    .setSize(mbgl::Size{physical_width, physical_height});
 }
 
 }  // namespace

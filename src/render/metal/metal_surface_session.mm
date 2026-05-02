@@ -224,9 +224,12 @@ class MetalSurfaceBackend final : public mbgl::mtl::RendererBackend,
   void updateAssumedState() override {}
 };
 
-void resize_metal_surface(mln_surface_session* surface) {
+void resize_metal_surface(
+  mln_surface_session* surface, uint32_t physical_width,
+  uint32_t physical_height
+) {
   static_cast<MetalSurfaceBackend&>(*surface->backend)
-    .setSize(mbgl::Size{surface->physical_width, surface->physical_height});
+    .setSize(mbgl::Size{physical_width, physical_height});
 }
 
 auto validate_vulkan_descriptor(const mln_vulkan_surface_descriptor* descriptor)

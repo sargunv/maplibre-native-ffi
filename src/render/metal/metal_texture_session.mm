@@ -69,6 +69,12 @@ auto validate_borrowed_descriptor(
     mln::core::set_thread_error("Metal texture must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  const auto physical_status = mln::core::validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor
+  );
+  if (physical_status != MLN_STATUS_OK) {
+    return physical_status;
+  }
   const auto physical_width =
     mln::core::physical_dimension(descriptor->width, descriptor->scale_factor);
   const auto physical_height =
@@ -282,12 +288,6 @@ auto metal_borrowed_texture_attach(
   const auto output_status = validate_attach_output(out_texture);
   if (output_status != MLN_STATUS_OK) {
     return output_status;
-  }
-  const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
-  );
-  if (physical_status != MLN_STATUS_OK) {
-    return physical_status;
   }
 
   auto session = std::make_unique<mln_texture_session>();
