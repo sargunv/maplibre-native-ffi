@@ -45,6 +45,49 @@ const pmtiles_style_json =
 const pmtiles_style_url = "custom://pmtiles-range-style.json";
 const pmtiles_archive_url = "http://example.invalid/test.pmtiles";
 
+const offline_style_url = "http://example.com/offline-style.json";
+
+fn offlineTileDefinition() c.mln_offline_region_definition {
+    var definition: c.mln_offline_region_definition = undefined;
+    definition.size = @sizeOf(c.mln_offline_region_definition);
+    definition.type = c.MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID;
+    definition.data.tile_pyramid = .{
+        .size = @sizeOf(c.mln_offline_tile_pyramid_region_definition),
+        .style_url = offline_style_url,
+        .bounds = .{
+            .southwest = .{ .latitude = 1.0, .longitude = 2.0 },
+            .northeast = .{ .latitude = 3.0, .longitude = 4.0 },
+        },
+        .min_zoom = 5.0,
+        .max_zoom = 6.0,
+        .pixel_ratio = 2.0,
+        .include_ideographs = true,
+    };
+    return definition;
+}
+
+fn offlineRegionInfo() c.mln_offline_region_info {
+    var info: c.mln_offline_region_info = undefined;
+    info.size = @sizeOf(c.mln_offline_region_info);
+    return info;
+}
+
+fn checkOfflineRegionInfo(info: *const c.mln_offline_region_info, expected_id: c.mln_offline_region_id, expected_metadata: []const u8) !void {
+    try testing.expectEqual(expected_id, info.id);
+    try testing.expectEqual(@as(u32, c.MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID), info.definition.type);
+    try testing.expectEqualStrings(offline_style_url, std.mem.span(info.definition.data.tile_pyramid.style_url));
+    try testing.expectEqual(@as(f64, 1.0), info.definition.data.tile_pyramid.bounds.southwest.latitude);
+    try testing.expectEqual(@as(f64, 2.0), info.definition.data.tile_pyramid.bounds.southwest.longitude);
+    try testing.expectEqual(@as(f64, 3.0), info.definition.data.tile_pyramid.bounds.northeast.latitude);
+    try testing.expectEqual(@as(f64, 4.0), info.definition.data.tile_pyramid.bounds.northeast.longitude);
+    try testing.expectEqual(@as(f64, 5.0), info.definition.data.tile_pyramid.min_zoom);
+    try testing.expectEqual(@as(f64, 6.0), info.definition.data.tile_pyramid.max_zoom);
+    try testing.expectEqual(@as(f32, 2.0), info.definition.data.tile_pyramid.pixel_ratio);
+    try testing.expect(info.definition.data.tile_pyramid.include_ideographs);
+    try testing.expectEqual(expected_metadata.len, info.metadata_size);
+    try testing.expectEqualSlices(u8, expected_metadata, info.metadata[0..info.metadata_size]);
+}
+
 const AsyncProviderState = struct {
     handle: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     saw_style_kind: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -631,6 +674,138 @@ test "ambient cache operations validate cache configuration" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_ambient_cache_operation(runtime_handle, c.MLN_AMBIENT_CACHE_OPERATION_INVALIDATE));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_ambient_cache_operation(runtime_handle, c.MLN_AMBIENT_CACHE_OPERATION_CLEAR));
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_ambient_cache_operation(runtime_handle, c.MLN_AMBIENT_CACHE_OPERATION_RESET_DATABASE));
+}
+
+test "offline tile-pyramid regions validate inputs" {
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var definition = offlineTileDefinition();
+    const metadata = [_]u8{ 1, 2, 3 };
+    var snapshot: ?*c.mln_offline_region_snapshot = null;
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, null, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    definition.type = 999;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    definition = offlineTileDefinition();
+    definition.data.tile_pyramid.style_url = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    definition = offlineTileDefinition();
+    definition.data.tile_pyramid.min_zoom = 7.0;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    definition = offlineTileDefinition();
+    definition.data.tile_pyramid.max_zoom = std.math.inf(f64);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    if (snapshot) |handle| {
+        c.mln_offline_region_snapshot_destroy(handle);
+        snapshot = null;
+    }
+
+    definition = offlineTileDefinition();
+    definition.type = c.MLN_OFFLINE_REGION_DEFINITION_GEOMETRY;
+    definition.data.geometry = .{ .size = @sizeOf(c.mln_offline_geometry_region_definition) };
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+}
+
+test "offline tile-pyramid regions persist and support metadata lifecycle" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const cwd = try std.process.currentPathAlloc(testing.io, testing.allocator);
+    defer testing.allocator.free(cwd);
+    const cache_path = try std.fmt.allocPrintSentinel(testing.allocator, "{s}/.zig-cache/tmp/{s}/cache.db", .{ cwd, tmp.sub_path[0..] }, 0);
+    defer testing.allocator.free(cache_path);
+
+    const metadata = [_]u8{ 1, 2, 3 };
+    const updated_metadata = [_]u8{ 4, 5, 6, 7 };
+    var region_id: c.mln_offline_region_id = 0;
+
+    {
+        var runtime: ?*c.mln_runtime = null;
+        var options = c.mln_runtime_options_default();
+        options.cache_path = cache_path.ptr;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&options, &runtime));
+        const runtime_handle = runtime orelse return error.RuntimeCreateFailed;
+        defer support.destroyRuntime(runtime_handle);
+
+        var definition = offlineTileDefinition();
+        var created: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime_handle, &definition, metadata[0..].ptr, metadata.len, &created));
+        const created_handle = created orelse return error.RegionCreateFailed;
+        defer c.mln_offline_region_snapshot_destroy(created_handle);
+
+        var created_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(created_handle, &created_info));
+        try testing.expect(created_info.id > 0);
+        region_id = created_info.id;
+        try checkOfflineRegionInfo(&created_info, region_id, metadata[0..]);
+
+        var status: c.mln_offline_region_status = undefined;
+        status.size = @sizeOf(c.mln_offline_region_status);
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_get_status(runtime_handle, region_id, &status));
+        try testing.expectEqual(@as(u32, c.MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE), status.download_state);
+
+        var list: ?*c.mln_offline_region_list = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_regions_list(runtime_handle, &list));
+        const list_handle = list orelse return error.RegionListFailed;
+        defer c.mln_offline_region_list_destroy(list_handle);
+
+        var count: usize = 0;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(list_handle, &count));
+        try testing.expectEqual(@as(usize, 1), count);
+        var list_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_get(list_handle, 0, &list_info));
+        try checkOfflineRegionInfo(&list_info, region_id, metadata[0..]);
+
+        var updated: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_update_metadata(runtime_handle, region_id, updated_metadata[0..].ptr, updated_metadata.len, &updated));
+        const updated_handle = updated orelse return error.RegionUpdateFailed;
+        defer c.mln_offline_region_snapshot_destroy(updated_handle);
+
+        var updated_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(updated_handle, &updated_info));
+        try checkOfflineRegionInfo(&updated_info, region_id, updated_metadata[0..]);
+    }
+
+    {
+        var runtime: ?*c.mln_runtime = null;
+        var options = c.mln_runtime_options_default();
+        options.cache_path = cache_path.ptr;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&options, &runtime));
+        const runtime_handle = runtime orelse return error.RuntimeCreateFailed;
+        defer support.destroyRuntime(runtime_handle);
+
+        var found = false;
+        var reloaded: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_get(runtime_handle, region_id, &reloaded, &found));
+        try testing.expect(found);
+        const reloaded_handle = reloaded orelse return error.RegionReloadFailed;
+        defer c.mln_offline_region_snapshot_destroy(reloaded_handle);
+
+        var reloaded_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(reloaded_handle, &reloaded_info));
+        try checkOfflineRegionInfo(&reloaded_info, region_id, updated_metadata[0..]);
+
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_invalidate(runtime_handle, region_id));
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_delete(runtime_handle, region_id));
+
+        var list: ?*c.mln_offline_region_list = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_regions_list(runtime_handle, &list));
+        const list_handle = list orelse return error.RegionListFailed;
+        defer c.mln_offline_region_list_destroy(list_handle);
+
+        var count: usize = 0;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(list_handle, &count));
+        try testing.expectEqual(@as(usize, 0), count);
+    }
 }
 
 test "http URL style loads through network provider" {

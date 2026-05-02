@@ -74,6 +74,48 @@ auto set_resource_transform(
 ) -> mln_status;
 auto run_ambient_cache_operation(mln_runtime* runtime, uint32_t operation)
   -> mln_status;
+auto offline_region_create(
+  mln_runtime* runtime, const mln_offline_region_definition* definition,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) -> mln_status;
+auto offline_region_get(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_snapshot** out_region, bool* out_found
+) -> mln_status;
+auto offline_regions_list(
+  mln_runtime* runtime, mln_offline_region_list** out_regions
+) -> mln_status;
+auto offline_region_update_metadata(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) -> mln_status;
+auto offline_region_get_status(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_status* out_status
+) -> mln_status;
+auto offline_region_invalidate(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) -> mln_status;
+auto offline_region_delete(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) -> mln_status;
+auto offline_region_snapshot_get(
+  const mln_offline_region_snapshot* snapshot, mln_offline_region_info* out_info
+) -> mln_status;
+auto offline_region_snapshot_destroy(
+  mln_offline_region_snapshot* snapshot
+) noexcept -> void;
+auto offline_region_list_count(
+  const mln_offline_region_list* list, size_t* out_count
+) -> mln_status;
+auto offline_region_list_get(
+  const mln_offline_region_list* list, size_t index,
+  mln_offline_region_info* out_info
+) -> mln_status;
+auto offline_region_list_destroy(mln_offline_region_list* list) noexcept
+  -> void;
 auto retain_runtime_map(mln_runtime* runtime) -> mln_status;
 auto release_runtime_map(mln_runtime* runtime) noexcept -> void;
 auto validate_runtime(mln_runtime* runtime) -> mln_status;

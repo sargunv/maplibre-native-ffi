@@ -19,6 +19,7 @@
 
 // NOLINTBEGIN(cppcoreguidelines-use-enum-class)
 // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
 // NOLINTBEGIN(modernize-deprecated-headers)
 // NOLINTBEGIN(modernize-use-trailing-return-type)
 // NOLINTBEGIN(modernize-use-using)
@@ -71,6 +72,8 @@ typedef enum mln_status : int32_t {
 typedef struct mln_runtime mln_runtime;
 typedef struct mln_map mln_map;
 typedef struct mln_map_projection mln_map_projection;
+typedef struct mln_offline_region_snapshot mln_offline_region_snapshot;
+typedef struct mln_offline_region_list mln_offline_region_list;
 typedef struct mln_resource_request_handle mln_resource_request_handle;
 typedef struct mln_render_session mln_render_session;
 
@@ -218,6 +221,18 @@ typedef enum mln_ambient_cache_operation : uint32_t {
   MLN_AMBIENT_CACHE_OPERATION_INVALIDATE = 3,
   MLN_AMBIENT_CACHE_OPERATION_CLEAR = 4,
 } mln_ambient_cache_operation;
+
+typedef int64_t mln_offline_region_id;
+
+typedef enum mln_offline_region_definition_type : uint32_t {
+  MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID = 1,
+  MLN_OFFLINE_REGION_DEFINITION_GEOMETRY = 2,
+} mln_offline_region_definition_type;
+
+typedef enum mln_offline_region_download_state : uint32_t {
+  MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE = 0,
+  MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE = 1,
+} mln_offline_region_download_state;
 
 /** Runtime event types returned by mln_runtime_poll_event(). */
 typedef enum mln_runtime_event_type : uint32_t {
@@ -891,6 +906,253 @@ typedef struct mln_lat_lng {
   /** Longitude in degrees. Input longitude must be finite. */
   double longitude;
 } mln_lat_lng;
+
+/** Geographic bounds in degrees. */
+typedef struct mln_lat_lng_bounds {
+  mln_lat_lng southwest;
+  mln_lat_lng northeast;
+} mln_lat_lng_bounds;
+
+/** Tile-pyramid offline region definition. */
+typedef struct mln_offline_tile_pyramid_region_definition {
+  uint32_t size;
+  /** Style URL. Copied during region creation. */
+  const char* style_url;
+  mln_lat_lng_bounds bounds;
+  double min_zoom;
+  /**
+   * Maximum zoom. Positive infinity follows MapLibre Native behavior and lets
+   * each tile source use its own maximum zoom.
+   */
+  double max_zoom;
+  float pixel_ratio;
+  bool include_ideographs;
+} mln_offline_tile_pyramid_region_definition;
+
+/** Placeholder for future geometry offline region definitions. */
+typedef struct mln_offline_geometry_region_definition {
+  uint32_t size;
+} mln_offline_geometry_region_definition;
+
+/** Tagged offline region definition. */
+typedef struct mln_offline_region_definition {
+  uint32_t size;
+  /** One of mln_offline_region_definition_type. */
+  uint32_t type;
+  union {
+    mln_offline_tile_pyramid_region_definition tile_pyramid;
+    mln_offline_geometry_region_definition geometry;
+  } data;
+} mln_offline_region_definition;
+
+/** Offline region status snapshot. */
+typedef struct mln_offline_region_status {
+  uint32_t size;
+  /** One of mln_offline_region_download_state. */
+  uint32_t download_state;
+  uint64_t completed_resource_count;
+  uint64_t completed_resource_size;
+  uint64_t completed_tile_count;
+  uint64_t required_tile_count;
+  uint64_t completed_tile_size;
+  uint64_t required_resource_count;
+  bool required_resource_count_is_precise;
+  bool complete;
+} mln_offline_region_status;
+
+/** Region data borrowed from a snapshot or list handle. */
+typedef struct mln_offline_region_info {
+  uint32_t size;
+  mln_offline_region_id id;
+  mln_offline_region_definition definition;
+  /** Borrowed metadata bytes. Valid until the owner snapshot/list is destroyed.
+   */
+  const uint8_t* metadata;
+  size_t metadata_size;
+} mln_offline_region_info;
+
+/**
+ * Creates a tile-pyramid offline region.
+ *
+ * The returned snapshot owns copied region data. Destroy it with
+ * mln_offline_region_snapshot_destroy(). Geometry definitions are reserved for
+ * future shared geometry ABI support and return MLN_STATUS_UNSUPPORTED.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, definition is
+ *   null or invalid, metadata is null with a non-zero size, out_region is null,
+ *   or *out_region is not null.
+ * - MLN_STATUS_UNSUPPORTED when definition is a geometry region.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_create(
+  mln_runtime* runtime, const mln_offline_region_definition* definition,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) MLN_NOEXCEPT;
+
+/**
+ * Gets an offline region snapshot by ID.
+ *
+ * On success, out_found indicates whether the region exists. When out_found is
+ * false, *out_region remains null.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, out_region is
+ *   null, *out_region is not null, or out_found is null.
+ * - MLN_STATUS_UNSUPPORTED when the stored region uses a geometry definition.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_get(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_snapshot** out_region, bool* out_found
+) MLN_NOEXCEPT;
+
+/**
+ * Lists offline region snapshots in the runtime database.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live,
+ *   out_regions is null, or *out_regions is not null.
+ * - MLN_STATUS_UNSUPPORTED when any stored region uses a geometry definition.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_regions_list(
+  mln_runtime* runtime, mln_offline_region_list** out_regions
+) MLN_NOEXCEPT;
+
+/**
+ * Updates opaque binary metadata for an offline region.
+ *
+ * The returned snapshot contains the updated metadata.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, metadata is
+ *   null with a non-zero size, out_region is null, *out_region is not null, or
+ *   no region exists for id.
+ * - MLN_STATUS_UNSUPPORTED when the stored region uses a geometry definition.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_update_metadata(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) MLN_NOEXCEPT;
+
+/**
+ * Gets the current completed/download status for an offline region.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, out_status is
+ *   null, out_status->size is too small, or no region exists for id.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_get_status(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_status* out_status
+) MLN_NOEXCEPT;
+
+/**
+ * Invalidates cached resources for an offline region.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, or no region
+ *   exists for id.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_invalidate(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) MLN_NOEXCEPT;
+
+/**
+ * Deletes an offline region.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, or no region
+ *   exists for id.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_delete(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) MLN_NOEXCEPT;
+
+/**
+ * Copies borrowed region data out of a snapshot handle.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when snapshot is null or not live, out_info is
+ *   null, or out_info->size is too small.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_offline_region_snapshot_get(
+  const mln_offline_region_snapshot* snapshot, mln_offline_region_info* out_info
+) MLN_NOEXCEPT;
+
+/** Destroys an offline region snapshot handle. Null is accepted as a no-op. */
+MLN_API void mln_offline_region_snapshot_destroy(
+  mln_offline_region_snapshot* snapshot
+) MLN_NOEXCEPT;
+
+/**
+ * Gets the number of regions in a list handle.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when list is null or not live, or out_count is
+ *   null.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_offline_region_list_count(
+  const mln_offline_region_list* list, size_t* out_count
+) MLN_NOEXCEPT;
+
+/**
+ * Copies borrowed region data for one list entry.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when list is null or not live, index is out of
+ *   range, out_info is null, or out_info->size is too small.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_offline_region_list_get(
+  const mln_offline_region_list* list, size_t index,
+  mln_offline_region_info* out_info
+) MLN_NOEXCEPT;
+
+/** Destroys an offline region list handle. Null is accepted as a no-op. */
+MLN_API void mln_offline_region_list_destroy(
+  mln_offline_region_list* list
+) MLN_NOEXCEPT;
 
 /** Screen-space point in logical map pixels. */
 typedef struct mln_screen_point {
@@ -2351,6 +2613,7 @@ MLN_API mln_status mln_vulkan_owned_texture_release_frame(
 // NOLINTEND(modernize-use-using)
 // NOLINTEND(modernize-use-trailing-return-type)
 // NOLINTEND(modernize-deprecated-headers)
+// NOLINTEND(cppcoreguidelines-pro-type-union-access)
 // NOLINTEND(cppcoreguidelines-pro-type-member-init)
 // NOLINTEND(cppcoreguidelines-use-enum-class)
 
