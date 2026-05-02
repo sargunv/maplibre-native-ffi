@@ -1981,8 +1981,8 @@ MLN_API mln_status mln_texture_read_premultiplied_rgba8(
  *   is detached, or another frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
- *   this build.
+ * - MLN_STATUS_UNSUPPORTED when texture is not a Metal owned texture session,
+ *   or when Metal texture sessions are not supported by this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_metal_owned_texture_acquire_frame(
@@ -2011,8 +2011,8 @@ MLN_API mln_status mln_metal_owned_texture_acquire_frame(
  *   is detached, or another frame is currently acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
- *   this build.
+ * - MLN_STATUS_UNSUPPORTED when texture is not a Vulkan owned texture session,
+ *   or when Vulkan texture sessions are not supported by this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_vulkan_owned_texture_acquire_frame(
@@ -2030,7 +2030,8 @@ MLN_API mln_status mln_vulkan_owned_texture_acquire_frame(
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
  *   null, frame->size is too small, or the frame generation or frame_id does
  *   not match the active acquired frame.
- * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
+ * - MLN_STATUS_INVALID_STATE when no matching Metal frame is currently
+ *   acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
  * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
@@ -2053,7 +2054,8 @@ MLN_API mln_status mln_metal_owned_texture_release_frame(
  * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, frame is
  *   null, frame->size is too small, or the frame generation or frame_id does
  *   not match the active acquired frame.
- * - MLN_STATUS_INVALID_STATE when no frame is currently acquired.
+ * - MLN_STATUS_INVALID_STATE when no matching Vulkan frame is currently
+ *   acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
  * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by

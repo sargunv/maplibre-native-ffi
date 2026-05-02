@@ -393,8 +393,8 @@ auto vulkan_owned_texture_acquire_frame(
     return MLN_STATUS_UNSUPPORTED;
   }
 
-  // The Vulkan acquire path is only valid for sessions created by
-  // vulkan_texture_attach, and this Linux build only creates Vulkan sessions.
+  // The Vulkan acquire path is only valid for owned Vulkan sessions, and this
+  // Linux build only creates Vulkan sessions.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
   auto& backend = static_cast<VulkanTextureBackend&>(*texture->backend);
   const auto resources = backend.frame_resources();
