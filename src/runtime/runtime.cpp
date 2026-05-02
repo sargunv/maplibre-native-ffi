@@ -22,6 +22,7 @@
 #include <mbgl/storage/file_source_manager.hpp>
 #include <mbgl/storage/offline.hpp>
 #include <mbgl/storage/resource_options.hpp>
+#include <mbgl/storage/response.hpp>
 #include <mbgl/util/client_options.hpp>
 #include <mbgl/util/expected.hpp>
 #include <mbgl/util/geo.hpp>
@@ -126,6 +127,13 @@ auto wait_for_database_result(Start start) -> Result {
     std::terminate();
   }
   return std::move(result.value());
+}
+
+template <typename Payload>
+auto payload_bytes(const Payload& payload) -> std::vector<std::byte> {
+  auto result = std::vector<std::byte>(sizeof(Payload));
+  std::memcpy(result.data(), &payload, sizeof(Payload));
+  return result;
 }
 
 auto valid_coordinate(const mln_lat_lng& coordinate) -> bool {
@@ -245,6 +253,37 @@ auto to_c_status(const mbgl::OfflineRegionStatus& status)
   };
 }
 
+auto to_native_download_state(uint32_t state)
+  -> std::optional<mbgl::OfflineRegionDownloadState> {
+  switch (state) {
+    case MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE:
+      return mbgl::OfflineRegionDownloadState::Inactive;
+    case MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE:
+      return mbgl::OfflineRegionDownloadState::Active;
+    default:
+      return std::nullopt;
+  }
+}
+
+auto to_c_resource_error_reason(mbgl::Response::Error::Reason reason)
+  -> uint32_t {
+  switch (reason) {
+    case mbgl::Response::Error::Reason::Success:
+      return MLN_RESOURCE_ERROR_REASON_NONE;
+    case mbgl::Response::Error::Reason::NotFound:
+      return MLN_RESOURCE_ERROR_REASON_NOT_FOUND;
+    case mbgl::Response::Error::Reason::Server:
+      return MLN_RESOURCE_ERROR_REASON_SERVER;
+    case mbgl::Response::Error::Reason::Connection:
+      return MLN_RESOURCE_ERROR_REASON_CONNECTION;
+    case mbgl::Response::Error::Reason::RateLimit:
+      return MLN_RESOURCE_ERROR_REASON_RATE_LIMIT;
+    case mbgl::Response::Error::Reason::Other:
+      return MLN_RESOURCE_ERROR_REASON_OTHER;
+  }
+  return MLN_RESOURCE_ERROR_REASON_OTHER;
+}
+
 auto to_c_region_data(const mbgl::OfflineRegion& region)
   -> std::optional<OfflineRegionData> {
   auto data = OfflineRegionData{
@@ -322,6 +361,103 @@ auto fill_region_info(
   return MLN_STATUS_OK;
 }
 
+auto push_offline_region_event(
+  const std::shared_ptr<mln::core::OfflineRegionEventState>& state,
+  mln_offline_region_id region_id, uint32_t type, uint32_t payload_type,
+  std::vector<std::byte> payload, std::string message = {}
+) -> void {
+  const std::scoped_lock state_lock(state->mutex);
+  auto* runtime = state->runtime;
+  if (!state->alive || runtime == nullptr) {
+    return;
+  }
+
+  auto event = mln::core::QueuedRuntimeEvent{
+    .type = type,
+    .source_type = MLN_RUNTIME_EVENT_SOURCE_RUNTIME,
+    .source = runtime,
+    .map = nullptr,
+    .code = 0,
+    .payload_type = payload_type,
+    .payload = std::move(payload),
+    .message = std::move(message),
+    .has_offline_region = true,
+    .offline_region_id = region_id
+  };
+
+  const std::scoped_lock event_lock(runtime->event_mutex);
+  if (!runtime->observed_offline_regions.contains(region_id)) {
+    return;
+  }
+  runtime->events.push_back(std::move(event));
+}
+
+class OfflineRegionRuntimeObserver final : public mbgl::OfflineRegionObserver {
+ public:
+  OfflineRegionRuntimeObserver(
+    std::shared_ptr<mln::core::OfflineRegionEventState> state,
+    mln_offline_region_id region_id
+  )
+      : state_(std::move(state)), region_id_(region_id) {}
+
+  void statusChanged(mbgl::OfflineRegionStatus status) override {
+    auto payload = mln_runtime_event_offline_region_status{
+      .size = sizeof(mln_runtime_event_offline_region_status),
+      .region_id = region_id_,
+      .status = to_c_status(status)
+    };
+    push_offline_region_event(
+      state_, region_id_, MLN_RUNTIME_EVENT_OFFLINE_REGION_STATUS_CHANGED,
+      MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_STATUS, payload_bytes(payload)
+    );
+  }
+
+  void responseError(mbgl::Response::Error error) override {
+    auto payload = mln_runtime_event_offline_region_response_error{
+      .size = sizeof(mln_runtime_event_offline_region_response_error),
+      .region_id = region_id_,
+      .reason = to_c_resource_error_reason(error.reason)
+    };
+    push_offline_region_event(
+      state_, region_id_, MLN_RUNTIME_EVENT_OFFLINE_REGION_RESPONSE_ERROR,
+      MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_RESPONSE_ERROR,
+      payload_bytes(payload), error.message
+    );
+  }
+
+  void mapboxTileCountLimitExceeded(uint64_t limit) override {
+    auto payload = mln_runtime_event_offline_region_tile_count_limit{
+      .size = sizeof(mln_runtime_event_offline_region_tile_count_limit),
+      .region_id = region_id_,
+      .limit = limit
+    };
+    push_offline_region_event(
+      state_, region_id_,
+      MLN_RUNTIME_EVENT_OFFLINE_REGION_TILE_COUNT_LIMIT_EXCEEDED,
+      MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_TILE_COUNT_LIMIT,
+      payload_bytes(payload)
+    );
+  }
+
+ private:
+  std::shared_ptr<mln::core::OfflineRegionEventState> state_;
+  mln_offline_region_id region_id_;
+};
+
+auto set_offline_region_observed_flag(
+  mln_runtime* runtime, mln_offline_region_id region_id, bool observed
+) -> void {
+  const std::scoped_lock lock(runtime->event_mutex);
+  if (observed) {
+    runtime->observed_offline_regions.insert(region_id);
+  } else {
+    runtime->observed_offline_regions.erase(region_id);
+    std::erase_if(runtime->events, [region_id](const auto& event) -> bool {
+      return event.has_offline_region && event.offline_region_id == region_id;
+    });
+  }
+}
+
 auto register_offline_region_snapshot(OfflineRegionData data)
   -> mln_offline_region_snapshot* {
   auto owned = std::make_unique<mln_offline_region_snapshot>();
@@ -340,6 +476,20 @@ auto register_offline_region_list(std::vector<OfflineRegionData> regions)
   const std::scoped_lock lock(offline_region_handle_mutex());
   offline_region_lists().emplace(handle, std::move(owned));
   return handle;
+}
+
+auto register_offline_region_list(const mbgl::OfflineRegions& native_regions)
+  -> std::optional<mln_offline_region_list*> {
+  auto regions = std::vector<OfflineRegionData>{};
+  regions.reserve(native_regions.size());
+  for (const auto& region : native_regions) {
+    auto data = to_c_region_data(region);
+    if (!data) {
+      return std::nullopt;
+    }
+    regions.push_back(std::move(*data));
+  }
+  return register_offline_region_list(std::move(regions));
 }
 
 auto find_offline_region_snapshot_locked(
@@ -575,6 +725,10 @@ auto create_runtime(
     (options->flags & MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE) != 0;
   owned_runtime->maximum_cache_size =
     options == nullptr ? 0 : options->maximum_cache_size;
+  owned_runtime->offline_event_state =
+    std::make_shared<OfflineRegionEventState>();
+  owned_runtime->offline_event_state->runtime = owned_runtime.get();
+  owned_runtime->offline_event_state->alive = true;
   auto* runtime = owned_runtime.get();
   {
     const std::scoped_lock lock(runtime_registry_mutex());
@@ -794,16 +948,54 @@ auto offline_regions_list(
     );
   }
 
-  auto regions = std::vector<OfflineRegionData>{};
-  regions.reserve(result.value().size());
-  for (const auto& region : result.value()) {
-    auto data = to_c_region_data(region);
-    if (!data) {
-      return MLN_STATUS_UNSUPPORTED;
-    }
-    regions.push_back(std::move(*data));
+  auto list = register_offline_region_list(result.value());
+  if (!list) {
+    return MLN_STATUS_UNSUPPORTED;
   }
-  *out_regions = register_offline_region_list(std::move(regions));
+  *out_regions = *list;
+  return MLN_STATUS_OK;
+}
+
+auto offline_regions_merge_database(
+  mln_runtime* runtime, const char* side_database_path,
+  mln_offline_region_list** out_regions
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  if (side_database_path == nullptr) {
+    set_thread_error("side_database_path must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_regions == nullptr || *out_regions != nullptr) {
+    set_thread_error("out_regions must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto result = wait_for_database_result<
+    mbgl::expected<mbgl::OfflineRegions, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->mergeOfflineRegions(side_database_path, std::move(callback));
+    }
+  );
+  if (!result) {
+    return set_status_from_exception(
+      result.error(), "offline region database merge failed"
+    );
+  }
+
+  auto list = register_offline_region_list(result.value());
+  if (!list) {
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  *out_regions = *list;
   return MLN_STATUS_OK;
 }
 
@@ -929,6 +1121,86 @@ auto offline_region_get_status(
   return MLN_STATUS_OK;
 }
 
+auto offline_region_set_observed(
+  mln_runtime* runtime, mln_offline_region_id region_id, bool observed
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  set_offline_region_observed_flag(runtime, region_id, observed);
+  auto observer = observed ? std::make_unique<OfflineRegionRuntimeObserver>(
+                               runtime->offline_event_state, region_id
+                             )
+                           : nullptr;
+  database->setOfflineRegionObserver(*get_result.value(), std::move(observer));
+  return MLN_STATUS_OK;
+}
+
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+auto offline_region_set_download_state(
+  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  const auto native_state = to_native_download_state(state);
+  if (!native_state) {
+    set_thread_error("offline region download state is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  database->setOfflineRegionDownloadState(*get_result.value(), *native_state);
+  return MLN_STATUS_OK;
+}
+// NOLINTEND(bugprone-easily-swappable-parameters)
+
 auto offline_region_invalidate(
   mln_runtime* runtime, mln_offline_region_id region_id
 ) -> mln_status {
@@ -993,6 +1265,12 @@ auto offline_region_delete(
     set_thread_error("offline region not found");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+
+  set_offline_region_observed_flag(runtime, region_id, false);
+  database->setOfflineRegionObserver(*get_result.value(), nullptr);
+  database->setOfflineRegionDownloadState(
+    *get_result.value(), mbgl::OfflineRegionDownloadState::Inactive
+  );
 
   return wait_for_database_operation([&](auto callback) -> void {
     database->deleteOfflineRegion(*get_result.value(), std::move(callback));
@@ -1115,6 +1393,19 @@ auto destroy_runtime(mln_runtime* runtime) -> mln_status {
   if (found->second->live_maps != 0) {
     set_thread_error("runtime still owns live maps");
     return MLN_STATUS_INVALID_STATE;
+  }
+
+  {
+    const std::scoped_lock state_lock(
+      found->second->offline_event_state->mutex
+    );
+    found->second->offline_event_state->alive = false;
+    found->second->offline_event_state->runtime = nullptr;
+    const std::scoped_lock event_lock(found->second->event_mutex);
+    found->second->observed_offline_regions.clear();
+    std::erase_if(found->second->events, [](const auto& event) -> bool {
+      return event.has_offline_region;
+    });
   }
 
   runtime_registry().erase(runtime);

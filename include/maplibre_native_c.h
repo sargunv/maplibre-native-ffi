@@ -234,6 +234,21 @@ typedef enum mln_offline_region_download_state : uint32_t {
   MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE = 1,
 } mln_offline_region_download_state;
 
+/** Offline region status snapshot. */
+typedef struct mln_offline_region_status {
+  uint32_t size;
+  /** One of mln_offline_region_download_state. */
+  uint32_t download_state;
+  uint64_t completed_resource_count;
+  uint64_t completed_resource_size;
+  uint64_t completed_tile_count;
+  uint64_t required_tile_count;
+  uint64_t completed_tile_size;
+  uint64_t required_resource_count;
+  bool required_resource_count_is_precise;
+  bool complete;
+} mln_offline_region_status;
+
 /** Runtime event types returned by mln_runtime_poll_event(). */
 typedef enum mln_runtime_event_type : uint32_t {
   MLN_RUNTIME_EVENT_MAP_CAMERA_WILL_CHANGE = 1,
@@ -254,6 +269,9 @@ typedef enum mln_runtime_event_type : uint32_t {
   MLN_RUNTIME_EVENT_MAP_RENDER_MAP_FINISHED = 16,
   MLN_RUNTIME_EVENT_MAP_STYLE_IMAGE_MISSING = 17,
   MLN_RUNTIME_EVENT_MAP_TILE_ACTION = 18,
+  MLN_RUNTIME_EVENT_OFFLINE_REGION_STATUS_CHANGED = 19,
+  MLN_RUNTIME_EVENT_OFFLINE_REGION_RESPONSE_ERROR = 20,
+  MLN_RUNTIME_EVENT_OFFLINE_REGION_TILE_COUNT_LIMIT_EXCEEDED = 21,
 } mln_runtime_event_type;
 
 /** Source kinds used by mln_runtime_event.source_type. */
@@ -269,6 +287,9 @@ typedef enum mln_runtime_event_payload_type : uint32_t {
   MLN_RUNTIME_EVENT_PAYLOAD_RENDER_MAP = 2,
   MLN_RUNTIME_EVENT_PAYLOAD_STYLE_IMAGE_MISSING = 3,
   MLN_RUNTIME_EVENT_PAYLOAD_TILE_ACTION = 4,
+  MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_STATUS = 5,
+  MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_RESPONSE_ERROR = 6,
+  MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_TILE_COUNT_LIMIT = 7,
 } mln_runtime_event_payload_type;
 
 /** Render modes reported by render observer events. */
@@ -450,6 +471,28 @@ typedef struct mln_runtime_event_tile_action {
   /** Number of bytes in source_id, excluding the trailing null terminator. */
   size_t source_id_size;
 } mln_runtime_event_tile_action;
+
+/** Payload for MLN_RUNTIME_EVENT_OFFLINE_REGION_STATUS_CHANGED. */
+typedef struct mln_runtime_event_offline_region_status {
+  uint32_t size;
+  mln_offline_region_id region_id;
+  mln_offline_region_status status;
+} mln_runtime_event_offline_region_status;
+
+/** Payload for MLN_RUNTIME_EVENT_OFFLINE_REGION_RESPONSE_ERROR. */
+typedef struct mln_runtime_event_offline_region_response_error {
+  uint32_t size;
+  mln_offline_region_id region_id;
+  /** One of mln_resource_error_reason. */
+  uint32_t reason;
+} mln_runtime_event_offline_region_response_error;
+
+/** Payload for MLN_RUNTIME_EVENT_OFFLINE_REGION_TILE_COUNT_LIMIT_EXCEEDED. */
+typedef struct mln_runtime_event_offline_region_tile_count_limit {
+  uint32_t size;
+  mln_offline_region_id region_id;
+  uint64_t limit;
+} mln_runtime_event_offline_region_tile_count_limit;
 
 /** Event payload returned by mln_runtime_poll_event(). */
 typedef struct mln_runtime_event {
@@ -945,21 +988,6 @@ typedef struct mln_offline_region_definition {
   } data;
 } mln_offline_region_definition;
 
-/** Offline region status snapshot. */
-typedef struct mln_offline_region_status {
-  uint32_t size;
-  /** One of mln_offline_region_download_state. */
-  uint32_t download_state;
-  uint64_t completed_resource_count;
-  uint64_t completed_resource_size;
-  uint64_t completed_tile_count;
-  uint64_t required_tile_count;
-  uint64_t completed_tile_size;
-  uint64_t required_resource_count;
-  bool required_resource_count_is_precise;
-  bool complete;
-} mln_offline_region_status;
-
 /** Region data borrowed from a snapshot or list handle. */
 typedef struct mln_offline_region_info {
   uint32_t size;
@@ -1034,6 +1062,29 @@ MLN_API mln_status mln_runtime_offline_regions_list(
 ) MLN_NOEXCEPT;
 
 /**
+ * Merges offline regions from another database path.
+ *
+ * The returned list owns the exact region list reported by MapLibre Native's
+ * merge callback. The side database may be upgraded in place by native code and
+ * must be writable when native merge requires it.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live,
+ *   side_database_path is null, out_regions is null, or *out_regions is not
+ *   null.
+ * - MLN_STATUS_UNSUPPORTED when any returned region uses a geometry definition.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_regions_merge_database(
+  mln_runtime* runtime, const char* side_database_path,
+  mln_offline_region_list** out_regions
+) MLN_NOEXCEPT;
+
+/**
  * Updates opaque binary metadata for an offline region.
  *
  * The returned snapshot contains the updated metadata.
@@ -1070,6 +1121,46 @@ MLN_API mln_status mln_runtime_offline_region_update_metadata(
 MLN_API mln_status mln_runtime_offline_region_get_status(
   mln_runtime* runtime, mln_offline_region_id region_id,
   mln_offline_region_status* out_status
+) MLN_NOEXCEPT;
+
+/**
+ * Enables or disables runtime events for an offline region.
+ *
+ * Observer callbacks are copied into runtime events. Disabling observation also
+ * discards queued events for this region.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the observer command was accepted.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, or no region
+ *   exists for region_id.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_set_observed(
+  mln_runtime* runtime, mln_offline_region_id region_id, bool observed
+) MLN_NOEXCEPT;
+
+/**
+ * Sets an offline region's native download state.
+ *
+ * Register observation separately with
+ * mln_runtime_offline_region_set_observed() to receive progress and error
+ * events.
+ *
+ * Returns:
+ * - MLN_STATUS_OK when the state command was accepted.
+ * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, state is not
+ *   a mln_offline_region_download_state value, or no region exists for
+ *   region_id.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
+ *   is converted to status.
+ */
+MLN_API mln_status mln_runtime_offline_region_set_download_state(
+  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
 ) MLN_NOEXCEPT;
 
 /**
