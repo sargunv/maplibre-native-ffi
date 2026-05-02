@@ -795,6 +795,63 @@ typedef enum mln_projection_mode_field : uint32_t {
   MLN_PROJECTION_MODE_Y_SKEW = 1u << 2u,
 } mln_projection_mode_field;
 
+/** Debug overlay mask values for mln_map_set_debug_options(). */
+typedef enum mln_map_debug_option : uint32_t {
+  MLN_MAP_DEBUG_TILE_BORDERS = 1u << 1u,
+  MLN_MAP_DEBUG_PARSE_STATUS = 1u << 2u,
+  MLN_MAP_DEBUG_TIMESTAMPS = 1u << 3u,
+  MLN_MAP_DEBUG_COLLISION = 1u << 4u,
+  MLN_MAP_DEBUG_OVERDRAW = 1u << 5u,
+  MLN_MAP_DEBUG_STENCIL_CLIP = 1u << 6u,
+  MLN_MAP_DEBUG_DEPTH_BUFFER = 1u << 7u,
+} mln_map_debug_option;
+
+/** Map north orientation values used by mln_map_viewport_options. */
+typedef enum mln_north_orientation : uint32_t {
+  MLN_NORTH_ORIENTATION_UP = 0,
+  MLN_NORTH_ORIENTATION_RIGHT = 1,
+  MLN_NORTH_ORIENTATION_DOWN = 2,
+  MLN_NORTH_ORIENTATION_LEFT = 3,
+} mln_north_orientation;
+
+/** Map constraint modes used by mln_map_viewport_options. */
+typedef enum mln_constrain_mode : uint32_t {
+  MLN_CONSTRAIN_MODE_NONE = 0,
+  MLN_CONSTRAIN_MODE_HEIGHT_ONLY = 1,
+  MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT = 2,
+  MLN_CONSTRAIN_MODE_SCREEN = 3,
+} mln_constrain_mode;
+
+/** Viewport orientation modes used by mln_map_viewport_options. */
+typedef enum mln_viewport_mode : uint32_t {
+  MLN_VIEWPORT_MODE_DEFAULT = 0,
+  MLN_VIEWPORT_MODE_FLIPPED_Y = 1,
+} mln_viewport_mode;
+
+/** Field mask values for mln_map_viewport_options. */
+typedef enum mln_map_viewport_option_field : uint32_t {
+  MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION = 1u << 0u,
+  MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE = 1u << 1u,
+  MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE = 1u << 2u,
+  MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET = 1u << 3u,
+} mln_map_viewport_option_field;
+
+/** Tile LOD algorithms used by mln_map_tile_options. */
+typedef enum mln_tile_lod_mode : uint32_t {
+  MLN_TILE_LOD_MODE_DEFAULT = 0,
+  MLN_TILE_LOD_MODE_DISTANCE = 1,
+} mln_tile_lod_mode;
+
+/** Field mask values for mln_map_tile_options. */
+typedef enum mln_map_tile_option_field : uint32_t {
+  MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA = 1u << 0u,
+  MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS = 1u << 1u,
+  MLN_MAP_TILE_OPTION_LOD_SCALE = 1u << 2u,
+  MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD = 1u << 3u,
+  MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT = 1u << 4u,
+  MLN_MAP_TILE_OPTION_LOD_MODE = 1u << 5u,
+} mln_map_tile_option_field;
+
 /** Map rendering modes used when creating a map. */
 typedef enum mln_map_mode : uint32_t {
   /** Continuously updates as data arrives and map state changes. */
@@ -878,6 +935,33 @@ typedef struct mln_projection_mode {
   /** Native y-skew factor used by the axonometric transform. */
   double y_skew;
 } mln_projection_mode;
+
+/** Live map viewport and render-transform controls. */
+typedef struct mln_map_viewport_options {
+  uint32_t size;
+  uint32_t fields;
+  /** One of mln_north_orientation. */
+  uint32_t north_orientation;
+  /** One of mln_constrain_mode. */
+  uint32_t constrain_mode;
+  /** One of mln_viewport_mode. */
+  uint32_t viewport_mode;
+  mln_edge_insets frustum_offset;
+} mln_map_viewport_options;
+
+/** Tile prefetch and LOD tuning controls. */
+typedef struct mln_map_tile_options {
+  uint32_t size;
+  uint32_t fields;
+  /** Native uint8_t prefetch zoom delta. */
+  uint32_t prefetch_zoom_delta;
+  double lod_min_radius;
+  double lod_scale;
+  double lod_pitch_threshold;
+  double lod_zoom_shift;
+  /** One of mln_tile_lod_mode. */
+  uint32_t lod_mode;
+} mln_map_tile_options;
 
 /**
  * Returns map options initialized for this C API version.
@@ -1012,6 +1096,169 @@ MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
  * version.
  */
 MLN_API mln_projection_mode mln_projection_mode_default(void) MLN_NOEXCEPT;
+
+/** Returns empty viewport options initialized for this C API version. */
+MLN_API mln_map_viewport_options
+mln_map_viewport_options_default(void) MLN_NOEXCEPT;
+
+/** Returns empty tile tuning options initialized for this C API version. */
+MLN_API mln_map_tile_options mln_map_tile_options_default(void) MLN_NOEXCEPT;
+
+/**
+ * Applies MapLibre debug overlay mask bits to a map.
+ *
+ * Pass 0 to disable all debug overlays.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, or options
+ *   contains unknown bits.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_map_set_debug_options(mln_map* map, uint32_t options) MLN_NOEXCEPT;
+
+/**
+ * Copies the current MapLibre debug overlay mask bits.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, or out_options is
+ *   null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_map_get_debug_options(mln_map* map, uint32_t* out_options) MLN_NOEXCEPT;
+
+/**
+ * Enables or disables MapLibre's rendering stats overlay view.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_rendering_stats_view_enabled(
+  mln_map* map, bool enabled
+) MLN_NOEXCEPT;
+
+/**
+ * Copies whether MapLibre's rendering stats overlay view is enabled.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, or out_enabled is
+ *   null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_rendering_stats_view_enabled(
+  mln_map* map, bool* out_enabled
+) MLN_NOEXCEPT;
+
+/**
+ * Copies whether MapLibre currently considers the map fully loaded.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, or out_loaded is
+ *   null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status
+mln_map_is_fully_loaded(mln_map* map, bool* out_loaded) MLN_NOEXCEPT;
+
+/**
+ * Dumps map debug logs through MapLibre Native logging.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_dump_debug_logs(mln_map* map) MLN_NOEXCEPT;
+
+/**
+ * Copies live map viewport and render-transform controls.
+ *
+ * On success, *out_options is overwritten and all known fields are marked.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, out_options is
+ *   null, or out_options->size is too small.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_viewport_options(
+  mln_map* map, mln_map_viewport_options* out_options
+) MLN_NOEXCEPT;
+
+/**
+ * Applies selected live map viewport and render-transform controls.
+ *
+ * Only fields indicated by options->fields affect the map.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, options is null,
+ *   options->size is too small, options->fields contains unknown bits, an enum
+ *   value is unknown, or an enabled frustum offset value is invalid.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_viewport_options(
+  mln_map* map, const mln_map_viewport_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Copies tile prefetch and LOD tuning controls.
+ *
+ * On success, *out_options is overwritten and all known fields are marked.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, out_options is
+ *   null, or out_options->size is too small.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_tile_options(
+  mln_map* map, mln_map_tile_options* out_options
+) MLN_NOEXCEPT;
+
+/**
+ * Applies selected tile prefetch and LOD tuning controls.
+ *
+ * Only fields indicated by options->fields affect the map.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, options is null,
+ *   options->size is too small, options->fields contains unknown bits,
+ *   prefetch_zoom_delta is greater than 255, a double field is non-finite, or
+ *   lod_mode is unknown.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_tile_options(
+  mln_map* map, const mln_map_tile_options* options
+) MLN_NOEXCEPT;
 
 /**
  * Copies the current camera snapshot.
