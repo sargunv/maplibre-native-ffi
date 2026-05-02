@@ -342,32 +342,33 @@ auto register_offline_region_list(std::vector<OfflineRegionData> regions)
   return handle;
 }
 
-auto validate_snapshot_handle(const mln_offline_region_snapshot* snapshot)
-  -> const mln_offline_region_snapshot* {
+auto find_offline_region_snapshot_locked(
+  const mln_offline_region_snapshot* snapshot
+) -> const mln_offline_region_snapshot* {
   if (snapshot == nullptr) {
     mln::core::set_thread_error("offline region snapshot must not be null");
     return nullptr;
   }
-  const std::scoped_lock lock(offline_region_handle_mutex());
-  if (!offline_region_snapshots().contains(snapshot)) {
+  const auto found = offline_region_snapshots().find(snapshot);
+  if (found == offline_region_snapshots().end()) {
     mln::core::set_thread_error("offline region snapshot is not a live handle");
     return nullptr;
   }
-  return snapshot;
+  return found->second.get();
 }
 
-auto validate_list_handle(const mln_offline_region_list* list)
+auto find_offline_region_list_locked(const mln_offline_region_list* list)
   -> const mln_offline_region_list* {
   if (list == nullptr) {
     mln::core::set_thread_error("offline region list must not be null");
     return nullptr;
   }
-  const std::scoped_lock lock(offline_region_handle_mutex());
-  if (!offline_region_lists().contains(list)) {
+  const auto found = offline_region_lists().find(list);
+  if (found == offline_region_lists().end()) {
     mln::core::set_thread_error("offline region list is not a live handle");
     return nullptr;
   }
-  return list;
+  return found->second.get();
 }
 
 auto validate_runtime_options(const mln_runtime_options* options)
@@ -1001,7 +1002,8 @@ auto offline_region_delete(
 auto offline_region_snapshot_get(
   const mln_offline_region_snapshot* snapshot, mln_offline_region_info* out_info
 ) -> mln_status {
-  const auto* live_snapshot = validate_snapshot_handle(snapshot);
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  const auto* live_snapshot = find_offline_region_snapshot_locked(snapshot);
   if (live_snapshot == nullptr) {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -1021,7 +1023,8 @@ auto offline_region_snapshot_destroy(
 auto offline_region_list_count(
   const mln_offline_region_list* list, size_t* out_count
 ) -> mln_status {
-  const auto* live_list = validate_list_handle(list);
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  const auto* live_list = find_offline_region_list_locked(list);
   if (live_list == nullptr) {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
@@ -1037,7 +1040,8 @@ auto offline_region_list_get(
   const mln_offline_region_list* list, size_t index,
   mln_offline_region_info* out_info
 ) -> mln_status {
-  const auto* live_list = validate_list_handle(list);
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  const auto* live_list = find_offline_region_list_locked(list);
   if (live_list == nullptr) {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
