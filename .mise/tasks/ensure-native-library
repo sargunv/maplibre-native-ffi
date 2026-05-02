@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${CI:-}" != "true" ]]; then
+  exec mise run //:build
+fi
+
+if [[ ! -f build/pkgconfig/maplibre-native-c.pc ]]; then
+  echo "missing build/pkgconfig/maplibre-native-c.pc; native artifact was not downloaded" >&2
+  exit 1
+fi
+
+found=false
+for lib in build/libmaplibre-native-c.*; do
+  if [[ -f "$lib" ]]; then
+    found=true
+    break
+  fi
+done
+
+if [[ "$found" != "true" ]]; then
+  echo "missing build/libmaplibre-native-c.*; native artifact was not downloaded" >&2
+  exit 1
+fi

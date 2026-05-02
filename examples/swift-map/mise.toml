@@ -2,6 +2,7 @@
 PKG_CONFIG_PATH = "{{config_root}}/../../build/pkgconfig"
 
 [tasks.build]
+depends = ["//:ensure-native-library"]
 run = "swift build"
 
 [tasks.run]
