@@ -17,13 +17,18 @@
 #ifndef MAPLIBRE_NATIVE_C_H
 #define MAPLIBRE_NATIVE_C_H
 
+// Public C ABI uses C enums.
 // NOLINTBEGIN(cppcoreguidelines-use-enum-class)
+// Public C ABI structs.
 // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
+// Public C ABI tagged union.
 // NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
+// Public C ABI includes C headers.
 // NOLINTBEGIN(modernize-deprecated-headers)
+// Public C ABI return syntax.
 // NOLINTBEGIN(modernize-use-trailing-return-type)
+// Public C ABI typedefs.
 // NOLINTBEGIN(modernize-use-using)
-// NOLINTBEGIN(readability-uppercase-literal-suffix)
 
 #ifndef __cplusplus
 #include <stdbool.h>
@@ -109,9 +114,9 @@ typedef enum mln_log_severity : uint32_t {
 
 /** Bitmask values for log severities dispatched asynchronously. */
 typedef enum mln_log_severity_mask : uint32_t {
-  MLN_LOG_SEVERITY_MASK_INFO = 1u << MLN_LOG_SEVERITY_INFO,
-  MLN_LOG_SEVERITY_MASK_WARNING = 1u << MLN_LOG_SEVERITY_WARNING,
-  MLN_LOG_SEVERITY_MASK_ERROR = 1u << MLN_LOG_SEVERITY_ERROR,
+  MLN_LOG_SEVERITY_MASK_INFO = 1U << MLN_LOG_SEVERITY_INFO,
+  MLN_LOG_SEVERITY_MASK_WARNING = 1U << MLN_LOG_SEVERITY_WARNING,
+  MLN_LOG_SEVERITY_MASK_ERROR = 1U << MLN_LOG_SEVERITY_ERROR,
   MLN_LOG_SEVERITY_MASK_DEFAULT =
     MLN_LOG_SEVERITY_MASK_INFO | MLN_LOG_SEVERITY_MASK_WARNING,
   MLN_LOG_SEVERITY_MASK_ALL = MLN_LOG_SEVERITY_MASK_INFO |
@@ -212,7 +217,7 @@ typedef enum mln_network_status : uint32_t {
 } mln_network_status;
 
 typedef enum mln_runtime_option_flag : uint32_t {
-  MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1u << 0u,
+  MLN_RUNTIME_OPTION_MAXIMUM_CACHE_SIZE = 1U << 0U,
 } mln_runtime_option_flag;
 
 typedef enum mln_ambient_cache_operation : uint32_t {
@@ -840,28 +845,28 @@ MLN_API mln_status mln_runtime_poll_event(
 #pragma region Map types, lifecycle, and style
 /** Field mask values for mln_camera_options. */
 typedef enum mln_camera_option_field : uint32_t {
-  MLN_CAMERA_OPTION_CENTER = 1u << 0u,
-  MLN_CAMERA_OPTION_ZOOM = 1u << 1u,
-  MLN_CAMERA_OPTION_BEARING = 1u << 2u,
-  MLN_CAMERA_OPTION_PITCH = 1u << 3u,
+  MLN_CAMERA_OPTION_CENTER = 1U << 0U,
+  MLN_CAMERA_OPTION_ZOOM = 1U << 1U,
+  MLN_CAMERA_OPTION_BEARING = 1U << 2U,
+  MLN_CAMERA_OPTION_PITCH = 1U << 3U,
 } mln_camera_option_field;
 
 /** Field mask values for MapLibre axonometric rendering options. */
 typedef enum mln_projection_mode_field : uint32_t {
-  MLN_PROJECTION_MODE_AXONOMETRIC = 1u << 0u,
-  MLN_PROJECTION_MODE_X_SKEW = 1u << 1u,
-  MLN_PROJECTION_MODE_Y_SKEW = 1u << 2u,
+  MLN_PROJECTION_MODE_AXONOMETRIC = 1U << 0U,
+  MLN_PROJECTION_MODE_X_SKEW = 1U << 1U,
+  MLN_PROJECTION_MODE_Y_SKEW = 1U << 2U,
 } mln_projection_mode_field;
 
 /** Debug overlay mask values for mln_map_set_debug_options(). */
 typedef enum mln_map_debug_option : uint32_t {
-  MLN_MAP_DEBUG_TILE_BORDERS = 1u << 1u,
-  MLN_MAP_DEBUG_PARSE_STATUS = 1u << 2u,
-  MLN_MAP_DEBUG_TIMESTAMPS = 1u << 3u,
-  MLN_MAP_DEBUG_COLLISION = 1u << 4u,
-  MLN_MAP_DEBUG_OVERDRAW = 1u << 5u,
-  MLN_MAP_DEBUG_STENCIL_CLIP = 1u << 6u,
-  MLN_MAP_DEBUG_DEPTH_BUFFER = 1u << 7u,
+  MLN_MAP_DEBUG_TILE_BORDERS = 1U << 1U,
+  MLN_MAP_DEBUG_PARSE_STATUS = 1U << 2U,
+  MLN_MAP_DEBUG_TIMESTAMPS = 1U << 3U,
+  MLN_MAP_DEBUG_COLLISION = 1U << 4U,
+  MLN_MAP_DEBUG_OVERDRAW = 1U << 5U,
+  MLN_MAP_DEBUG_STENCIL_CLIP = 1U << 6U,
+  MLN_MAP_DEBUG_DEPTH_BUFFER = 1U << 7U,
 } mln_map_debug_option;
 
 /** Map north orientation values used by mln_map_viewport_options. */
@@ -888,10 +893,10 @@ typedef enum mln_viewport_mode : uint32_t {
 
 /** Field mask values for mln_map_viewport_options. */
 typedef enum mln_map_viewport_option_field : uint32_t {
-  MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION = 1u << 0u,
-  MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE = 1u << 1u,
-  MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE = 1u << 2u,
-  MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET = 1u << 3u,
+  MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION = 1U << 0U,
+  MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE = 1U << 1U,
+  MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE = 1U << 2U,
+  MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET = 1U << 3U,
 } mln_map_viewport_option_field;
 
 /** Tile LOD algorithms used by mln_map_tile_options. */
@@ -902,12 +907,12 @@ typedef enum mln_tile_lod_mode : uint32_t {
 
 /** Field mask values for mln_map_tile_options. */
 typedef enum mln_map_tile_option_field : uint32_t {
-  MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA = 1u << 0u,
-  MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS = 1u << 1u,
-  MLN_MAP_TILE_OPTION_LOD_SCALE = 1u << 2u,
-  MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD = 1u << 3u,
-  MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT = 1u << 4u,
-  MLN_MAP_TILE_OPTION_LOD_MODE = 1u << 5u,
+  MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA = 1U << 0U,
+  MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS = 1U << 1U,
+  MLN_MAP_TILE_OPTION_LOD_SCALE = 1U << 2U,
+  MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD = 1U << 3U,
+  MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT = 1U << 4U,
+  MLN_MAP_TILE_OPTION_LOD_MODE = 1U << 5U,
 } mln_map_tile_option_field;
 
 /** Map rendering modes used when creating a map. */
@@ -2700,7 +2705,6 @@ MLN_API mln_status mln_vulkan_owned_texture_release_frame(
 }
 #endif
 
-// NOLINTEND(readability-uppercase-literal-suffix)
 // NOLINTEND(modernize-use-using)
 // NOLINTEND(modernize-use-trailing-return-type)
 // NOLINTEND(modernize-deprecated-headers)

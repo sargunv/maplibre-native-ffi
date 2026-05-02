@@ -52,8 +52,8 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
   void createPlatformSurface() override {}
   void bind() override {}
 
-  void init_sampled(uint32_t width, uint32_t height) {
-    init_sampled_color(width, height);
+  void init_sampled(vk::Extent2D sampled_extent) {
+    init_sampled_color(sampled_extent);
     create_color_image_views();
     initDepthStencil();
     create_render_pass(
@@ -109,29 +109,29 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
   }
 
  private:
-  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  void init_sampled_color(uint32_t width, uint32_t height) {
+  void init_sampled_color(vk::Extent2D sampled_extent) {
     const auto image_count = backend.getMaxFrames();
     colorAllocations.reserve(image_count);
     swapchainImages.reserve(image_count);
 
     colorFormat = vk::Format::eR8G8B8A8Unorm;
-    extent = vk::Extent2D(width, height);
+    extent = sampled_extent;
 
     const auto image_usage = vk::ImageUsageFlagBits::eColorAttachment |
                              vk::ImageUsageFlagBits::eSampled |
                              vk::ImageUsageFlagBits::eTransferSrc;
-    auto image_create_info = vk::ImageCreateInfo()
-                               .setImageType(vk::ImageType::e2D)
-                               .setFormat(colorFormat)
-                               .setExtent({width, height, 1})
-                               .setMipLevels(1)
-                               .setArrayLayers(1)
-                               .setSamples(vk::SampleCountFlagBits::e1)
-                               .setTiling(vk::ImageTiling::eOptimal)
-                               .setUsage(image_usage)
-                               .setSharingMode(vk::SharingMode::eExclusive)
-                               .setInitialLayout(vk::ImageLayout::eUndefined);
+    auto image_create_info =
+      vk::ImageCreateInfo()
+        .setImageType(vk::ImageType::e2D)
+        .setFormat(colorFormat)
+        .setExtent({sampled_extent.width, sampled_extent.height, 1})
+        .setMipLevels(1)
+        .setArrayLayers(1)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setTiling(vk::ImageTiling::eOptimal)
+        .setUsage(image_usage)
+        .setSharingMode(vk::SharingMode::eExclusive)
+        .setInitialLayout(vk::ImageLayout::eUndefined);
 
     auto allocation_create_info = VmaAllocationCreateInfo{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -369,7 +369,7 @@ auto VulkanTextureBackend::readStillImage() -> mbgl::PremultipliedImage {
   }
 
   auto& context_impl = static_cast<mbgl::vulkan::Context&>(getContext());
-  auto& resource_impl = rendered_resource();
+  auto& resource_impl = getResource<VulkanTextureRenderableResource>();
   const auto source_image = resource_impl.image();
   context_impl.waitFrame();
   context_impl.submitOneTimeCommand(
@@ -448,12 +448,6 @@ void VulkanTextureBackend::activate() {}
 
 void VulkanTextureBackend::deactivate() {}
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-auto VulkanTextureBackend::rendered_resource()
-  -> VulkanTextureRenderableResource& {
-  return getResource<VulkanTextureRenderableResource>();
-}
-
 void VulkanTextureBackend::prepareRenderResources() {
   if (allocator == nullptr) {
     initAllocator();
@@ -467,7 +461,7 @@ void VulkanTextureBackend::prepareRenderResources() {
 }
 
 auto VulkanTextureBackend::frame_resources() -> VulkanTextureFrameResources {
-  auto& rendered = rendered_resource();
+  auto& rendered = getResource<VulkanTextureRenderableResource>();
   return VulkanTextureFrameResources{
     .image = rendered.image(),
     .image_view = rendered.image_view(),
@@ -536,10 +530,11 @@ void VulkanTextureBackend::initSwapchain() {
       borrowed_descriptor_, size.width, size.height
     );
   } else {
-    renderable_resource.init_sampled(size.width, size.height);
+    renderable_resource.init_sampled(vk::Extent2D{size.width, size.height});
   }
 }
 
+// Base override requires a member function.
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto VulkanTextureBackend::getDeviceExtensions() -> std::vector<const char*> {
   return {};

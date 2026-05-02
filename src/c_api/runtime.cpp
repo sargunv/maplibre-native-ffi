@@ -148,7 +148,9 @@ auto mln_runtime_offline_region_set_download_state(
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::offline_region_set_download_state(
-      runtime, region_id, state
+      runtime, mln::core::OfflineRegionDownloadStateRequest{
+                 .region_id = region_id, .state = state
+               }
     );
   });
 }

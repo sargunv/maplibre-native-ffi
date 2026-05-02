@@ -117,8 +117,14 @@ auto offline_region_get_status(
 auto offline_region_set_observed(
   mln_runtime* runtime, mln_offline_region_id region_id, bool observed
 ) -> mln_status;
+
+struct OfflineRegionDownloadStateRequest {
+  mln_offline_region_id region_id;
+  uint32_t state;
+};
+
 auto offline_region_set_download_state(
-  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
+  mln_runtime* runtime, OfflineRegionDownloadStateRequest request
 ) -> mln_status;
 auto offline_region_invalidate(
   mln_runtime* runtime, mln_offline_region_id region_id

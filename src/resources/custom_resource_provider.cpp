@@ -196,6 +196,7 @@ void release(mln_resource_request_handle* handle) noexcept {
     return;
   }
   if (handle->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    // C handle uses manual intrusive refs.
     delete handle;  // NOLINT(cppcoreguidelines-owning-memory)
   }
 }

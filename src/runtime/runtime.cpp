@@ -33,8 +33,6 @@
 #include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_c.h"
 
-// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
-
 struct OfflineRegionData {
   mln_offline_region_id id = 0;
   uint32_t definition_type = 0;
@@ -195,6 +193,8 @@ auto validate_offline_region_definition(
 
   switch (definition->type) {
     case MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID:
+      // Tagged C ABI selects the active member.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
       return validate_tile_pyramid_definition(definition->data.tile_pyramid);
     case MLN_OFFLINE_REGION_DEFINITION_GEOMETRY:
       // TODO: Support geometry regions after the shared geometry ABI lands:
@@ -212,6 +212,8 @@ auto validate_offline_region_definition(
 auto to_native_offline_region_definition(
   const mln_offline_region_definition& definition
 ) -> mbgl::OfflineRegionDefinition {
+  // Tagged C ABI selects the active member.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
   const auto& tile = definition.data.tile_pyramid;
   auto bounds = mbgl::LatLngBounds::hull(
     {tile.bounds.southwest.latitude, tile.bounds.southwest.longitude},
@@ -344,16 +346,18 @@ auto fill_region_info(
         .size = sizeof(mln_offline_region_definition),
         .type = data.definition_type,
         .data =
-          {.tile_pyramid =
-             mln_offline_tile_pyramid_region_definition{
-               .size = sizeof(mln_offline_tile_pyramid_region_definition),
-               .style_url = data.style_url.c_str(),
-               .bounds = data.bounds,
-               .min_zoom = data.min_zoom,
-               .max_zoom = data.max_zoom,
-               .pixel_ratio = data.pixel_ratio,
-               .include_ideographs = data.include_ideographs
-             }}
+          // Tagged C ABI selects the active member.
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
+        {.tile_pyramid =
+           mln_offline_tile_pyramid_region_definition{
+             .size = sizeof(mln_offline_tile_pyramid_region_definition),
+             .style_url = data.style_url.c_str(),
+             .bounds = data.bounds,
+             .min_zoom = data.min_zoom,
+             .max_zoom = data.max_zoom,
+             .pixel_ratio = data.pixel_ratio,
+             .include_ideographs = data.include_ideographs
+           }}
       },
     .metadata = data.metadata.empty() ? nullptr : data.metadata.data(),
     .metadata_size = data.metadata.size()
@@ -1164,15 +1168,14 @@ auto offline_region_set_observed(
   return MLN_STATUS_OK;
 }
 
-// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 auto offline_region_set_download_state(
-  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
+  mln_runtime* runtime, OfflineRegionDownloadStateRequest request
 ) -> mln_status {
   const auto runtime_status = validate_runtime(runtime);
   if (runtime_status != MLN_STATUS_OK) {
     return runtime_status;
   }
-  const auto native_state = to_native_download_state(state);
+  const auto native_state = to_native_download_state(request.state);
   if (!native_state) {
     set_thread_error("offline region download state is invalid");
     return MLN_STATUS_INVALID_ARGUMENT;
@@ -1187,7 +1190,7 @@ auto offline_region_set_download_state(
   auto get_result = wait_for_database_result<
     mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
     [&](auto callback) -> void {
-      database->getOfflineRegion(region_id, std::move(callback));
+      database->getOfflineRegion(request.region_id, std::move(callback));
     }
   );
   if (!get_result) {
@@ -1203,7 +1206,6 @@ auto offline_region_set_download_state(
   database->setOfflineRegionDownloadState(*get_result.value(), *native_state);
   return MLN_STATUS_OK;
 }
-// NOLINTEND(bugprone-easily-swappable-parameters)
 
 auto offline_region_invalidate(
   mln_runtime* runtime, mln_offline_region_id region_id
@@ -1636,5 +1638,3 @@ auto discard_runtime_map_events(mln_runtime* runtime, const mln_map* map)
 }
 
 }  // namespace mln::core
-
-// NOLINTEND(cppcoreguidelines-pro-type-union-access)
