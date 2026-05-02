@@ -60,6 +60,22 @@ auto renderer_backend(mln_render_session* session)
   return session->texture.backend->getRendererBackend();
 }
 
+auto validate_renderer_backend(mln_render_session* session)
+  -> mbgl::gfx::RendererBackend* {
+  if (session->renderer == nullptr) {
+    mln::core::set_thread_error("render session renderer is not available");
+    return nullptr;
+  }
+  auto* backend = renderer_backend(session);
+  if (backend == nullptr) {
+    mln::core::set_thread_error(
+      "render session renderer backend is not available"
+    );
+    return nullptr;
+  }
+  return backend;
+}
+
 }  // namespace
 
 namespace mln::core {
@@ -330,10 +346,13 @@ auto render_session_reduce_memory_use(mln_render_session* session)
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->renderer == nullptr) {
-    set_thread_error("render session renderer is not available");
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
     return MLN_STATUS_INVALID_STATE;
   }
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
   session->renderer->reduceMemoryUse();
   return MLN_STATUS_OK;
 }
@@ -343,10 +362,13 @@ auto render_session_clear_data(mln_render_session* session) -> mln_status {
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->renderer == nullptr) {
-    set_thread_error("render session renderer is not available");
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
     return MLN_STATUS_INVALID_STATE;
   }
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
   session->renderer->clearData();
   return MLN_STATUS_OK;
 }
@@ -356,10 +378,13 @@ auto render_session_dump_debug_logs(mln_render_session* session) -> mln_status {
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->renderer == nullptr) {
-    set_thread_error("render session renderer is not available");
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
     return MLN_STATUS_INVALID_STATE;
   }
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
   session->renderer->dumpDebugLogs();
   return MLN_STATUS_OK;
 }
