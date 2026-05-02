@@ -6,21 +6,21 @@ PKG_CONFIG_PATH = "{{config_root}}/../../build/pkgconfig"
 XDG_DATA_DIRS = "{{config_root}}/../../.pixi/envs/default/share:{{env.XDG_DATA_DIRS | default(value=\"/usr/local/share:/usr/share\")}}"
 
 [tasks.build]
-depends = ["//:build", ":compile-shaders"]
+depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build"
 
 [tasks.run]
-depends = ["//:build", ":compile-shaders"]
+depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build run -- --render-target=owned-texture"
 
 [tasks."run:owned-texture"]
-depends = ["//:build", ":compile-shaders"]
+depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build run -- --render-target=owned-texture"
 
 [tasks."run:borrowed-texture"]
-depends = ["//:build", ":compile-shaders"]
+depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build run -- --render-target=borrowed-texture"
 
 [tasks."run:native-surface"]
-depends = ["//:build", ":compile-shaders"]
+depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build run -- --render-target=native-surface"
