@@ -920,6 +920,10 @@ typedef struct mln_offline_tile_pyramid_region_definition {
   const char* style_url;
   mln_lat_lng_bounds bounds;
   double min_zoom;
+  /**
+   * Maximum zoom. Positive infinity follows MapLibre Native behavior and lets
+   * each tile source use its own maximum zoom.
+   */
   double max_zoom;
   float pixel_ratio;
   bool include_ideographs;

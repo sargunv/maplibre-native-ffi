@@ -702,6 +702,14 @@ test "offline tile-pyramid regions validate inputs" {
     try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
 
     definition = offlineTileDefinition();
+    definition.data.tile_pyramid.max_zoom = std.math.inf(f64);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    if (snapshot) |handle| {
+        c.mln_offline_region_snapshot_destroy(handle);
+        snapshot = null;
+    }
+
+    definition = offlineTileDefinition();
     definition.type = c.MLN_OFFLINE_REGION_DEFINITION_GEOMETRY;
     definition.data.geometry = .{ .size = @sizeOf(c.mln_offline_geometry_region_definition) };
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
