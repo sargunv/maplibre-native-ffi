@@ -12,8 +12,9 @@ pub const Context = struct {
     device: c.VkDevice,
     queue: c.VkQueue,
     queue_family_index: u32,
+    exportable_textures: bool,
 
-    pub fn init(allocator: std.mem.Allocator, window: *c.SDL_Window) !Context {
+    pub fn init(allocator: std.mem.Allocator, window: *c.SDL_Window, exportable_textures: bool) !Context {
         var self = Context{
             .allocator = allocator,
             .instance = null,
@@ -22,6 +23,7 @@ pub const Context = struct {
             .device = null,
             .queue = null,
             .queue_family_index = 0,
+            .exportable_textures = exportable_textures,
         };
         errdefer self.deinit();
 
@@ -128,7 +130,13 @@ pub const Context = struct {
             .queueCount = 1,
             .pQueuePriorities = &priority,
         };
-        const extensions = [_][*:0]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        const base_extensions = [_][*:0]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        const export_extensions = [_][*:0]const u8{
+            c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+            c.VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+            c.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+        };
+        const extensions = if (self.exportable_textures) export_extensions[0..] else base_extensions[0..];
         var features = std.mem.zeroes(c.VkPhysicalDeviceFeatures);
         c.vkGetPhysicalDeviceFeatures(self.physical_device, &features);
         const create_info = c.VkDeviceCreateInfo{
@@ -139,8 +147,8 @@ pub const Context = struct {
             .pQueueCreateInfos = &queue_info,
             .enabledLayerCount = 0,
             .ppEnabledLayerNames = null,
-            .enabledExtensionCount = extensions.len,
-            .ppEnabledExtensionNames = &extensions,
+            .enabledExtensionCount = @intCast(extensions.len),
+            .ppEnabledExtensionNames = extensions.ptr,
             .pEnabledFeatures = &features,
         };
         try util.expectVk(c.vkCreateDevice(

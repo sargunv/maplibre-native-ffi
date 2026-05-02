@@ -64,5 +64,6 @@ pub fn build(b: *std.Build) void {
     }
     const zig_map = addZigMapExample(b, options);
     const run_zig_map = b.addRunArtifact(zig_map);
+    if (b.args) |args| run_zig_map.addArgs(args);
     run_step.dependOn(&run_zig_map.step);
 }

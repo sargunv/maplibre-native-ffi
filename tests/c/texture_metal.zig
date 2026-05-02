@@ -1,13 +1,15 @@
+const std = @import("std");
 const builtin = @import("builtin");
-const testing = @import("std").testing;
+const testing = std.testing;
 const support = @import("support.zig");
+const metal_support = @import("metal_support.zig");
 const common = @import("texture.zig");
 const c = support.c;
 
 extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;
 
 const Backend = struct {
-    pub const descriptor_size = @sizeOf(c.mln_metal_texture_descriptor);
+    pub const descriptor_size = @sizeOf(c.mln_metal_owned_texture_descriptor);
     const expected_pixel_format_rgba8_unorm: u64 = 70;
 
     pub const AttachContext = struct {
@@ -19,8 +21,8 @@ const Backend = struct {
 
         pub fn deinit(_: *AttachContext) void {}
 
-        pub fn descriptor(self: *const AttachContext) c.mln_metal_texture_descriptor {
-            var value = c.mln_metal_texture_descriptor_default();
+        pub fn descriptor(self: *const AttachContext) c.mln_metal_owned_texture_descriptor {
+            var value = c.mln_metal_owned_texture_descriptor_default();
             value.device = self.device;
             return value;
         }
@@ -37,11 +39,11 @@ const Backend = struct {
             texture_descriptor.height = 256;
 
             var texture: ?*c.mln_texture_session = null;
-            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_texture_attach(map, &texture_descriptor, &texture));
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_owned_texture_attach(map, &texture_descriptor, &texture));
             return .{ .texture = texture orelse return error.TextureCreateFailed, .context = context };
         }
 
-        pub fn descriptor(self: *const Fixture) c.mln_metal_texture_descriptor {
+        pub fn descriptor(self: *const Fixture) c.mln_metal_owned_texture_descriptor {
             return self.context.?.descriptor();
         }
 
@@ -59,23 +61,23 @@ const Backend = struct {
         }
 
         pub fn acquire(_: *Fixture, frame: *Frame) c.mln_status {
-            return c.mln_metal_texture_acquire_frame(frame.texture, &frame.metal);
+            return c.mln_metal_owned_texture_acquire_frame(frame.texture, &frame.metal);
         }
 
         pub fn release(_: *Fixture, frame: *const Frame) c.mln_status {
-            return c.mln_metal_texture_release_frame(frame.texture, &frame.metal);
+            return c.mln_metal_owned_texture_release_frame(frame.texture, &frame.metal);
         }
     };
 
     pub const Frame = struct {
         texture: *c.mln_texture_session,
-        metal: c.mln_metal_texture_frame,
+        metal: c.mln_metal_owned_texture_frame,
 
         pub fn empty(texture: *c.mln_texture_session) Frame {
             return .{
                 .texture = texture,
                 .metal = .{
-                    .size = @sizeOf(c.mln_metal_texture_frame),
+                    .size = @sizeOf(c.mln_metal_owned_texture_frame),
                     .generation = 0,
                     .width = 0,
                     .height = 0,
@@ -98,15 +100,15 @@ const Backend = struct {
         }
 
         pub fn resetSize(self: *Frame) void {
-            self.metal.size = @sizeOf(c.mln_metal_texture_frame);
+            self.metal.size = @sizeOf(c.mln_metal_owned_texture_frame);
         }
     };
 
-    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
-        return c.mln_metal_texture_attach(map, descriptor, out_texture);
+    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_owned_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
+        return c.mln_metal_owned_texture_attach(map, descriptor, out_texture);
     }
 
-    pub fn clearRequiredHandle(descriptor: *c.mln_metal_texture_descriptor) void {
+    pub fn clearRequiredHandle(descriptor: *c.mln_metal_owned_texture_descriptor) void {
         descriptor.device = null;
     }
 
@@ -129,6 +131,16 @@ const Backend = struct {
     }
 };
 
+fn expectPixelApprox(actual: [4]u8, expected: [4]u8, tolerance: u8) !void {
+    for (actual, expected) |actual_channel, expected_channel| {
+        const delta = if (actual_channel > expected_channel)
+            actual_channel - expected_channel
+        else
+            expected_channel - actual_channel;
+        try testing.expect(delta <= tolerance);
+    }
+}
+
 test "Metal texture unsupported backend validates arguments" {
     if (builtin.os.tag == .macos) return error.SkipZigTest;
 
@@ -138,15 +150,15 @@ test "Metal texture unsupported backend validates arguments" {
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    var descriptor = c.mln_metal_texture_descriptor_default();
+    var descriptor = c.mln_metal_owned_texture_descriptor_default();
     descriptor.device = @ptrFromInt(1);
 
     var texture: ?*c.mln_texture_session = @ptrFromInt(1);
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
     try testing.expect(texture != null);
 
     texture = null;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
     try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }
 
@@ -170,19 +182,67 @@ test "Metal texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
+test "Metal owned texture supports readback" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try common.expectOwnedTextureReadback(Backend);
+}
+
+test "Metal borrowed texture renders into caller texture" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const pool = try metal_support.AutoreleasePool.init();
+    defer pool.deinit();
+
+    var context = try Backend.AttachContext.init();
+    defer context.deinit();
+
+    const borrowed = try metal_support.createTexture(context.device, 128, 128);
+    defer metal_support.releaseObject(borrowed);
+    try metal_support.clearTextureRGBA8(borrowed, .{ 255, 0, 255, 255 });
+    try expectPixelApprox(try metal_support.readTexturePixelRGBA8(borrowed, 0, 0), .{ 255, 0, 255, 255 }, 0);
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_metal_borrowed_texture_descriptor_default();
+    descriptor.width = 128;
+    descriptor.height = 128;
+
+    var texture: ?*c.mln_texture_session = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
+
+    descriptor.texture = borrowed;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?)) catch @panic("texture destroy failed");
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+    try expectPixelApprox(try metal_support.readTexturePixelRGBA8(borrowed, 0, 0), .{ 0xd8, 0xf1, 0xff, 0xff }, 8);
+
+    var frame = Backend.Frame.empty(texture.?);
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_acquire_frame(texture.?, &frame.metal));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_resize(texture.?, 64, 64, 1.0));
+
+    var image_info = c.mln_texture_image_info_default();
+    var pixel: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_read_premultiplied_rgba8(texture.?, pixel[0..].ptr, pixel.len, &image_info));
+}
+
 test "Metal texture render emits observer events" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     try common.expectRenderObserverEvents(Backend);
 }
 
-test "Metal texture supports static still-image requests" {
+test "Metal texture still modes render requested still images" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
-    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_STATIC);
-}
-
-test "Metal texture supports tile still-image requests" {
-    if (builtin.os.tag != .macos) return error.SkipZigTest;
-    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_TILE);
+    inline for (.{ c.MLN_MAP_MODE_STATIC, c.MLN_MAP_MODE_TILE }) |map_mode| {
+        try common.expectStillModeStillImageRequest(Backend, map_mode);
+    }
 }
 
 test "Metal texture detach leaves handle live but unusable for rendering" {

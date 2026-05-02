@@ -4,11 +4,11 @@
 
 The project exposes MapLibre Native through two layers.
 
-The C API wraps core MapLibre Native features on supported MapLibre Native
-platforms. It includes runtime, resource, map, camera, event, diagnostics,
-logging, render target primitives, and low-level extension points such as
-resource providers and URL transforms. It excludes convenience APIs such as
-snapshotting and platform integrations such as gestures and device sensors.
+The C API exposes core MapLibre Native features on supported native platforms:
+runtime, resources, maps, cameras, events, diagnostics, logging, render target
+primitives, texture readback, and low-level extension points such as resource
+providers and URL transforms. It excludes convenience APIs such as snapshotting
+and platform integrations such as gestures and device sensors.
 
 Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
@@ -39,9 +39,9 @@ The public C header targets C23. ABI-crossing enum types use C23
 fixed-underlying enum syntax: `int32_t` for status values and `uint32_t` for
 non-negative domains and masks unless a native ABI field requires another width.
 
-Still shape structs for future ABI stability. Use `size` fields for option and
-output structs that may grow over time, and populate them in default
-constructors.
+Shape structs for future ABI stability. Option and output structs that may grow
+over time use `uint32_t size` fields. Default constructors populate those
+fields.
 
 Use field masks or presence booleans for optional values where zero is valid.
 
@@ -101,8 +101,9 @@ when it ends, and whether completion may happen inline or later.
 ## Threading
 
 The runtime and map model is host-pumped. Runtime creation records the owner
-thread. Runtime, map, and texture-session calls that touch thread-affine state
-validate that owner thread and return `MLN_STATUS_WRONG_THREAD` for mismatches.
+thread. Runtime, map, map-projection, and render-target-session calls that touch
+thread-affine state validate the owner thread and return
+`MLN_STATUS_WRONG_THREAD` for mismatches.
 
 Cross-thread dispatch belongs in public functions designed as enqueueing
 commands. Document that behavior on the function. Higher-level adapters can
@@ -126,7 +127,7 @@ Classify each operation as one of:
 - immediate, where the return status is the final result;
 - a command, where return status means accepted and later effects arrive as
   events;
-- a snapshot, where the returned data is last-known state;
+- a state snapshot, where the returned data is last-known state;
 - a blocking query, used sparingly and documented with deadlock risks;
 - an event stream, where many events are expected over time.
 
@@ -157,11 +158,13 @@ callback's documented return behavior.
 ## Maps And Render Targets
 
 Keep map state separate from render targets. `mln_map` owns style, camera,
-observer events, and render invalidation state. Render target sessions own
-backend-bound resources.
+observer events, and render invalidation state. Each map may have one live
+render target session; that session owns backend-bound resources.
 
-Each render target kind should preserve the same separation from `mln_map`,
-including texture sessions, native surface sessions, and future targets.
+Texture sessions render offscreen into session-owned backend targets or
+caller-owned borrowed backend targets. Surface sessions render and present
+through caller-provided native surfaces. Future target kinds should preserve the
+same separation from `mln_map`.
 
 Render target APIs must document owner thread, backend handle ownership,
 synchronization, borrowed pointer lifetimes, generation or stale-frame behavior,

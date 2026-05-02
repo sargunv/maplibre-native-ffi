@@ -86,9 +86,9 @@ auto map_native(mln_map* map) -> mbgl::Map*;
 auto map_latest_update(mln_map* map) -> std::shared_ptr<mbgl::UpdateParameters>;
 auto map_renderer_observer(mln_map* map) -> mbgl::RendererObserver*;
 auto map_run_render_jobs(mln_map* map) -> void;
-auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
+auto map_attach_render_target_session(mln_map* map, void* session)
   -> mln_status;
-auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
+auto map_detach_render_target_session(mln_map* map, void* session)
   -> mln_status;
 
 }  // namespace mln::core

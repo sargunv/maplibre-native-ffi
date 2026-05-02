@@ -8,15 +8,22 @@ extern fn usleep(useconds: c_uint) c_int;
 const ThreadCall = enum { resize, render_update, acquire, release, detach, destroy };
 
 pub fn expectDescriptorDefaults() !void {
-    const metal = c.mln_metal_texture_descriptor_default();
-    try testing.expectEqual(@as(u32, @sizeOf(c.mln_metal_texture_descriptor)), metal.size);
+    const metal = c.mln_metal_owned_texture_descriptor_default();
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_metal_owned_texture_descriptor)), metal.size);
     try testing.expect(metal.width > 0);
     try testing.expect(metal.height > 0);
     try testing.expect(metal.scale_factor > 0);
     try testing.expect(metal.device == null);
 
-    const vulkan = c.mln_vulkan_texture_descriptor_default();
-    try testing.expectEqual(@as(u32, @sizeOf(c.mln_vulkan_texture_descriptor)), vulkan.size);
+    const metal_borrowed = c.mln_metal_borrowed_texture_descriptor_default();
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_metal_borrowed_texture_descriptor)), metal_borrowed.size);
+    try testing.expect(metal_borrowed.width > 0);
+    try testing.expect(metal_borrowed.height > 0);
+    try testing.expect(metal_borrowed.scale_factor > 0);
+    try testing.expect(metal_borrowed.texture == null);
+
+    const vulkan = c.mln_vulkan_owned_texture_descriptor_default();
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_vulkan_owned_texture_descriptor)), vulkan.size);
     try testing.expect(vulkan.width > 0);
     try testing.expect(vulkan.height > 0);
     try testing.expect(vulkan.scale_factor > 0);
@@ -24,6 +31,25 @@ pub fn expectDescriptorDefaults() !void {
     try testing.expect(vulkan.physical_device == null);
     try testing.expect(vulkan.device == null);
     try testing.expect(vulkan.graphics_queue == null);
+
+    const vulkan_borrowed = c.mln_vulkan_borrowed_texture_descriptor_default();
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_vulkan_borrowed_texture_descriptor)), vulkan_borrowed.size);
+    try testing.expect(vulkan_borrowed.width > 0);
+    try testing.expect(vulkan_borrowed.height > 0);
+    try testing.expect(vulkan_borrowed.scale_factor > 0);
+    try testing.expect(vulkan_borrowed.instance == null);
+    try testing.expect(vulkan_borrowed.physical_device == null);
+    try testing.expect(vulkan_borrowed.device == null);
+    try testing.expect(vulkan_borrowed.graphics_queue == null);
+    try testing.expect(vulkan_borrowed.image == null);
+    try testing.expect(vulkan_borrowed.image_view == null);
+
+    const image_info = c.mln_texture_image_info_default();
+    try testing.expectEqual(@as(@TypeOf(image_info.size), @sizeOf(c.mln_texture_image_info)), image_info.size);
+    try testing.expectEqual(@as(u32, 0), image_info.width);
+    try testing.expectEqual(@as(u32, 0), image_info.height);
+    try testing.expectEqual(@as(u32, 0), image_info.stride);
+    try testing.expectEqual(@as(usize, 0), image_info.byte_length);
 }
 
 pub fn expectAttachRejectsInvalidArguments(comptime Backend: type) !void {
@@ -192,6 +218,30 @@ pub fn expectRenderAcquireReleaseAndResizeGeneration(comptime Backend: type) !vo
     try Backend.expectResizedFrame(&frame);
     try testing.expectEqual(c.MLN_STATUS_OK, fixture.release(&frame));
     frame_acquired = false;
+}
+
+pub fn expectOwnedTextureReadback(comptime Backend: type) !void {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+    var fixture = try Backend.Fixture.create(map);
+    defer fixture.destroy();
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(fixture.texture));
+
+    var image_info = c.mln_texture_image_info_default();
+    var small: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_texture_read_premultiplied_rgba8(fixture.texture, small[0..].ptr, small.len, &image_info));
+    const data = try testing.allocator.alloc(u8, image_info.byte_length);
+    defer testing.allocator.free(data);
+    image_info = c.mln_texture_image_info_default();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_read_premultiplied_rgba8(fixture.texture, data.ptr, data.len, &image_info));
 }
 
 pub fn expectRenderObserverEvents(comptime Backend: type) !void {

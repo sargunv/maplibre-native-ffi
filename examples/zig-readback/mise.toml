@@ -1,0 +1,14 @@
+[env]
+DYLD_LIBRARY_PATH = "{{config_root}}/../../build"
+LD_LIBRARY_PATH = "{{config_root}}/../../build"
+PKG_CONFIG = "{{config_root}}/../../.pixi/envs/default/bin/pkg-config"
+PKG_CONFIG_PATH = "{{config_root}}/../../build/pkgconfig"
+XDG_DATA_DIRS = "{{config_root}}/../../.pixi/envs/default/share:{{env.XDG_DATA_DIRS | default(value=\"/usr/local/share:/usr/share\")}}"
+
+[tasks.build]
+depends = ["//:build"]
+run = "zig build"
+
+[tasks.run]
+depends = ["//:build"]
+run = "mkdir -p zig-out && zig build run -- zig-out/zig-readback.ppm"

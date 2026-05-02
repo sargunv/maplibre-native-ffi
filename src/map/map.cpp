@@ -686,7 +686,7 @@ struct mln_map {
   std::unique_ptr<HeadlessObserver> observer;
   std::unique_ptr<HeadlessFrontend> frontend;
   std::unique_ptr<mbgl::Map> map;
-  mln_texture_session* texture_session = nullptr;
+  void* render_target_session = nullptr;
 };
 
 struct mln_map_projection {
@@ -867,8 +867,8 @@ auto destroy_map(mln_map* map) -> mln_status {
     return status;
   }
 
-  if (map->texture_session != nullptr) {
-    set_thread_error("map still has an attached texture session");
+  if (map->render_target_session != nullptr) {
+    set_thread_error("map still has an attached render target session");
     return MLN_STATUS_INVALID_STATE;
   }
 
@@ -960,39 +960,39 @@ auto map_run_render_jobs(mln_map* map) -> void {
   map->frontend->run_render_jobs();
 }
 
-auto map_attach_texture_session(mln_map* map, mln_texture_session* texture)
+auto map_attach_render_target_session(mln_map* map, void* session)
   -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (texture == nullptr) {
-    set_thread_error("texture session must not be null");
+  if (session == nullptr) {
+    set_thread_error("render target session must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (map->texture_session != nullptr) {
-    set_thread_error("map already has an attached texture session");
+  if (map->render_target_session != nullptr) {
+    set_thread_error("map already has an attached render target session");
     return MLN_STATUS_INVALID_STATE;
   }
-  map->texture_session = texture;
+  map->render_target_session = session;
   return MLN_STATUS_OK;
 }
 
-auto map_detach_texture_session(mln_map* map, mln_texture_session* texture)
+auto map_detach_render_target_session(mln_map* map, void* session)
   -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (texture == nullptr) {
-    set_thread_error("texture session must not be null");
+  if (session == nullptr) {
+    set_thread_error("render target session must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (map->texture_session != texture) {
-    set_thread_error("texture session is not attached to this map");
+  if (map->render_target_session != session) {
+    set_thread_error("render target session is not attached to this map");
     return MLN_STATUS_INVALID_STATE;
   }
-  map->texture_session = nullptr;
+  map->render_target_session = nullptr;
   return MLN_STATUS_OK;
 }
 

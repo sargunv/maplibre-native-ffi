@@ -15,6 +15,7 @@ class MetalTextureBackend final : public mbgl::mtl::RendererBackend,
 
  public:
   MetalTextureBackend(MTL::Device* host_device, mbgl::Size size);
+  MetalTextureBackend(MTL::Texture* borrowed_texture, mbgl::Size size);
   MetalTextureBackend(const MetalTextureBackend&) = delete;
   auto operator=(const MetalTextureBackend&) -> MetalTextureBackend& = delete;
   MetalTextureBackend(MetalTextureBackend&&) = delete;
@@ -29,6 +30,9 @@ class MetalTextureBackend final : public mbgl::mtl::RendererBackend,
   void updateAssumedState() override;
 
   auto metal_texture() -> MTL::Texture*;
+
+ private:
+  MTL::Texture* borrowed_texture_ = nullptr;
 };
 
 }  // namespace mln::core
