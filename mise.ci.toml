@@ -1,0 +1,40 @@
+[tasks."ci:hygiene"]
+run = [
+  "hk fix --all --profile ci-common",
+  "mise run _verify-clean-worktree",
+]
+
+[tasks."ci:native-lint"]
+run = [
+  "mise run configure",
+  "hk fix --all --profile ci-native",
+  "mise run _verify-clean-worktree",
+]
+
+[tasks."ci:native"]
+run = [
+  "mise run ci:native-lint",
+  "mise run test",
+]
+
+[tasks."ci:native-artifact"]
+run = [
+  "pixi run cmake -E rm -rf ci-artifact",
+  "pixi run cmake -E make_directory ci-artifact/build/pkgconfig",
+  "pixi run cmake -E make_directory ci-artifact/third_party/maplibre-native/vendor/Vulkan-Headers",
+  "pixi run cmake -E copy build/libmaplibre-native-c.* ci-artifact/build",
+  "pixi run cmake -E copy cmake/maplibre-native-c.ci-artifact.pc ci-artifact/build/pkgconfig/maplibre-native-c.pc",
+  "pixi run cmake -E copy_directory third_party/maplibre-native/vendor/Vulkan-Headers/include ci-artifact/third_party/maplibre-native/vendor/Vulkan-Headers/include",
+]
+
+[tasks."ci:docs"]
+run = "mise run docs:c"
+
+[tasks."ci:examples:zig-map"]
+run = "mise run --skip-deps //examples/zig-map:build"
+
+[tasks."ci:examples:zig-readback"]
+run = "mise run --skip-deps //examples/zig-readback:run"
+
+[tasks."ci:examples:swift-map"]
+run = "mise run --skip-deps //examples/swift-map:build"

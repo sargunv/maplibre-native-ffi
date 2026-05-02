@@ -2,32 +2,48 @@ amends "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Config.
 
 import "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Builtins.pkl"
 
-local allSteps = new Mapping<String, Step> {
-  ["dprint"] = Builtins.dprint
-  ["cmake-configure"] {
-    glob = List("CMakeLists.txt", "**/*.cmake", "**/*.cmake.in")
-    check = "mise run configure"
+local commonProfiles = List("!ci-native")
+local nativeProfiles = List("!ci-common")
+
+local commonSteps = new Mapping<String, Step> {
+  ["dprint"] = (Builtins.dprint) {
+    profiles = commonProfiles
   }
-  ["clang-tidy"] {
-    glob = List("include/**/*.h", "include/**/*.hpp", "src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx", "src/**/*.hpp")
-    exclude = List("src/render/vulkan/**")
-    depends = List("cmake-configure")
-    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
-  }
-  ["clang-tidy-vulkan"] {
-    glob = List("src/render/vulkan/**/*.cpp", "src/render/vulkan/**/*.hpp")
-    depends = List("cmake-configure")
-    step_condition = "exec('uname -s') == 'Linux'"
-    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
+  ["actionlint"] {
+    glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml")
+    profiles = commonProfiles
+    check = "actionlint {{files}}"
   }
   ["jvl"] {
     glob = List("**/*.json", "**/*.jsonc")
+    profiles = commonProfiles
     check = "jvl check {{files}}"
   }
   ["zig-ast-check"] {
     glob = List("**/*.zig")
+    profiles = commonProfiles
     check = "for file in {{files}}; do zig ast-check \"$file\"; done"
   }
+}
+
+local nativeSteps = new Mapping<String, Step> {
+  ["clang-tidy"] {
+    glob = List("include/**/*.h", "include/**/*.hpp", "src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx", "src/**/*.hpp")
+    exclude = List("src/render/vulkan/**")
+    profiles = nativeProfiles
+    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
+  }
+  ["clang-tidy-vulkan"] {
+    glob = List("src/render/vulkan/**/*.cpp", "src/render/vulkan/**/*.hpp")
+    profiles = nativeProfiles
+    step_condition = "exec('uname -s') == 'Linux'"
+    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
+  }
+}
+
+local allSteps = new Mapping<String, Step> {
+  ...commonSteps
+  ...nativeSteps
 }
 
 hooks {
