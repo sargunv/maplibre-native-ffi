@@ -14,21 +14,21 @@ struct Viewport: Equatable {
 final class MapState {
   nonisolated(unsafe) private(set) var runtime: OpaquePointer? = nil
   nonisolated(unsafe) private(set) var map: OpaquePointer? = nil
-  nonisolated(unsafe) private(set) var surface: OpaquePointer? = nil
+  nonisolated(unsafe) private(set) var renderSession: OpaquePointer? = nil
 
   init(viewport: Viewport, layer: CAMetalLayer) throws {
     var createdRuntime: OpaquePointer?
     var createdMap: OpaquePointer?
-    var createdSurface: OpaquePointer?
+    var createdRenderSession: OpaquePointer?
 
     do {
       try Self.createRuntime(&createdRuntime)
       try Self.createMap(runtime: createdRuntime, viewport: viewport, outMap: &createdMap)
       try Self.loadStyle(map: createdMap)
       try Self.setInitialCamera(map: createdMap)
-      try Self.attachSurface(map: createdMap, viewport: viewport, layer: layer, outSurface: &createdSurface)
+      try Self.attachSurface(map: createdMap, viewport: viewport, layer: layer, outSession: &createdRenderSession)
     } catch {
-      if let createdSurface { _ = mln_surface_destroy(createdSurface) }
+      if let createdRenderSession { _ = mln_render_session_destroy(createdRenderSession) }
       if let createdMap { _ = mln_map_destroy(createdMap) }
       if let createdRuntime { _ = mln_runtime_destroy(createdRuntime) }
       throw error
@@ -36,19 +36,19 @@ final class MapState {
 
     runtime = createdRuntime
     map = createdMap
-    surface = createdSurface
+    renderSession = createdRenderSession
   }
 
   deinit {
-    if let surface { _ = mln_surface_destroy(surface) }
+    if let renderSession { _ = mln_render_session_destroy(renderSession) }
     if let map { _ = mln_map_destroy(map) }
     if let runtime { _ = mln_runtime_destroy(runtime) }
   }
 
   func resize(_ viewport: Viewport) throws {
     try checkCAPI(
-      mln_surface_resize(surface, viewport.logicalWidth, viewport.logicalHeight, viewport.scaleFactor),
-      "surface resize failed"
+      mln_render_session_resize(renderSession, viewport.logicalWidth, viewport.logicalHeight, viewport.scaleFactor),
+      "render session resize failed"
     )
   }
 
@@ -74,10 +74,10 @@ final class MapState {
   }
 
   func render() throws -> Bool {
-    let status = mln_surface_render_update(surface)
+    let status = mln_render_session_render_update(renderSession)
     if status == MLN_STATUS_OK { return true }
     if status == MLN_STATUS_INVALID_STATE { return false }
-    try checkCAPI(status, "surface render failed")
+    try checkCAPI(status, "render session render failed")
     return false
   }
 
@@ -126,13 +126,13 @@ final class MapState {
     map: OpaquePointer?,
     viewport: Viewport,
     layer: CAMetalLayer,
-    outSurface: inout OpaquePointer?
+    outSession: inout OpaquePointer?
   ) throws {
     var descriptor = mln_metal_surface_descriptor_default()
     descriptor.width = viewport.logicalWidth
     descriptor.height = viewport.logicalHeight
     descriptor.scale_factor = viewport.scaleFactor
     descriptor.layer = Unmanaged.passUnretained(layer).toOpaque()
-    try checkCAPI(mln_metal_surface_attach(map, &descriptor, &outSurface), "Metal surface attach failed")
+    try checkCAPI(mln_metal_surface_attach(map, &descriptor, &outSession), "Metal surface attach failed")
   }
 }
