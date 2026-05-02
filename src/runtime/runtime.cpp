@@ -78,7 +78,7 @@ auto database_source_for_runtime(mln_runtime* runtime)
     mbgl::FileSourceType::Database, resource_options_for_runtime(runtime),
     mbgl::ClientOptions()
   );
-  // The Database FileSourceManager factory is registered by this wrapper and
+  // The Database FileSourceManager factory is registered by the C API layer and
   // always returns DatabaseFileSource for FileSourceType::Database. MapLibre is
   // built without RTTI, so keep this path non-RTTI as well.
   auto database = std::static_pointer_cast<mbgl::DatabaseFileSource>(source);
