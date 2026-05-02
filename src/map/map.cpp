@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -456,6 +457,146 @@ auto validate_projection_mode_options(const mln_projection_mode* mode)
   return MLN_STATUS_OK;
 }
 
+auto validate_debug_options(uint32_t options) -> mln_status {
+  constexpr auto known_options =
+    static_cast<uint32_t>(MLN_MAP_DEBUG_TILE_BORDERS) |
+    MLN_MAP_DEBUG_PARSE_STATUS | MLN_MAP_DEBUG_TIMESTAMPS |
+    MLN_MAP_DEBUG_COLLISION | MLN_MAP_DEBUG_OVERDRAW |
+    MLN_MAP_DEBUG_STENCIL_CLIP | MLN_MAP_DEBUG_DEPTH_BUFFER;
+  if ((options & ~known_options) != 0U) {
+    mln::core::set_thread_error("debug options contain unknown bits");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_frustum_offset(mln_edge_insets offset) -> mln_status {
+  if (
+    !std::isfinite(offset.top) || !std::isfinite(offset.left) ||
+    !std::isfinite(offset.bottom) || !std::isfinite(offset.right)
+  ) {
+    mln::core::set_thread_error("frustum offset values must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_viewport_options(const mln_map_viewport_options* options)
+  -> mln_status {
+  if (options == nullptr) {
+    mln::core::set_thread_error("viewport options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->size < sizeof(mln_map_viewport_options)) {
+    mln::core::set_thread_error("mln_map_viewport_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION) |
+    MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE |
+    MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE |
+    MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_map_viewport_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION) != 0U) {
+    switch (options->north_orientation) {
+      case MLN_NORTH_ORIENTATION_UP:
+      case MLN_NORTH_ORIENTATION_RIGHT:
+      case MLN_NORTH_ORIENTATION_DOWN:
+      case MLN_NORTH_ORIENTATION_LEFT:
+        break;
+      default:
+        mln::core::set_thread_error("north_orientation is invalid");
+        return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE) != 0U) {
+    switch (options->constrain_mode) {
+      case MLN_CONSTRAIN_MODE_NONE:
+      case MLN_CONSTRAIN_MODE_HEIGHT_ONLY:
+      case MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT:
+      case MLN_CONSTRAIN_MODE_SCREEN:
+        break;
+      default:
+        mln::core::set_thread_error("constrain_mode is invalid");
+        return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE) != 0U) {
+    switch (options->viewport_mode) {
+      case MLN_VIEWPORT_MODE_DEFAULT:
+      case MLN_VIEWPORT_MODE_FLIPPED_Y:
+        break;
+      default:
+        mln::core::set_thread_error("viewport_mode is invalid");
+        return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET) != 0U) {
+    return validate_frustum_offset(options->frustum_offset);
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_options(const mln_map_tile_options* options) -> mln_status {
+  if (options == nullptr) {
+    mln::core::set_thread_error("tile options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->size < sizeof(mln_map_tile_options)) {
+    mln::core::set_thread_error("mln_map_tile_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA) |
+    MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS | MLN_MAP_TILE_OPTION_LOD_SCALE |
+    MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD |
+    MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT | MLN_MAP_TILE_OPTION_LOD_MODE;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_map_tile_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (options->fields & MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA) != 0U &&
+    options->prefetch_zoom_delta > std::numeric_limits<uint8_t>::max()
+  ) {
+    mln::core::set_thread_error("prefetch_zoom_delta must be at most 255");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    ((options->fields & MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS) != 0U &&
+     !std::isfinite(options->lod_min_radius)) ||
+    ((options->fields & MLN_MAP_TILE_OPTION_LOD_SCALE) != 0U &&
+     !std::isfinite(options->lod_scale)) ||
+    ((options->fields & MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD) != 0U &&
+     !std::isfinite(options->lod_pitch_threshold)) ||
+    ((options->fields & MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT) != 0U &&
+     !std::isfinite(options->lod_zoom_shift))
+  ) {
+    mln::core::set_thread_error("tile LOD values must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_MODE) != 0U) {
+    switch (options->lod_mode) {
+      case MLN_TILE_LOD_MODE_DEFAULT:
+      case MLN_TILE_LOD_MODE_DISTANCE:
+        break;
+      default:
+        mln::core::set_thread_error("lod_mode is invalid");
+        return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
 auto validate_lat_lng(mln_lat_lng coordinate) -> mln_status {
   if (
     !std::isfinite(coordinate.latitude) || coordinate.latitude < -90.0 ||
@@ -604,6 +745,122 @@ auto to_native_projection_mode(const mln_projection_mode& mode)
     result.withYSkew(mode.y_skew);
   }
   return result;
+}
+
+auto to_native_debug_options(uint32_t options) -> mbgl::MapDebugOptions {
+  return static_cast<mbgl::MapDebugOptions>(options);
+}
+
+auto from_native_debug_options(mbgl::MapDebugOptions options) -> uint32_t {
+  return static_cast<uint32_t>(options);
+}
+
+auto to_native_north_orientation(uint32_t orientation)
+  -> mbgl::NorthOrientation {
+  switch (orientation) {
+    case MLN_NORTH_ORIENTATION_RIGHT:
+      return mbgl::NorthOrientation::Rightwards;
+    case MLN_NORTH_ORIENTATION_DOWN:
+      return mbgl::NorthOrientation::Downwards;
+    case MLN_NORTH_ORIENTATION_LEFT:
+      return mbgl::NorthOrientation::Leftwards;
+    case MLN_NORTH_ORIENTATION_UP:
+    default:
+      return mbgl::NorthOrientation::Upwards;
+  }
+}
+
+auto from_native_north_orientation(mbgl::NorthOrientation orientation)
+  -> uint32_t {
+  switch (orientation) {
+    case mbgl::NorthOrientation::Rightwards:
+      return MLN_NORTH_ORIENTATION_RIGHT;
+    case mbgl::NorthOrientation::Downwards:
+      return MLN_NORTH_ORIENTATION_DOWN;
+    case mbgl::NorthOrientation::Leftwards:
+      return MLN_NORTH_ORIENTATION_LEFT;
+    case mbgl::NorthOrientation::Upwards:
+    default:
+      return MLN_NORTH_ORIENTATION_UP;
+  }
+}
+
+auto to_native_constrain_mode(uint32_t mode) -> mbgl::ConstrainMode {
+  switch (mode) {
+    case MLN_CONSTRAIN_MODE_NONE:
+      return mbgl::ConstrainMode::None;
+    case MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT:
+      return mbgl::ConstrainMode::WidthAndHeight;
+    case MLN_CONSTRAIN_MODE_SCREEN:
+      return mbgl::ConstrainMode::Screen;
+    case MLN_CONSTRAIN_MODE_HEIGHT_ONLY:
+    default:
+      return mbgl::ConstrainMode::HeightOnly;
+  }
+}
+
+auto from_native_constrain_mode(mbgl::ConstrainMode mode) -> uint32_t {
+  switch (mode) {
+    case mbgl::ConstrainMode::None:
+      return MLN_CONSTRAIN_MODE_NONE;
+    case mbgl::ConstrainMode::WidthAndHeight:
+      return MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT;
+    case mbgl::ConstrainMode::Screen:
+      return MLN_CONSTRAIN_MODE_SCREEN;
+    case mbgl::ConstrainMode::HeightOnly:
+    default:
+      return MLN_CONSTRAIN_MODE_HEIGHT_ONLY;
+  }
+}
+
+auto to_native_viewport_mode(uint32_t mode) -> mbgl::ViewportMode {
+  switch (mode) {
+    case MLN_VIEWPORT_MODE_FLIPPED_Y:
+      return mbgl::ViewportMode::FlippedY;
+    case MLN_VIEWPORT_MODE_DEFAULT:
+    default:
+      return mbgl::ViewportMode::Default;
+  }
+}
+
+auto from_native_viewport_mode(mbgl::ViewportMode mode) -> uint32_t {
+  switch (mode) {
+    case mbgl::ViewportMode::FlippedY:
+      return MLN_VIEWPORT_MODE_FLIPPED_Y;
+    case mbgl::ViewportMode::Default:
+    default:
+      return MLN_VIEWPORT_MODE_DEFAULT;
+  }
+}
+
+auto from_native_edge_insets(const mbgl::EdgeInsets& insets)
+  -> mln_edge_insets {
+  return mln_edge_insets{
+    .top = insets.top(),
+    .left = insets.left(),
+    .bottom = insets.bottom(),
+    .right = insets.right()
+  };
+}
+
+auto to_native_tile_lod_mode(uint32_t mode) -> mbgl::TileLodMode {
+  switch (mode) {
+    case MLN_TILE_LOD_MODE_DISTANCE:
+      return mbgl::TileLodMode::Distance;
+    case MLN_TILE_LOD_MODE_DEFAULT:
+    default:
+      return mbgl::TileLodMode::Default;
+  }
+}
+
+auto from_native_tile_lod_mode(mbgl::TileLodMode mode) -> uint32_t {
+  switch (mode) {
+    case mbgl::TileLodMode::Distance:
+      return MLN_TILE_LOD_MODE_DISTANCE;
+    case mbgl::TileLodMode::Default:
+    default:
+      return MLN_TILE_LOD_MODE_DEFAULT;
+  }
 }
 
 auto from_native_projection_mode(const mbgl::ProjectionMode& mode)
@@ -765,6 +1022,30 @@ auto projection_mode_default() noexcept -> mln_projection_mode {
     .axonometric = false,
     .x_skew = 0,
     .y_skew = 0
+  };
+}
+
+auto map_viewport_options_default() noexcept -> mln_map_viewport_options {
+  return mln_map_viewport_options{
+    .size = sizeof(mln_map_viewport_options),
+    .fields = 0,
+    .north_orientation = MLN_NORTH_ORIENTATION_UP,
+    .constrain_mode = MLN_CONSTRAIN_MODE_HEIGHT_ONLY,
+    .viewport_mode = MLN_VIEWPORT_MODE_DEFAULT,
+    .frustum_offset = {.top = 0, .left = 0, .bottom = 0, .right = 0}
+  };
+}
+
+auto map_tile_options_default() noexcept -> mln_map_tile_options {
+  return mln_map_tile_options{
+    .size = sizeof(mln_map_tile_options),
+    .fields = 0,
+    .prefetch_zoom_delta = 0,
+    .lod_min_radius = 0,
+    .lod_scale = 0,
+    .lod_pitch_threshold = 0,
+    .lod_zoom_shift = 0,
+    .lod_mode = MLN_TILE_LOD_MODE_DEFAULT
   };
 }
 
@@ -1099,6 +1380,204 @@ auto map_set_projection_mode(mln_map* map, const mln_projection_mode* mode)
   }
 
   map->map->setProjectionMode(to_native_projection_mode(*mode));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_debug_options(mln_map* map, uint32_t options) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto options_status = validate_debug_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+  map->map->setDebug(to_native_debug_options(options));
+  return MLN_STATUS_OK;
+}
+
+auto map_get_debug_options(mln_map* map, uint32_t* out_options) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_options == nullptr) {
+    set_thread_error("out_options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_options = from_native_debug_options(map->map->getDebug());
+  return MLN_STATUS_OK;
+}
+
+auto map_set_rendering_stats_view_enabled(mln_map* map, bool enabled)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  map->map->enableRenderingStatsView(enabled);
+  return MLN_STATUS_OK;
+}
+
+auto map_get_rendering_stats_view_enabled(mln_map* map, bool* out_enabled)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_enabled == nullptr) {
+    set_thread_error("out_enabled must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_enabled = map->map->isRenderingStatsViewEnabled();
+  return MLN_STATUS_OK;
+}
+
+auto map_is_fully_loaded(mln_map* map, bool* out_loaded) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_loaded == nullptr) {
+    set_thread_error("out_loaded must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_loaded = map->map->isFullyLoaded();
+  return MLN_STATUS_OK;
+}
+
+auto map_dump_debug_logs(mln_map* map) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  map->map->dumpDebugLogs();
+  return MLN_STATUS_OK;
+}
+
+auto map_get_viewport_options(
+  mln_map* map, mln_map_viewport_options* out_options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    out_options == nullptr ||
+    out_options->size < sizeof(mln_map_viewport_options)
+  ) {
+    set_thread_error("out_options must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto options = map->map->getMapOptions();
+  *out_options = mln_map_viewport_options{
+    .size = sizeof(mln_map_viewport_options),
+    .fields = static_cast<uint32_t>(MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION) |
+              MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE |
+              MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE |
+              MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET,
+    .north_orientation =
+      from_native_north_orientation(options.northOrientation()),
+    .constrain_mode = from_native_constrain_mode(options.constrainMode()),
+    .viewport_mode = from_native_viewport_mode(options.viewportMode()),
+    .frustum_offset = from_native_edge_insets(map->map->getFrustumOffset())
+  };
+  return MLN_STATUS_OK;
+}
+
+auto map_set_viewport_options(
+  mln_map* map, const mln_map_viewport_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto options_status = validate_viewport_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION) != 0U) {
+    map->map->setNorthOrientation(
+      to_native_north_orientation(options->north_orientation)
+    );
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_CONSTRAIN_MODE) != 0U) {
+    map->map->setConstrainMode(
+      to_native_constrain_mode(options->constrain_mode)
+    );
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_VIEWPORT_MODE) != 0U) {
+    map->map->setViewportMode(to_native_viewport_mode(options->viewport_mode));
+  }
+  if ((options->fields & MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET) != 0U) {
+    map->map->setFrustumOffset(to_native_edge_insets(options->frustum_offset));
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_get_tile_options(mln_map* map, mln_map_tile_options* out_options)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    out_options == nullptr || out_options->size < sizeof(mln_map_tile_options)
+  ) {
+    set_thread_error("out_options must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_options = mln_map_tile_options{
+    .size = sizeof(mln_map_tile_options),
+    .fields = static_cast<uint32_t>(MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA) |
+              MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS |
+              MLN_MAP_TILE_OPTION_LOD_SCALE |
+              MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD |
+              MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT | MLN_MAP_TILE_OPTION_LOD_MODE,
+    .prefetch_zoom_delta = map->map->getPrefetchZoomDelta(),
+    .lod_min_radius = map->map->getTileLodMinRadius(),
+    .lod_scale = map->map->getTileLodScale(),
+    .lod_pitch_threshold = map->map->getTileLodPitchThreshold(),
+    .lod_zoom_shift = map->map->getTileLodZoomShift(),
+    .lod_mode = from_native_tile_lod_mode(map->map->getTileLodMode())
+  };
+  return MLN_STATUS_OK;
+}
+
+auto map_set_tile_options(mln_map* map, const mln_map_tile_options* options)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto options_status = validate_tile_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  if ((options->fields & MLN_MAP_TILE_OPTION_PREFETCH_ZOOM_DELTA) != 0U) {
+    map->map->setPrefetchZoomDelta(
+      static_cast<uint8_t>(options->prefetch_zoom_delta)
+    );
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_MIN_RADIUS) != 0U) {
+    map->map->setTileLodMinRadius(options->lod_min_radius);
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_SCALE) != 0U) {
+    map->map->setTileLodScale(options->lod_scale);
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_PITCH_THRESHOLD) != 0U) {
+    map->map->setTileLodPitchThreshold(options->lod_pitch_threshold);
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_ZOOM_SHIFT) != 0U) {
+    map->map->setTileLodZoomShift(options->lod_zoom_shift);
+  }
+  if ((options->fields & MLN_MAP_TILE_OPTION_LOD_MODE) != 0U) {
+    map->map->setTileLodMode(to_native_tile_lod_mode(options->lod_mode));
+  }
   return MLN_STATUS_OK;
 }
 

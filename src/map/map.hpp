@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <thread>
 
@@ -17,6 +18,8 @@ namespace mln::core {
 auto map_options_default() noexcept -> mln_map_options;
 auto camera_options_default() noexcept -> mln_camera_options;
 auto projection_mode_default() noexcept -> mln_projection_mode;
+auto map_viewport_options_default() noexcept -> mln_map_viewport_options;
+auto map_tile_options_default() noexcept -> mln_map_tile_options;
 auto create_map(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) -> mln_status;
@@ -30,6 +33,24 @@ auto map_jump_to(mln_map* map, const mln_camera_options* camera) -> mln_status;
 auto map_get_projection_mode(mln_map* map, mln_projection_mode* out_mode)
   -> mln_status;
 auto map_set_projection_mode(mln_map* map, const mln_projection_mode* mode)
+  -> mln_status;
+auto map_set_debug_options(mln_map* map, uint32_t options) -> mln_status;
+auto map_get_debug_options(mln_map* map, uint32_t* out_options) -> mln_status;
+auto map_set_rendering_stats_view_enabled(mln_map* map, bool enabled)
+  -> mln_status;
+auto map_get_rendering_stats_view_enabled(mln_map* map, bool* out_enabled)
+  -> mln_status;
+auto map_is_fully_loaded(mln_map* map, bool* out_loaded) -> mln_status;
+auto map_dump_debug_logs(mln_map* map) -> mln_status;
+auto map_get_viewport_options(
+  mln_map* map, mln_map_viewport_options* out_options
+) -> mln_status;
+auto map_set_viewport_options(
+  mln_map* map, const mln_map_viewport_options* options
+) -> mln_status;
+auto map_get_tile_options(mln_map* map, mln_map_tile_options* out_options)
+  -> mln_status;
+auto map_set_tile_options(mln_map* map, const mln_map_tile_options* options)
   -> mln_status;
 auto map_pixel_for_lat_lng(
   mln_map* map, mln_lat_lng coordinate, mln_screen_point* out_point

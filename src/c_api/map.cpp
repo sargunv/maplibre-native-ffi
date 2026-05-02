@@ -1,6 +1,7 @@
 #define MLN_BUILDING_C
 
 #include <cstddef>
+#include <cstdint>
 
 #include "map/map.hpp"
 
@@ -17,6 +18,15 @@ auto mln_camera_options_default(void) noexcept -> mln_camera_options {
 
 auto mln_projection_mode_default(void) noexcept -> mln_projection_mode {
   return mln::core::projection_mode_default();
+}
+
+auto mln_map_viewport_options_default(void) noexcept
+  -> mln_map_viewport_options {
+  return mln::core::map_viewport_options_default();
+}
+
+auto mln_map_tile_options_default(void) noexcept -> mln_map_tile_options {
+  return mln::core::map_tile_options_default();
 }
 
 auto mln_map_create(
@@ -86,6 +96,81 @@ auto mln_map_set_projection_mode(
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_set_projection_mode(map, mode);
+  });
+}
+
+auto mln_map_set_debug_options(mln_map* map, uint32_t options) noexcept
+  -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_debug_options(map, options);
+  });
+}
+
+auto mln_map_get_debug_options(mln_map* map, uint32_t* out_options) noexcept
+  -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_debug_options(map, out_options);
+  });
+}
+
+auto mln_map_set_rendering_stats_view_enabled(
+  mln_map* map, bool enabled
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_rendering_stats_view_enabled(map, enabled);
+  });
+}
+
+auto mln_map_get_rendering_stats_view_enabled(
+  mln_map* map, bool* out_enabled
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_rendering_stats_view_enabled(map, out_enabled);
+  });
+}
+
+auto mln_map_is_fully_loaded(mln_map* map, bool* out_loaded) noexcept
+  -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_is_fully_loaded(map, out_loaded);
+  });
+}
+
+auto mln_map_dump_debug_logs(mln_map* map) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_dump_debug_logs(map);
+  });
+}
+
+auto mln_map_get_viewport_options(
+  mln_map* map, mln_map_viewport_options* out_options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_viewport_options(map, out_options);
+  });
+}
+
+auto mln_map_set_viewport_options(
+  mln_map* map, const mln_map_viewport_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_viewport_options(map, options);
+  });
+}
+
+auto mln_map_get_tile_options(
+  mln_map* map, mln_map_tile_options* out_options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_tile_options(map, out_options);
+  });
+}
+
+auto mln_map_set_tile_options(
+  mln_map* map, const mln_map_tile_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_tile_options(map, options);
   });
 }
 
