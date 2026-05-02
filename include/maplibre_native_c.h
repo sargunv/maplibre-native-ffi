@@ -1962,26 +1962,6 @@ MLN_API mln_status mln_vulkan_borrowed_texture_attach(
 ) MLN_NOEXCEPT;
 
 /**
- * Resizes a texture session and advances its generation.
- *
- * Width and height are logical map dimensions. The scale_factor value maps
- * them to physical backend texture or image pixels. Resize clears the last
- * rendered frame.
- *
- * Returns:
- * - MLN_STATUS_OK on success.
- * - MLN_STATUS_INVALID_ARGUMENT when texture is null or not live, dimensions
- *   are zero, scale_factor is non-positive or non-finite, or scaled dimensions
- *   are too large.
- * - MLN_STATUS_INVALID_STATE when the session is detached or a frame is
- *   currently acquired.
- * - MLN_STATUS_UNSUPPORTED when the session uses a caller-owned borrowed
- *   texture; attach a new borrowed texture session instead.
- * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
- *   owner thread.
- * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
- */
-/**
  * Reads the most recently rendered session-owned texture frame into
  * caller-owned storage.
  *
@@ -1999,7 +1979,8 @@ MLN_API mln_status mln_vulkan_borrowed_texture_attach(
  *   is detached, a frame is currently acquired, or readback produces no image.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when the texture session uses a caller-owned target.
+ * - MLN_STATUS_UNSUPPORTED when session is not a texture session or when the
+ *   texture session uses a caller-owned target.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_texture_read_premultiplied_rgba8(
@@ -2077,8 +2058,8 @@ MLN_API mln_status mln_vulkan_owned_texture_acquire_frame(
  *   acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
- *   this build.
+ * - MLN_STATUS_UNSUPPORTED when session is not a texture session or when Metal
+ *   texture sessions are not supported by this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_metal_owned_texture_release_frame(
@@ -2101,8 +2082,8 @@ MLN_API mln_status mln_metal_owned_texture_release_frame(
  *   acquired.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
- * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
- *   this build.
+ * - MLN_STATUS_UNSUPPORTED when session is not a texture session or when Vulkan
+ *   texture sessions are not supported by this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_vulkan_owned_texture_release_frame(

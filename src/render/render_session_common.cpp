@@ -34,9 +34,9 @@ auto render_sessions() -> std::unordered_map<
 
 auto has_backend(const mln_render_session* session) -> bool {
   if (session->kind == mln::core::RenderSessionKind::Surface) {
-    return session->surface_backend != nullptr;
+    return session->surface.backend != nullptr;
   }
-  return session->texture_backend != nullptr;
+  return session->texture.backend != nullptr;
 }
 
 auto validate_dimensions(
@@ -55,9 +55,9 @@ auto validate_dimensions(
 auto renderer_backend(mln_render_session* session)
   -> mbgl::gfx::RendererBackend* {
   if (session->kind == mln::core::RenderSessionKind::Surface) {
-    return session->surface_backend.get();
+    return session->surface.backend.get();
   }
-  return session->texture_backend->getRendererBackend();
+  return session->texture.backend->getRendererBackend();
 }
 
 }  // namespace
@@ -126,7 +126,7 @@ auto attach_render_session(
     set_thread_error(messages.null_session);
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  const auto output_status = validate_render_session_attach_output(
+  const auto output_status = validate_attach_output(
     out_session, messages.null_output, messages.non_null_output
   );
   if (output_status != MLN_STATUS_OK) {
@@ -171,20 +171,22 @@ auto render_session_resize(
   if (dimensions_status != MLN_STATUS_OK) {
     return dimensions_status;
   }
-  if (session->kind == RenderSessionKind::Texture && session->acquired) {
+  if (
+    session->kind == RenderSessionKind::Texture && session->texture.acquired
+  ) {
     set_thread_error("cannot resize while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
   }
   if (
     session->kind == RenderSessionKind::Texture &&
-    session->mode == TextureSessionMode::Borrowed
+    session->texture.mode == TextureSessionMode::Borrowed
   ) {
     set_thread_error(
       "borrowed texture sessions cannot be resized; attach a new target"
     );
     return MLN_STATUS_UNSUPPORTED;
   }
-  const auto physical_status = validate_render_session_physical_size(
+  const auto physical_status = validate_physical_size(
     width, height, scale_factor,
     session->kind == RenderSessionKind::Surface
       ? "scaled surface dimensions are too large"
@@ -194,21 +196,19 @@ auto render_session_resize(
     return physical_status;
   }
 
-  const auto physical_width =
-    render_session_physical_dimension(width, scale_factor);
-  const auto physical_height =
-    render_session_physical_dimension(height, scale_factor);
+  const auto physical_width = physical_dimension(width, scale_factor);
+  const auto physical_height = physical_dimension(height, scale_factor);
   if (session->kind == RenderSessionKind::Surface) {
-    if (session->resize_surface_backend != nullptr) {
-      session->resize_surface_backend(session, physical_width, physical_height);
+    if (session->surface.resize_backend != nullptr) {
+      session->surface.resize_backend(session, physical_width, physical_height);
     }
   } else {
-    session->texture_backend->setSize(
+    session->texture.backend->setSize(
       mbgl::Size{physical_width, physical_height}
     );
-    session->rendered_native_texture = nullptr;
-    session->acquired_native_texture = nullptr;
-    session->acquired_frame_kind = TextureSessionFrameKind::None;
+    session->texture.rendered_native_texture = nullptr;
+    session->texture.acquired_native_texture = nullptr;
+    session->texture.acquired_frame_kind = TextureSessionFrameKind::None;
   }
   if (auto* native_map = map_native(session->map); native_map != nullptr) {
     native_map->setSize(mbgl::Size{width, height});
@@ -229,7 +229,9 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->kind == RenderSessionKind::Texture && session->acquired) {
+  if (
+    session->kind == RenderSessionKind::Texture && session->texture.acquired
+  ) {
     set_thread_error("cannot render while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
   }
@@ -240,8 +242,8 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
     return MLN_STATUS_INVALID_STATE;
   }
 
-  if (session->prepare_render_resources != nullptr) {
-    session->prepare_render_resources(session);
+  if (session->texture.prepare_render_resources != nullptr) {
+    session->texture.prepare_render_resources(session);
   }
   auto* backend = renderer_backend(session);
   if (backend == nullptr) {
@@ -260,8 +262,8 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
   }
 
   session->renderer->render(update);
-  if (session->after_render != nullptr) {
-    const auto after_status = session->after_render(session);
+  if (session->texture.after_render != nullptr) {
+    const auto after_status = session->texture.after_render(session);
     if (after_status != MLN_STATUS_OK) {
       return after_status;
     }
@@ -275,7 +277,9 @@ auto render_session_detach(mln_render_session* session) -> mln_status {
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->kind == RenderSessionKind::Texture && session->acquired) {
+  if (
+    session->kind == RenderSessionKind::Texture && session->texture.acquired
+  ) {
     set_thread_error("cannot detach while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
   }
@@ -286,13 +290,13 @@ auto render_session_detach(mln_render_session* session) -> mln_status {
     return detach_status;
   }
   session->renderer.reset();
-  session->surface_backend.reset();
-  session->texture_backend.reset();
+  session->surface.backend.reset();
+  session->texture.backend.reset();
   session->attached = false;
   session->rendered_generation = 0;
-  session->rendered_native_texture = nullptr;
-  session->acquired_native_texture = nullptr;
-  session->acquired_frame_kind = TextureSessionFrameKind::None;
+  session->texture.rendered_native_texture = nullptr;
+  session->texture.acquired_native_texture = nullptr;
+  session->texture.acquired_frame_kind = TextureSessionFrameKind::None;
   ++session->generation;
   return MLN_STATUS_OK;
 }
@@ -302,7 +306,9 @@ auto render_session_destroy(mln_render_session* session) -> mln_status {
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  if (session->kind == RenderSessionKind::Texture && session->acquired) {
+  if (
+    session->kind == RenderSessionKind::Texture && session->texture.acquired
+  ) {
     set_thread_error("cannot destroy while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
   }

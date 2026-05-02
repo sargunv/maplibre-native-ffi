@@ -84,6 +84,46 @@ test "owned texture lifecycle and render update" {
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_render_session_destroy(texture.?));
 }
 
+test "render session maintenance follows renderer lifetime" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_render_session_reduce_memory_use(null));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_render_session_clear_data(null));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_render_session_dump_debug_logs(null));
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_owned_texture_descriptor_default();
+    descriptor.width = 64;
+    descriptor.height = 64;
+
+    var session: ?*c.mln_render_session = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_owned_texture_attach(map, &descriptor, &session));
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_reduce_memory_use(session.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_clear_data(session.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_dump_debug_logs(session.?));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(session.?));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_reduce_memory_use(session.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_dump_debug_logs(session.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_clear_data(session.?));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_detach(session.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_reduce_memory_use(session.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_clear_data(session.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_dump_debug_logs(session.?));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(session.?));
+}
+
 test "owned texture reads premultiplied rgba8" {
     try support.suppressLogs();
     defer support.restoreLogs();

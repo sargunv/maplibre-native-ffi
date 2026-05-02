@@ -25,6 +25,25 @@ using SurfaceSessionResizeCallback =
 using TextureSessionPrepareCallback = void (*)(mln_render_session*);
 using TextureSessionAfterRenderCallback = mln_status (*)(mln_render_session*);
 
+struct RenderSurfaceState {
+  std::unique_ptr<mbgl::gfx::RendererBackend> backend = nullptr;
+  SurfaceSessionResizeCallback resize_backend = nullptr;
+};
+
+struct RenderTextureState {
+  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend = nullptr;
+  uint64_t next_frame_id = 1;
+  uint64_t acquired_frame_id = 0;
+  bool acquired = false;
+  TextureSessionFrameKind acquired_frame_kind = TextureSessionFrameKind::None;
+  TextureSessionApi api_kind = TextureSessionApi::Generic;
+  TextureSessionMode mode = TextureSessionMode::Owned;
+  void* rendered_native_texture = nullptr;
+  void* acquired_native_texture = nullptr;
+  TextureSessionPrepareCallback prepare_render_resources = nullptr;
+  TextureSessionAfterRenderCallback after_render = nullptr;
+};
+
 }  // namespace mln::core
 
 struct mln_render_session {
@@ -41,22 +60,8 @@ struct mln_render_session {
   bool attached = true;
 
   std::unique_ptr<mbgl::Renderer> renderer = nullptr;
-
-  std::unique_ptr<mbgl::gfx::RendererBackend> surface_backend = nullptr;
-  mln::core::SurfaceSessionResizeCallback resize_surface_backend = nullptr;
-
-  std::unique_ptr<mbgl::gfx::HeadlessBackend> texture_backend = nullptr;
-  uint64_t next_frame_id = 1;
-  uint64_t acquired_frame_id = 0;
-  bool acquired = false;
-  mln::core::TextureSessionFrameKind acquired_frame_kind =
-    mln::core::TextureSessionFrameKind::None;
-  mln::core::TextureSessionApi api_kind = mln::core::TextureSessionApi::Generic;
-  mln::core::TextureSessionMode mode = mln::core::TextureSessionMode::Owned;
-  void* rendered_native_texture = nullptr;
-  void* acquired_native_texture = nullptr;
-  mln::core::TextureSessionPrepareCallback prepare_render_resources = nullptr;
-  mln::core::TextureSessionAfterRenderCallback after_render = nullptr;
+  mln::core::RenderSurfaceState surface;
+  mln::core::RenderTextureState texture;
 };
 
 namespace mln::core {
@@ -77,7 +82,7 @@ auto validate_live_attached_render_session(mln_render_session* session)
 auto erase_render_session(mln_render_session* session)
   -> std::unique_ptr<mln_render_session>;
 
-inline auto validate_render_session_attach_output(
+inline auto validate_attach_output(
   mln_render_session** out_session, const char* null_message,
   const char* not_null_message
 ) -> mln_status {
@@ -92,13 +97,12 @@ inline auto validate_render_session_attach_output(
   return MLN_STATUS_OK;
 }
 
-inline auto render_session_physical_dimension(
-  uint32_t logical, double scale_factor
-) -> uint32_t {
+inline auto physical_dimension(uint32_t logical, double scale_factor)
+  -> uint32_t {
   return static_cast<uint32_t>(std::ceil(logical * scale_factor));
 }
 
-inline auto validate_render_session_physical_size(
+inline auto validate_physical_size(
   uint32_t width, uint32_t height, double scale_factor,
   const char* too_large_message
 ) -> mln_status {

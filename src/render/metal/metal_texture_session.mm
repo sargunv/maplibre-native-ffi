@@ -71,7 +71,8 @@ auto validate_borrowed_descriptor(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   const auto physical_status = mln::core::validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled texture dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
@@ -170,7 +171,7 @@ auto validate_vulkan_borrowed_descriptor(
 auto finish_metal_render(mln_render_session* texture) -> mln_status {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
   auto& backend =
-    static_cast<mln::core::MetalTextureBackend&>(*texture->texture_backend);
+    static_cast<mln::core::MetalTextureBackend&>(*texture->texture.backend);
   auto* rendered_texture = backend.metal_texture();
   if (rendered_texture == nullptr) {
     mln::core::set_thread_error(
@@ -178,7 +179,7 @@ auto finish_metal_render(mln_render_session* texture) -> mln_status {
     );
     return MLN_STATUS_INVALID_STATE;
   }
-  texture->rendered_native_texture = rendered_texture;
+  texture->texture.rendered_native_texture = rendered_texture;
   return MLN_STATUS_OK;
 }
 
@@ -186,7 +187,7 @@ auto fill_frame(
   mln_render_session* texture, mln_metal_owned_texture_frame* out_frame
 ) -> mln_status {
   auto* metal_texture =
-    static_cast<MTL::Texture*>(texture->rendered_native_texture);
+    static_cast<MTL::Texture*>(texture->texture.rendered_native_texture);
   if (metal_texture == nullptr) {
     mln::core::set_thread_error("rendered Metal texture is not available");
     return MLN_STATUS_INVALID_STATE;
@@ -198,7 +199,7 @@ auto fill_frame(
     .width = texture->physical_width,
     .height = texture->physical_height,
     .scale_factor = texture->scale_factor,
-    .frame_id = texture->next_frame_id,
+    .frame_id = texture->texture.next_frame_id,
     .texture = metal_texture,
     .device = metal_texture->device(),
     .pixel_format = static_cast<uint64_t>(metal_texture->pixelFormat())
@@ -233,7 +234,7 @@ auto metal_borrowed_texture_descriptor_default() noexcept
 
 auto metal_owned_texture_attach(
   mln_map* map, const mln_metal_owned_texture_descriptor* descriptor,
-  mln_render_session** out_texture
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -243,7 +244,10 @@ auto metal_owned_texture_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_attach_output(out_texture);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
@@ -255,7 +259,8 @@ auto metal_owned_texture_attach(
   session->height = descriptor->height;
   session->scale_factor = descriptor->scale_factor;
   const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled texture dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
@@ -264,19 +269,26 @@ auto metal_owned_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->api_kind = TextureSessionApi::Metal;
-  session->mode = TextureSessionMode::Owned;
-  session->texture_backend = std::make_unique<MetalTextureBackend>(
+  session->texture.api_kind = TextureSessionApi::Metal;
+  session->texture.mode = TextureSessionMode::Owned;
+  session->texture.backend = std::make_unique<MetalTextureBackend>(
     static_cast<MTL::Device*>(descriptor->device),
     mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->after_render = finish_metal_render;
-  return texture_attach_session(std::move(session), out_texture);
+  session->texture.after_render = finish_metal_render;
+  return attach_render_session(
+    std::move(session), out_session, RenderSessionKind::Texture,
+    RenderSessionAttachMessages{
+      .null_session = "texture session must not be null",
+      .null_output = "out_session must not be null",
+      .non_null_output = "out_session must point to a null handle"
+    }
+  );
 }
 
 auto metal_borrowed_texture_attach(
   mln_map* map, const mln_metal_borrowed_texture_descriptor* descriptor,
-  mln_render_session** out_texture
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -286,7 +298,10 @@ auto metal_borrowed_texture_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_attach_output(out_texture);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
@@ -301,14 +316,21 @@ auto metal_borrowed_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->api_kind = TextureSessionApi::Metal;
-  session->mode = TextureSessionMode::Borrowed;
-  session->texture_backend = std::make_unique<MetalTextureBackend>(
+  session->texture.api_kind = TextureSessionApi::Metal;
+  session->texture.mode = TextureSessionMode::Borrowed;
+  session->texture.backend = std::make_unique<MetalTextureBackend>(
     static_cast<MTL::Texture*>(descriptor->texture),
     mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->after_render = finish_metal_render;
-  return texture_attach_session(std::move(session), out_texture);
+  session->texture.after_render = finish_metal_render;
+  return attach_render_session(
+    std::move(session), out_session, RenderSessionKind::Texture,
+    RenderSessionAttachMessages{
+      .null_session = "texture session must not be null",
+      .null_output = "out_session must not be null",
+      .non_null_output = "out_session must point to a null handle"
+    }
+  );
 }
 
 auto metal_owned_texture_acquire_frame(
@@ -325,7 +347,7 @@ auto metal_owned_texture_acquire_frame(
     set_thread_error("out_frame must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (texture->acquired) {
+  if (texture->texture.acquired) {
     set_thread_error("a texture frame is already acquired");
     return MLN_STATUS_INVALID_STATE;
   }
@@ -334,8 +356,8 @@ auto metal_owned_texture_acquire_frame(
     return MLN_STATUS_INVALID_STATE;
   }
   if (
-    texture->mode != TextureSessionMode::Owned ||
-    texture->api_kind != TextureSessionApi::Metal
+    texture->texture.mode != TextureSessionMode::Owned ||
+    texture->texture.api_kind != TextureSessionApi::Metal
   ) {
     set_thread_error("texture session cannot expose a Metal texture frame");
     return MLN_STATUS_UNSUPPORTED;
@@ -345,11 +367,12 @@ auto metal_owned_texture_acquire_frame(
   if (frame_status != MLN_STATUS_OK) {
     return frame_status;
   }
-  texture->acquired_native_texture = texture->rendered_native_texture;
-  texture->acquired = true;
-  texture->acquired_frame_id = out_frame->frame_id;
-  texture->acquired_frame_kind = TextureSessionFrameKind::MetalOwned;
-  ++texture->next_frame_id;
+  texture->texture.acquired_native_texture =
+    texture->texture.rendered_native_texture;
+  texture->texture.acquired = true;
+  texture->texture.acquired_frame_id = out_frame->frame_id;
+  texture->texture.acquired_frame_kind = TextureSessionFrameKind::MetalOwned;
+  ++texture->texture.next_frame_id;
   return MLN_STATUS_OK;
 }
 
@@ -365,8 +388,8 @@ auto metal_owned_texture_release_frame(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   if (
-    !texture->acquired ||
-    texture->acquired_frame_kind != TextureSessionFrameKind::MetalOwned
+    !texture->texture.acquired ||
+    texture->texture.acquired_frame_kind != TextureSessionFrameKind::MetalOwned
   ) {
     set_thread_error("no texture frame is currently acquired");
     return MLN_STATUS_INVALID_STATE;
@@ -375,14 +398,14 @@ auto metal_owned_texture_release_frame(
     set_thread_error("frame generation does not match acquired frame");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (frame->frame_id != texture->acquired_frame_id) {
+  if (frame->frame_id != texture->texture.acquired_frame_id) {
     set_thread_error("frame identity does not match acquired frame");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  texture->acquired = false;
-  texture->acquired_frame_id = 0;
-  texture->acquired_frame_kind = TextureSessionFrameKind::None;
-  texture->acquired_native_texture = nullptr;
+  texture->texture.acquired = false;
+  texture->texture.acquired_frame_id = 0;
+  texture->texture.acquired_frame_kind = TextureSessionFrameKind::None;
+  texture->texture.acquired_native_texture = nullptr;
   return MLN_STATUS_OK;
 }
 
@@ -423,7 +446,7 @@ auto vulkan_borrowed_texture_descriptor_default() noexcept
 
 auto vulkan_owned_texture_attach(
   mln_map* map, const mln_vulkan_owned_texture_descriptor* descriptor,
-  mln_render_session** out_texture
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -433,12 +456,16 @@ auto vulkan_owned_texture_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_attach_output(out_texture);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
   const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled texture dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
@@ -449,7 +476,7 @@ auto vulkan_owned_texture_attach(
 
 auto vulkan_borrowed_texture_attach(
   mln_map* map, const mln_vulkan_borrowed_texture_descriptor* descriptor,
-  mln_render_session** out_texture
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -460,12 +487,16 @@ auto vulkan_borrowed_texture_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_attach_output(out_texture);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
   const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled texture dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;

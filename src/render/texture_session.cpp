@@ -69,49 +69,33 @@ auto texture_image_info_default() noexcept -> mln_texture_image_info {
   };
 }
 
-auto validate_attach_output(mln_render_session** out_texture) -> mln_status {
-  return validate_render_session_attach_output(
-    out_texture, "out_texture must not be null",
-    "out_texture must point to a null handle"
-  );
-}
-
 auto validate_texture(mln_render_session* texture) -> mln_status {
-  return validate_render_session(texture);
+  const auto status = validate_render_session(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (texture->kind != RenderSessionKind::Texture) {
+    set_thread_error("render session is not a texture session");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  return MLN_STATUS_OK;
 }
 
 auto validate_live_attached_texture(mln_render_session* texture) -> mln_status {
-  return validate_live_attached_render_session(texture);
-}
-
-auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t {
-  return render_session_physical_dimension(logical, scale_factor);
-}
-
-auto validate_physical_size(
-  uint32_t width, uint32_t height, double scale_factor
-) -> mln_status {
-  return validate_render_session_physical_size(
-    width, height, scale_factor, "scaled texture dimensions are too large"
-  );
-}
-
-auto texture_attach_session(
-  std::unique_ptr<mln_render_session> session, mln_render_session** out_texture
-) -> mln_status {
-  return attach_render_session(
-    std::move(session), out_texture, RenderSessionKind::Texture,
-    RenderSessionAttachMessages{
-      .null_session = "texture session must not be null",
-      .null_output = "out_texture must not be null",
-      .non_null_output = "out_texture must point to a null handle"
-    }
-  );
+  const auto status = validate_texture(texture);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!texture->attached || texture->texture.backend == nullptr) {
+    set_thread_error("render session is detached");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  return MLN_STATUS_OK;
 }
 
 auto owned_texture_attach(
   mln_map* map, const mln_owned_texture_descriptor* descriptor,
-  mln_render_session** out_texture
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -121,12 +105,16 @@ auto owned_texture_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_attach_output(out_texture);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
   const auto physical_status = validate_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled texture dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
@@ -142,13 +130,20 @@ auto owned_texture_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->api_kind = TextureSessionApi::Generic;
-  session->mode = TextureSessionMode::Owned;
-  session->texture_backend = mbgl::gfx::HeadlessBackend::Create(
+  session->texture.api_kind = TextureSessionApi::Generic;
+  session->texture.mode = TextureSessionMode::Owned;
+  session->texture.backend = mbgl::gfx::HeadlessBackend::Create(
     mbgl::Size{session->physical_width, session->physical_height},
     mbgl::gfx::Renderable::SwapBehaviour::Flush, mbgl::gfx::ContextMode::Unique
   );
-  return texture_attach_session(std::move(session), out_texture);
+  return attach_render_session(
+    std::move(session), out_session, RenderSessionKind::Texture,
+    RenderSessionAttachMessages{
+      .null_session = "texture session must not be null",
+      .null_output = "out_session must not be null",
+      .non_null_output = "out_session must point to a null handle"
+    }
+  );
 }
 
 auto texture_read_premultiplied_rgba8(
@@ -163,11 +158,11 @@ auto texture_read_premultiplied_rgba8(
     set_thread_error("out_info must not be null and must have a valid size");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (texture->acquired) {
+  if (texture->texture.acquired) {
     set_thread_error("cannot read while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
   }
-  if (texture->mode != TextureSessionMode::Owned) {
+  if (texture->texture.mode != TextureSessionMode::Owned) {
     set_thread_error("texture session does not support CPU readback");
     return MLN_STATUS_UNSUPPORTED;
   }
@@ -204,7 +199,7 @@ auto texture_read_premultiplied_rgba8(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  auto* renderer_backend = texture->texture_backend->getRendererBackend();
+  auto* renderer_backend = texture->texture.backend->getRendererBackend();
   if (renderer_backend == nullptr) {
     set_thread_error("texture session renderer backend is not available");
     return MLN_STATUS_INVALID_STATE;
@@ -212,7 +207,7 @@ auto texture_read_premultiplied_rgba8(
   auto guard = mbgl::gfx::BackendScope{
     *renderer_backend, mbgl::gfx::BackendScope::ScopeType::Implicit
   };
-  auto image = texture->texture_backend->readStillImage();
+  auto image = texture->texture.backend->readStillImage();
   if (!image.valid()) {
     set_thread_error("texture readback did not produce an image");
     return MLN_STATUS_INVALID_STATE;

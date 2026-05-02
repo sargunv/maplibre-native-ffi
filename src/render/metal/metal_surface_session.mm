@@ -228,7 +228,7 @@ class MetalSurfaceBackend final : public mbgl::mtl::RendererBackend,
 void resize_metal_surface(
   mln_render_session* surface, uint32_t physical_width, uint32_t physical_height
 ) {
-  static_cast<MetalSurfaceBackend&>(*surface->surface_backend)
+  static_cast<MetalSurfaceBackend&>(*surface->surface.backend)
     .setSize(mbgl::Size{physical_width, physical_height});
 }
 
@@ -270,7 +270,7 @@ namespace mln::core {
 
 auto metal_surface_attach(
   mln_map* map, const mln_metal_surface_descriptor* descriptor,
-  mln_render_session** out_surface
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -280,12 +280,16 @@ auto metal_surface_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_surface_attach_output(out_surface);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
-  const auto physical_status = validate_surface_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled surface dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
@@ -298,21 +302,28 @@ auto metal_surface_attach(
   session->height = descriptor->height;
   session->scale_factor = descriptor->scale_factor;
   session->physical_width =
-    surface_physical_dimension(descriptor->width, descriptor->scale_factor);
+    physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
-    surface_physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->surface_backend = std::make_unique<MetalSurfaceBackend>(
+    physical_dimension(descriptor->height, descriptor->scale_factor);
+  session->surface.backend = std::make_unique<MetalSurfaceBackend>(
     static_cast<CA::MetalLayer*>(descriptor->layer),
     static_cast<MTL::Device*>(descriptor->device),
     mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->resize_surface_backend = resize_metal_surface;
-  return surface_attach_session(std::move(session), out_surface);
+  session->surface.resize_backend = resize_metal_surface;
+  return attach_render_session(
+    std::move(session), out_session, RenderSessionKind::Surface,
+    RenderSessionAttachMessages{
+      .null_session = "surface session must not be null",
+      .null_output = "out_session must not be null",
+      .non_null_output = "out_session must point to a null handle"
+    }
+  );
 }
 
 auto vulkan_surface_attach(
   mln_map* map, const mln_vulkan_surface_descriptor* descriptor,
-  mln_render_session** out_surface
+  mln_render_session** out_session
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -322,12 +333,16 @@ auto vulkan_surface_attach(
   if (descriptor_status != MLN_STATUS_OK) {
     return descriptor_status;
   }
-  const auto output_status = validate_surface_attach_output(out_surface);
+  const auto output_status = validate_attach_output(
+    out_session, "out_session must not be null",
+    "out_session must point to a null handle"
+  );
   if (output_status != MLN_STATUS_OK) {
     return output_status;
   }
-  const auto physical_status = validate_surface_physical_size(
-    descriptor->width, descriptor->height, descriptor->scale_factor
+  const auto physical_status = validate_physical_size(
+    descriptor->width, descriptor->height, descriptor->scale_factor,
+    "scaled surface dimensions are too large"
   );
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
