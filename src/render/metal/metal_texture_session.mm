@@ -3,7 +3,6 @@
 
 #include <mbgl/util/size.hpp>
 
-#include <Foundation/NSSharedPtr.hpp>
 #include <Metal/MTLDevice.hpp>
 #include <Metal/MTLPixelFormat.hpp>
 #include <Metal/MTLTexture.hpp>
@@ -160,6 +159,7 @@ auto metal_texture_attach(
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->backend_kind = TextureSessionBackend::Metal;
+  session->mode = TextureSessionMode::Native;
   session->backend = std::make_unique<MetalTextureBackend>(
     static_cast<MTL::Device*>(descriptor->device),
     mbgl::Size{session->physical_width, session->physical_height}
@@ -190,42 +190,16 @@ auto shared_texture_attach(
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
   }
-  if (
-    descriptor->required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
-    descriptor->required_handle_type != MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE
-  ) {
-    set_thread_error("requested shared texture handle type is unsupported");
+  if (descriptor->required_export_type == MLN_SHARED_TEXTURE_EXPORT_NONE) {
+    set_thread_error("shared texture export type must be specified");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (descriptor->required_export_type != MLN_SHARED_TEXTURE_EXPORT_IOSURFACE) {
+    set_thread_error("requested shared texture export type is unsupported");
     return MLN_STATUS_UNSUPPORTED;
   }
-
-  auto default_device = NS::SharedPtr<MTL::Device>{};
-  auto* device = static_cast<MTL::Device*>(descriptor->device);
-  if (device == nullptr) {
-    default_device = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
-    device = default_device.get();
-  }
-  if (device == nullptr) {
-    set_thread_error("Metal system default device is not available");
-    return MLN_STATUS_UNSUPPORTED;
-  }
-
-  auto session = std::make_unique<mln_texture_session>();
-  session->map = map;
-  session->owner_thread = map_owner_thread(map);
-  session->width = descriptor->width;
-  session->height = descriptor->height;
-  session->scale_factor = descriptor->scale_factor;
-  session->physical_width =
-    physical_dimension(descriptor->width, descriptor->scale_factor);
-  session->physical_height =
-    physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend_kind = TextureSessionBackend::Metal;
-  session->shared_required_handle_type = descriptor->required_handle_type;
-  session->backend = std::make_unique<MetalTextureBackend>(
-    device, mbgl::Size{session->physical_width, session->physical_height}
-  );
-  session->after_render = finish_metal_render;
-  return texture_attach_session(std::move(session), out_texture);
+  set_thread_error("IOSurface shared texture sessions are not supported yet");
+  return MLN_STATUS_UNSUPPORTED;
 }
 
 auto metal_texture_acquire_frame(
@@ -248,6 +222,10 @@ auto metal_texture_acquire_frame(
   if (texture->rendered_generation != texture->generation) {
     set_thread_error("no rendered frame is available for this generation");
     return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->mode != TextureSessionMode::Native) {
+    set_thread_error("texture session cannot expose a Metal texture frame");
+    return MLN_STATUS_UNSUPPORTED;
   }
 
   const auto frame_status = fill_frame(texture, out_frame);
@@ -314,16 +292,17 @@ auto texture_acquire_shared_frame(
     set_thread_error("no rendered frame is available for this generation");
     return MLN_STATUS_INVALID_STATE;
   }
-  if (texture->backend_kind != TextureSessionBackend::Metal) {
+  if (
+    texture->mode != TextureSessionMode::Shared ||
+    texture->backend_kind != TextureSessionBackend::Metal
+  ) {
     set_thread_error("texture session cannot expose a shared texture frame");
     return MLN_STATUS_UNSUPPORTED;
   }
   if (
-    texture->shared_required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
-    texture->shared_required_handle_type !=
-      MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE
+    texture->shared_required_export_type != MLN_SHARED_TEXTURE_EXPORT_IOSURFACE
   ) {
-    set_thread_error("requested shared texture handle type is unsupported");
+    set_thread_error("requested shared texture export type is unsupported");
     return MLN_STATUS_UNSUPPORTED;
   }
 
@@ -342,12 +321,16 @@ auto texture_acquire_shared_frame(
     .scale_factor = texture->scale_factor,
     .frame_id = texture->next_frame_id,
     .producer_backend = MLN_TEXTURE_BACKEND_METAL,
-    .native_handle_type = MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE,
     .native_handle = metal_texture,
     .native_view = nullptr,
     .native_device = metal_texture->device(),
-    .export_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
+    .export_type = MLN_SHARED_TEXTURE_EXPORT_IOSURFACE,
     .export_handle = nullptr,
+    .export_fd = -1,
+    .dma_buf_drm_format = 0,
+    .dma_buf_drm_modifier = 0,
+    .dma_buf_plane_offset = 0,
+    .dma_buf_plane_stride = 0,
     .format = static_cast<uint64_t>(metal_texture->pixelFormat()),
     .layout = 0,
     .plane = 0

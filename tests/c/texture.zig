@@ -30,8 +30,11 @@ pub fn expectDescriptorDefaults() !void {
     try testing.expect(shared.width > 0);
     try testing.expect(shared.height > 0);
     try testing.expect(shared.scale_factor > 0);
-    try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_NONE), shared.required_handle_type);
+    try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_EXPORT_NONE), shared.required_export_type);
     try testing.expect(shared.device == null);
+    try testing.expect(shared.instance == null);
+    try testing.expect(shared.physical_device == null);
+    try testing.expect(shared.graphics_queue == null);
 
     const image_info = c.mln_texture_image_info_default();
     try testing.expectEqual(@as(@TypeOf(image_info.size), @sizeOf(c.mln_texture_image_info)), image_info.size);
@@ -50,12 +53,16 @@ pub fn emptySharedFrame() c.mln_shared_texture_frame {
         .scale_factor = 0,
         .frame_id = 0,
         .producer_backend = c.MLN_TEXTURE_BACKEND_NONE,
-        .native_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_NONE,
         .native_handle = null,
         .native_view = null,
         .native_device = null,
-        .export_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_NONE,
+        .export_type = c.MLN_SHARED_TEXTURE_EXPORT_NONE,
         .export_handle = null,
+        .export_fd = -1,
+        .dma_buf_drm_format = 0,
+        .dma_buf_drm_modifier = 0,
+        .dma_buf_plane_offset = 0,
+        .dma_buf_plane_stride = 0,
         .format = 0,
         .layout = 0,
         .plane = 0,
@@ -262,6 +269,29 @@ pub fn expectSharedFrameMetadata(comptime Backend: type) !void {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_release_shared_frame(fixture.texture, &frame));
     frame_acquired = false;
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_texture_release_shared_frame(fixture.texture, &frame));
+}
+
+pub fn expectNativeTextureRejectsSharedAcquireAndReadback(comptime Backend: type) !void {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+    var fixture = try Backend.Fixture.create(map);
+    defer fixture.destroy();
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(fixture.texture));
+
+    var shared_frame = emptySharedFrame();
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_acquire_shared_frame(fixture.texture, &shared_frame));
+
+    var image_info = c.mln_texture_image_info_default();
+    var pixel: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_read_premultiplied_rgba8(fixture.texture, pixel[0..].ptr, pixel.len, &image_info));
 }
 
 pub fn expectRenderObserverEvents(comptime Backend: type) !void {

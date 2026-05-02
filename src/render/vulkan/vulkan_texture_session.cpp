@@ -42,6 +42,41 @@ auto validate_descriptor(const mln_vulkan_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
+auto vulkan_descriptor_from_shared(
+  const mln_shared_texture_descriptor& descriptor
+) -> mln_vulkan_texture_descriptor {
+  return mln_vulkan_texture_descriptor{
+    .size = sizeof(mln_vulkan_texture_descriptor),
+    .width = descriptor.width,
+    .height = descriptor.height,
+    .scale_factor = descriptor.scale_factor,
+    .instance = descriptor.instance,
+    .physical_device = descriptor.physical_device,
+    .device = descriptor.device,
+    .graphics_queue = descriptor.graphics_queue,
+    .graphics_queue_family_index = descriptor.graphics_queue_family_index,
+  };
+}
+
+auto validate_shared_vulkan_descriptor(
+  const mln_shared_texture_descriptor* descriptor
+) -> mln_status {
+  if (descriptor->required_export_type == MLN_SHARED_TEXTURE_EXPORT_NONE) {
+    mln::core::set_thread_error("shared texture export type must be specified");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (descriptor->required_export_type != MLN_SHARED_TEXTURE_EXPORT_DMA_BUF) {
+    mln::core::set_thread_error(
+      "requested shared texture export type is unsupported"
+    );
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  mln::core::set_thread_error(
+    "DMA-BUF shared texture sessions are not supported yet"
+  );
+  return MLN_STATUS_UNSUPPORTED;
+}
+
 auto validate_metal_descriptor(const mln_metal_texture_descriptor* descriptor)
   -> mln_status {
   if (descriptor == nullptr) {
@@ -205,6 +240,7 @@ auto vulkan_texture_attach(
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->backend_kind = TextureSessionBackend::Vulkan;
+  session->mode = TextureSessionMode::Native;
   session->backend = std::make_unique<VulkanTextureBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
@@ -234,8 +270,11 @@ auto shared_texture_attach(
   if (physical_status != MLN_STATUS_OK) {
     return physical_status;
   }
-  set_thread_error("shared texture sessions are not supported by this build");
-  return MLN_STATUS_UNSUPPORTED;
+  const auto shared_status = validate_shared_vulkan_descriptor(descriptor);
+  if (shared_status != MLN_STATUS_OK) {
+    return shared_status;
+  }
+  return MLN_STATUS_OK;
 }
 
 auto vulkan_texture_acquire_frame(
@@ -258,6 +297,10 @@ auto vulkan_texture_acquire_frame(
   if (texture->rendered_generation != texture->generation) {
     set_thread_error("no rendered frame is available for this generation");
     return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->mode != TextureSessionMode::Native) {
+    set_thread_error("texture session cannot expose a Vulkan texture frame");
+    return MLN_STATUS_UNSUPPORTED;
   }
 
   // The Vulkan acquire path is only valid for sessions created by
@@ -336,16 +379,17 @@ auto texture_acquire_shared_frame(
     set_thread_error("no rendered frame is available for this generation");
     return MLN_STATUS_INVALID_STATE;
   }
-  if (texture->backend_kind != TextureSessionBackend::Vulkan) {
+  if (
+    texture->mode != TextureSessionMode::Shared ||
+    texture->backend_kind != TextureSessionBackend::Vulkan
+  ) {
     set_thread_error("texture session cannot expose a shared texture frame");
     return MLN_STATUS_UNSUPPORTED;
   }
   if (
-    texture->shared_required_handle_type != MLN_SHARED_TEXTURE_HANDLE_NONE &&
-    texture->shared_required_handle_type !=
-      MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE
+    texture->shared_required_export_type != MLN_SHARED_TEXTURE_EXPORT_DMA_BUF
   ) {
-    set_thread_error("requested shared texture handle type is unsupported");
+    set_thread_error("requested shared texture export type is unsupported");
     return MLN_STATUS_UNSUPPORTED;
   }
 
@@ -360,12 +404,16 @@ auto texture_acquire_shared_frame(
     .scale_factor = texture->scale_factor,
     .frame_id = texture->next_frame_id,
     .producer_backend = MLN_TEXTURE_BACKEND_VULKAN,
-    .native_handle_type = MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE,
     .native_handle = resources.image,
     .native_view = resources.image_view,
     .native_device = resources.device,
-    .export_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
+    .export_type = MLN_SHARED_TEXTURE_EXPORT_DMA_BUF,
     .export_handle = nullptr,
+    .export_fd = -1,
+    .dma_buf_drm_format = 0,
+    .dma_buf_drm_modifier = 0,
+    .dma_buf_plane_offset = 0,
+    .dma_buf_plane_stride = 0,
     .format = static_cast<uint64_t>(resources.format),
     .layout = static_cast<uint32_t>(vk::ImageLayout::eShaderReadOnlyOptimal),
     .plane = 0,

@@ -1415,11 +1415,14 @@ typedef struct mln_vulkan_surface_descriptor {
   void* instance;
   /** Borrowed VkPhysicalDevice. Required. */
   void* physical_device;
-  /** Borrowed VkDevice. Required. */
+  /** Borrowed VkDevice with VK_KHR_swapchain enabled. Required. */
   void* device;
   /** Borrowed graphics VkQueue. Required. */
   void* graphics_queue;
-  /** Queue family index for graphics_queue. Must support graphics commands. */
+  /**
+   * Queue family index for graphics_queue. Must support graphics commands and
+   * presentation to surface.
+   */
   uint32_t graphics_queue_family_index;
   /** Borrowed VkSurfaceKHR. Required. */
   void* surface;
@@ -1579,16 +1582,17 @@ typedef enum mln_texture_backend : uint32_t {
   MLN_TEXTURE_BACKEND_VULKAN = 2,
 } mln_texture_backend;
 
-/** Native or exported handle kind carried by a shared texture frame. */
-typedef enum mln_shared_texture_handle_type : uint32_t {
-  MLN_SHARED_TEXTURE_HANDLE_NONE = 0,
-  /** id<MTLTexture> / MTL::Texture*. */
-  MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE = 1,
-  /** MTLSharedTextureHandle / MTL::SharedTextureHandle*. */
-  MLN_SHARED_TEXTURE_HANDLE_METAL_SHARED_TEXTURE_HANDLE = 2,
-  /** VkImage. */
-  MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE = 3,
-} mln_shared_texture_handle_type;
+/** Platform export family requested from and produced by a shared texture
+ * session. */
+typedef enum mln_shared_texture_export_type : uint32_t {
+  MLN_SHARED_TEXTURE_EXPORT_NONE = 0,
+  /** Linux DMA-BUF fd with DRM format/modifier metadata. */
+  MLN_SHARED_TEXTURE_EXPORT_DMA_BUF = 1,
+  /** Apple IOSurfaceRef-backed texture. */
+  MLN_SHARED_TEXTURE_EXPORT_IOSURFACE = 2,
+  /** Windows D3D shared HANDLE. */
+  MLN_SHARED_TEXTURE_EXPORT_D3D_SHARED_HANDLE = 3,
+} mln_shared_texture_export_type;
 
 /** Shared texture session attachment options. */
 typedef struct mln_shared_texture_descriptor {
@@ -1599,17 +1603,26 @@ typedef struct mln_shared_texture_descriptor {
   uint32_t height;
   /** UI-to-device pixel scale. Must be positive and finite. */
   double scale_factor;
-  /**
-   * Required frame handle kind. NONE lets the backend choose its native texture
-   * or image handle.
+  /** Required mln_shared_texture_export_type value. NONE is invalid for attach.
    */
-  uint32_t required_handle_type;
+  uint32_t required_export_type;
   /**
-   * Optional producer device for backends that support shared texture sessions.
-   * On Metal this is id<MTLDevice> / MTL::Device* retained by the session. Null
-   * lets the wrapper choose the system default device.
+   * Producer device for backends that support shared texture sessions.
+   * On Metal this is an optional id<MTLDevice> / MTL::Device* retained by the
+   * session. On Vulkan this is a required borrowed VkDevice for DMA-BUF shared
+   * texture sessions.
    */
   void* device;
+  /** Borrowed VkInstance for Vulkan shared textures. Required on Vulkan. */
+  void* instance;
+  /** Borrowed VkPhysicalDevice for Vulkan shared textures. Required on Vulkan.
+   */
+  void* physical_device;
+  /** Borrowed graphics VkQueue for Vulkan shared textures. Required on Vulkan.
+   */
+  void* graphics_queue;
+  /** Queue family index for graphics_queue. Must support graphics commands. */
+  uint32_t graphics_queue_family_index;
 } mln_shared_texture_descriptor;
 
 /** Metal texture session attachment options. */
@@ -1707,18 +1720,31 @@ typedef struct mln_shared_texture_frame {
   uint64_t frame_id;
   /** mln_texture_backend value for the producer backend. */
   uint32_t producer_backend;
-  /** mln_shared_texture_handle_type value for native_handle. */
-  uint32_t native_handle_type;
   /** Borrowed native texture/image handle. Valid until frame release. */
   void* native_handle;
   /** Optional borrowed native view handle, such as VkImageView. */
   void* native_view;
   /** Borrowed native device handle. Valid until frame release. */
   void* native_device;
-  /** mln_shared_texture_handle_type value for export_handle, or NONE. */
-  uint32_t export_handle_type;
-  /** Optional borrowed export handle. Valid until frame release. */
+  /** mln_shared_texture_export_type value for the export payload. */
+  uint32_t export_type;
+  /** Optional borrowed pointer-like export handle. Valid until frame release.
+   */
   void* export_handle;
+  /**
+   * Optional owned POSIX export file descriptor, or -1 when absent. When set,
+   * ownership transfers to the caller, who must close it or transfer it to the
+   * importing graphics API.
+   */
+  int32_t export_fd;
+  /** Linux DMA-BUF DRM fourcc format, or 0 when not applicable. */
+  uint32_t dma_buf_drm_format;
+  /** Linux DMA-BUF DRM modifier, or 0 when not applicable. */
+  uint64_t dma_buf_drm_modifier;
+  /** Linux DMA-BUF plane byte offset, or 0 when not applicable. */
+  uint64_t dma_buf_plane_offset;
+  /** Linux DMA-BUF plane bytes per row, or 0 when not applicable. */
+  uint64_t dma_buf_plane_stride;
   /** Backend-native pixel format value. */
   uint64_t format;
   /** Backend-native layout/state value. Zero when not applicable. */
@@ -1857,11 +1883,10 @@ MLN_API mln_status mln_vulkan_texture_attach(
  * The wrapper renders into a texture/image that can be acquired through
  * mln_texture_acquire_shared_frame().
  *
- * Handle requirements are requested through descriptor->required_handle_type
- * because some backends must choose compatible allocation paths up front. A
- * value of MLN_SHARED_TEXTURE_HANDLE_NONE lets the backend choose its native
- * texture or image handle. Unsupported requested handle kinds fail during
- * attach.
+ * Export requirements are requested through descriptor->required_export_type
+ * because backends must choose compatible allocation paths up front. The caller
+ * must request the platform export family it knows how to import. Unsupported
+ * requested export types fail during attach.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1870,8 +1895,8 @@ MLN_API mln_status mln_vulkan_texture_attach(
  * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
- * - MLN_STATUS_UNSUPPORTED when shared texture sessions or the requested handle
- *   kind are not supported by this build.
+ * - MLN_STATUS_UNSUPPORTED when shared texture sessions or the requested export
+ *   type are not supported by this build.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_shared_texture_attach(
@@ -1920,7 +1945,8 @@ MLN_API mln_status
 mln_texture_render_update(mln_texture_session* texture) MLN_NOEXCEPT;
 
 /**
- * Reads the most recently rendered texture frame into caller-owned storage.
+ * Reads the most recently rendered owned-texture frame into caller-owned
+ * storage.
  *
  * The copied image is premultiplied RGBA8 in physical pixels. The function
  * fills out_info with the required byte length and image layout metadata. When
@@ -1936,6 +1962,7 @@ mln_texture_render_update(mln_texture_session* texture) MLN_NOEXCEPT;
  *   is detached, a frame is currently acquired, or readback produces no image.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
+ * - MLN_STATUS_UNSUPPORTED when the session is not an owned texture session.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_texture_read_premultiplied_rgba8(
@@ -1945,6 +1972,9 @@ MLN_API mln_status mln_texture_read_premultiplied_rgba8(
 
 /**
  * Acquires the most recently rendered Metal texture frame.
+ *
+ * This function is only valid for sessions created with
+ * mln_metal_texture_attach().
  *
  * The returned texture and device pointers are borrowed and remain valid only
  * until mln_metal_texture_release_frame() is called for the same frame. While
@@ -1969,6 +1999,9 @@ MLN_API mln_status mln_metal_texture_acquire_frame(
 
 /**
  * Acquires the most recently rendered Vulkan texture frame.
+ *
+ * This function is only valid for sessions created with
+ * mln_vulkan_texture_attach().
  *
  * The returned image, image view, and device pointers are borrowed and remain
  * valid only until mln_vulkan_texture_release_frame() is called for the same
@@ -1997,11 +2030,14 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
 /**
  * Acquires the most recently rendered shared texture frame.
  *
- * The returned native and export handles are borrowed and remain valid only
- * until mln_texture_release_shared_frame() is called for the same frame. This
- * API does not transfer ownership or return an external synchronization object.
- * While acquired, resize, mln_texture_render_update(), detach, destroy, and a
- * second acquire return MLN_STATUS_INVALID_STATE.
+ * This function is only valid for sessions created with
+ * mln_shared_texture_attach(). The returned native handles are borrowed and
+ * remain valid only until mln_texture_release_shared_frame() is called for the
+ * same frame. If export_fd is non-negative, ownership of that file descriptor
+ * transfers to the caller and the caller must close it or transfer it to the
+ * importing graphics API. This API does not return an external synchronization
+ * object; while acquired, resize, mln_texture_render_update(), detach, destroy,
+ * and a second acquire return MLN_STATUS_INVALID_STATE.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -2012,7 +2048,7 @@ MLN_API mln_status mln_vulkan_texture_acquire_frame(
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
  *   owner thread.
  * - MLN_STATUS_UNSUPPORTED when the session cannot expose a shared texture
- *   frame or the requested handle kind is not supported.
+ *   frame or the requested export type is not supported.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_texture_acquire_shared_frame(

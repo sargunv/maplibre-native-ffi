@@ -10,6 +10,8 @@ const Pipeline = @import("pipeline.zig").Pipeline;
 const Swapchain = @import("swapchain.zig").Swapchain;
 const util = @import("util.zig");
 
+extern fn close(fd: c_int) c_int;
+
 pub const VulkanBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_VULKAN;
 
@@ -89,8 +91,9 @@ const VulkanTextureCompositor = struct {
         allocator: std.mem.Allocator,
         window: *c.SDL_Window,
         viewport: types.Viewport,
+        exportable_textures: bool,
     ) !VulkanTextureCompositor {
-        var context = try Context.init(allocator, window);
+        var context = try Context.init(allocator, window, exportable_textures);
         errdefer context.deinit();
 
         var swapchain = try Swapchain.init(allocator, &context, viewport);
@@ -211,7 +214,7 @@ const VulkanNativeTextureBackend = struct {
         viewport: types.Viewport,
     ) !VulkanNativeTextureBackend {
         return .{
-            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport),
+            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport, false),
             .pending_texture = null,
             .pending_frame = null,
         };
@@ -318,7 +321,7 @@ const VulkanSharedTextureBackend = struct {
         viewport: types.Viewport,
     ) !VulkanSharedTextureBackend {
         return .{
-            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport),
+            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport, true),
             .pending_texture = null,
             .pending_frame = null,
         };
@@ -343,7 +346,7 @@ const VulkanSharedTextureBackend = struct {
     }
 
     fn attachRenderTarget(
-        _: *VulkanSharedTextureBackend,
+        self: *VulkanSharedTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !render_target.Session {
@@ -351,7 +354,12 @@ const VulkanSharedTextureBackend = struct {
         descriptor.width = viewport.logical_width;
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
-        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE;
+        descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF;
+        descriptor.instance = self.compositor.context.instance;
+        descriptor.physical_device = self.compositor.context.physical_device;
+        descriptor.device = self.compositor.context.device;
+        descriptor.graphics_queue = self.compositor.context.queue;
+        descriptor.graphics_queue_family_index = self.compositor.context.queue_family_index;
 
         var texture: ?*c.mln_texture_session = null;
         if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
@@ -379,8 +387,9 @@ const VulkanSharedTextureBackend = struct {
         errdefer releaseSharedFrame(texture, &frame);
 
         if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_VULKAN or
-            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE or
-            frame.native_view == null)
+            frame.native_view == null or
+            frame.export_type != c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF or
+            frame.export_fd < 0)
         {
             return types.AppError.BackendDrawFailed;
         }
@@ -408,7 +417,7 @@ const VulkanSurfaceBackend = struct {
     context: Context,
 
     fn init(allocator: std.mem.Allocator, window: *c.SDL_Window) !VulkanSurfaceBackend {
-        return .{ .context = try Context.init(allocator, window) };
+        return .{ .context = try Context.init(allocator, window, false) };
     }
 
     fn deinit(self: *VulkanSurfaceBackend) void {
@@ -460,6 +469,7 @@ fn releaseSharedFrame(
     texture: *c.mln_texture_session,
     frame: *const c.mln_shared_texture_frame,
 ) void {
+    if (frame.export_fd >= 0) _ = close(frame.export_fd);
     if (c.mln_texture_release_shared_frame(texture, frame) != c.MLN_STATUS_OK) {
         diagnostics.logAbiError("shared texture release failed");
     }

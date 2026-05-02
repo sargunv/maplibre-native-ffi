@@ -16,6 +16,7 @@ namespace mln::core {
 
 enum class TextureSessionBackend : uint8_t { Owned, Metal, Vulkan };
 enum class TextureSessionFrameKind : uint8_t { None, Metal, Vulkan, Shared };
+enum class TextureSessionMode : uint8_t { Owned, Native, Shared };
 
 using TextureSessionPrepareCallback = void (*)(mln_texture_session*);
 using TextureSessionAfterRenderCallback = mln_status (*)(mln_texture_session*);
@@ -38,9 +39,10 @@ struct mln_texture_session {
   bool acquired = false;
   mln::core::TextureSessionFrameKind acquired_frame_kind =
     mln::core::TextureSessionFrameKind::None;
-  uint32_t shared_required_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE;
+  uint32_t shared_required_export_type = MLN_SHARED_TEXTURE_EXPORT_NONE;
   mln::core::TextureSessionBackend backend_kind =
     mln::core::TextureSessionBackend::Owned;
+  mln::core::TextureSessionMode mode = mln::core::TextureSessionMode::Owned;
   std::unique_ptr<mbgl::gfx::HeadlessBackend> backend = nullptr;
   std::unique_ptr<mbgl::Renderer> renderer = nullptr;
   void* rendered_native_texture = nullptr;

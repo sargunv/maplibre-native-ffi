@@ -71,18 +71,17 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
     const auto image_usage = vk::ImageUsageFlagBits::eColorAttachment |
                              vk::ImageUsageFlagBits::eSampled |
                              vk::ImageUsageFlagBits::eTransferSrc;
-    const auto image_create_info =
-      vk::ImageCreateInfo()
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(colorFormat)
-        .setExtent({width, height, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(image_usage)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
+    auto image_create_info = vk::ImageCreateInfo()
+                               .setImageType(vk::ImageType::e2D)
+                               .setFormat(colorFormat)
+                               .setExtent({width, height, 1})
+                               .setMipLevels(1)
+                               .setArrayLayers(1)
+                               .setSamples(vk::SampleCountFlagBits::e1)
+                               .setTiling(vk::ImageTiling::eOptimal)
+                               .setUsage(image_usage)
+                               .setSharingMode(vk::SharingMode::eExclusive)
+                               .setInitialLayout(vk::ImageLayout::eUndefined);
 
     auto allocation_create_info = VmaAllocationCreateInfo{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;

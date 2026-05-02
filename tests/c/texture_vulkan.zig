@@ -20,13 +20,25 @@ const Backend = struct {
         queue_family_index: u32,
 
         pub fn init() !AttachContext {
+            return initWithDeviceExtensions(&.{});
+        }
+
+        pub fn initShared() !AttachContext {
+            const extensions = [_][*c]const u8{
+                vk.VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+                vk.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+            };
+            return initWithDeviceExtensions(&extensions);
+        }
+
+        fn initWithDeviceExtensions(required_extensions: []const [*c]const u8) !AttachContext {
             var app_info = std.mem.zeroes(vk.VkApplicationInfo);
             app_info.sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO;
             app_info.pApplicationName = "maplibre-native-c-tests";
             app_info.applicationVersion = 1;
             app_info.pEngineName = "maplibre-native-c-tests";
             app_info.engineVersion = 1;
-            app_info.apiVersion = vk.VK_API_VERSION_1_0;
+            app_info.apiVersion = vk.VK_API_VERSION_1_1;
 
             var instance_info = std.mem.zeroes(vk.VkInstanceCreateInfo);
             instance_info.sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -71,6 +83,8 @@ const Backend = struct {
                     device_info.sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
                     device_info.queueCreateInfoCount = 1;
                     device_info.pQueueCreateInfos = &queue_info;
+                    device_info.enabledExtensionCount = @intCast(required_extensions.len);
+                    device_info.ppEnabledExtensionNames = if (required_extensions.len == 0) null else required_extensions.ptr;
                     device_info.pEnabledFeatures = &features;
 
                     var device: vk.VkDevice = null;
@@ -217,23 +231,6 @@ const Backend = struct {
         try testing.expectEqual(@as(f64, 2.0), frame.vulkan.scale_factor);
         try testing.expectEqual(@as(u64, 2), frame.vulkan.generation);
     }
-
-    pub fn expectSharedFrame(frame: *const c.mln_shared_texture_frame) !void {
-        try testing.expectEqual(@as(u32, c.MLN_TEXTURE_BACKEND_VULKAN), frame.producer_backend);
-        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE), frame.native_handle_type);
-        try testing.expect(frame.native_handle != null);
-        try testing.expect(frame.native_view != null);
-        try testing.expect(frame.native_device != null);
-        try testing.expectEqual(@as(u32, c.MLN_SHARED_TEXTURE_HANDLE_NONE), frame.export_handle_type);
-        try testing.expectEqual(@as(?*anyopaque, null), frame.export_handle);
-        try testing.expectEqual(@as(u64, vk.VK_FORMAT_R8G8B8A8_UNORM), frame.format);
-        try testing.expectEqual(@as(u32, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), frame.layout);
-        try testing.expectEqual(@as(u32, 0), frame.plane);
-        try testing.expectEqual(@as(u32, 256), frame.width);
-        try testing.expectEqual(@as(u32, 256), frame.height);
-        try testing.expectEqual(@as(u64, 1), frame.generation);
-        try testing.expect(frame.frame_id != 0);
-    }
 };
 
 test "Vulkan texture unsupported backend validates arguments" {
@@ -284,9 +281,9 @@ test "Vulkan texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
-test "Vulkan texture exposes shared frame metadata" {
+test "Vulkan native texture rejects shared acquire and readback" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    try common.expectSharedFrameMetadata(Backend);
+    try common.expectNativeTextureRejectsSharedAcquireAndReadback(Backend);
 }
 
 test "Vulkan texture render emits observer events" {
@@ -294,17 +291,33 @@ test "Vulkan texture render emits observer events" {
     try common.expectRenderObserverEvents(Backend);
 }
 
-test "Vulkan texture supports static still-image requests" {
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
-    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_STATIC);
-}
-
-test "Vulkan texture supports tile still-image requests" {
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
-    try common.expectStillModeStillImageRequest(Backend, c.MLN_MAP_MODE_TILE);
-}
-
 test "Vulkan texture detach leaves handle live but unusable for rendering" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectDetachLeavesHandleLiveButUnusable(Backend);
+}
+
+test "Vulkan shared texture attach reserves DMA-BUF export" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+
+    var context = Backend.AttachContext.initShared() catch return error.SkipZigTest;
+    defer context.deinit();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    var descriptor = c.mln_shared_texture_descriptor_default();
+    descriptor.width = 64;
+    descriptor.height = 32;
+    descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF;
+    descriptor.instance = context.instance;
+    descriptor.physical_device = context.physical_device;
+    descriptor.device = context.device;
+    descriptor.graphics_queue = context.queue;
+    descriptor.graphics_queue_family_index = context.queue_family_index;
+
+    var texture: ?*c.mln_texture_session = null;
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_shared_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }

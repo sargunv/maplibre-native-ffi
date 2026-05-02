@@ -281,7 +281,7 @@ const MetalSharedTextureBackend = struct {
         descriptor.width = viewport.logical_width;
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
-        descriptor.required_handle_type = c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE;
+        descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_IOSURFACE;
         descriptor.device = self.compositor.view.device.value.?;
         var texture: ?*c.mln_texture_session = null;
         if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
@@ -309,7 +309,7 @@ const MetalSharedTextureBackend = struct {
         defer releaseSharedFrame(texture, &frame);
 
         if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_METAL or
-            frame.native_handle_type != c.MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE or
+            frame.export_type != c.MLN_SHARED_TEXTURE_EXPORT_IOSURFACE or
             frame.native_handle == null)
         {
             return types.AppError.BackendDrawFailed;

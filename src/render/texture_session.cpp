@@ -55,11 +55,11 @@ auto validate_owned_descriptor(const mln_owned_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
-auto is_known_shared_handle_type(uint32_t handle_type) -> bool {
-  return handle_type == MLN_SHARED_TEXTURE_HANDLE_NONE ||
-         handle_type == MLN_SHARED_TEXTURE_HANDLE_METAL_TEXTURE ||
-         handle_type == MLN_SHARED_TEXTURE_HANDLE_METAL_SHARED_TEXTURE_HANDLE ||
-         handle_type == MLN_SHARED_TEXTURE_HANDLE_VULKAN_IMAGE;
+auto is_known_shared_export_type(uint32_t export_type) -> bool {
+  return export_type == MLN_SHARED_TEXTURE_EXPORT_NONE ||
+         export_type == MLN_SHARED_TEXTURE_EXPORT_DMA_BUF ||
+         export_type == MLN_SHARED_TEXTURE_EXPORT_IOSURFACE ||
+         export_type == MLN_SHARED_TEXTURE_EXPORT_D3D_SHARED_HANDLE;
 }
 
 }  // namespace
@@ -83,8 +83,12 @@ auto shared_texture_descriptor_default() noexcept
     .width = 256,
     .height = 256,
     .scale_factor = 1.0,
-    .required_handle_type = MLN_SHARED_TEXTURE_HANDLE_NONE,
-    .device = nullptr
+    .required_export_type = MLN_SHARED_TEXTURE_EXPORT_NONE,
+    .device = nullptr,
+    .instance = nullptr,
+    .physical_device = nullptr,
+    .graphics_queue = nullptr,
+    .graphics_queue_family_index = 0
   };
 }
 
@@ -123,8 +127,8 @@ auto validate_shared_texture_descriptor(
     set_thread_error("texture dimensions and scale_factor must be positive");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  if (!is_known_shared_handle_type(descriptor->required_handle_type)) {
-    set_thread_error("shared texture handle type is invalid");
+  if (!is_known_shared_export_type(descriptor->required_export_type)) {
+    set_thread_error("shared texture export type is invalid");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   return MLN_STATUS_OK;
@@ -216,6 +220,7 @@ auto owned_texture_attach(
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->backend_kind = TextureSessionBackend::Owned;
+  session->mode = TextureSessionMode::Owned;
   session->backend = mbgl::gfx::HeadlessBackend::Create(
     mbgl::Size{session->physical_width, session->physical_height},
     mbgl::gfx::Renderable::SwapBehaviour::Flush, mbgl::gfx::ContextMode::Unique
@@ -329,6 +334,10 @@ auto texture_read_premultiplied_rgba8(
   if (texture->acquired) {
     set_thread_error("cannot read while a texture frame is acquired");
     return MLN_STATUS_INVALID_STATE;
+  }
+  if (texture->mode != TextureSessionMode::Owned) {
+    set_thread_error("texture session does not support CPU readback");
+    return MLN_STATUS_UNSUPPORTED;
   }
   if (texture->rendered_generation != texture->generation) {
     set_thread_error("no rendered frame is available for this generation");
