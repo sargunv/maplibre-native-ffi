@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -31,6 +32,23 @@ void mln_test_autorelease_pool_pop(void* pool) {
 }
 
 void* mln_test_create_metal_layer(void) { return [CAMetalLayer layer]; }
+
+void* mln_test_create_metal_texture(
+  void* device, uint32_t width, uint32_t height
+) {
+  if (device == NULL || width == 0 || height == 0) {
+    return NULL;
+  }
+  MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
+    texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                 width:(NSUInteger)width
+                                height:(NSUInteger)height
+                             mipmapped:NO];
+  descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+  return [(id<MTLDevice>)device newTextureWithDescriptor:descriptor];
+}
+
+void mln_test_release_metal_object(void* object) { [(id)object release]; }
 
 static bool create_window_metal_layer(
   uint32_t width, uint32_t height, bool counted,

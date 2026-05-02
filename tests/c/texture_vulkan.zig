@@ -10,7 +10,7 @@ const vk = if (builtin.os.tag == .linux) @cImport({
 }) else struct {};
 
 const Backend = struct {
-    pub const descriptor_size = @sizeOf(c.mln_vulkan_texture_descriptor);
+    pub const descriptor_size = @sizeOf(c.mln_vulkan_owned_texture_descriptor);
 
     pub const AttachContext = struct {
         instance: vk.VkInstance,
@@ -21,14 +21,6 @@ const Backend = struct {
 
         pub fn init() !AttachContext {
             return initWithDeviceExtensions(&.{});
-        }
-
-        pub fn initShared() !AttachContext {
-            const extensions = [_][*c]const u8{
-                vk.VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
-                vk.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
-            };
-            return initWithDeviceExtensions(&extensions);
         }
 
         fn initWithDeviceExtensions(required_extensions: []const [*c]const u8) !AttachContext {
@@ -111,8 +103,8 @@ const Backend = struct {
             vk.vkDestroyInstance(self.instance, null);
         }
 
-        pub fn descriptor(self: *const AttachContext) c.mln_vulkan_texture_descriptor {
-            var value = c.mln_vulkan_texture_descriptor_default();
+        pub fn descriptor(self: *const AttachContext) c.mln_vulkan_owned_texture_descriptor {
+            var value = c.mln_vulkan_owned_texture_descriptor_default();
             value.instance = self.instance;
             value.physical_device = self.physical_device;
             value.device = self.device;
@@ -135,11 +127,11 @@ const Backend = struct {
             texture_descriptor.height = 256;
 
             var texture: ?*c.mln_texture_session = null;
-            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_vulkan_texture_attach(map, &texture_descriptor, &texture));
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_vulkan_owned_texture_attach(map, &texture_descriptor, &texture));
             return .{ .texture = texture orelse return error.TextureCreateFailed, .context = context };
         }
 
-        pub fn descriptor(self: *const Fixture) c.mln_vulkan_texture_descriptor {
+        pub fn descriptor(self: *const Fixture) c.mln_vulkan_owned_texture_descriptor {
             return self.context.?.descriptor();
         }
 
@@ -158,23 +150,23 @@ const Backend = struct {
         }
 
         pub fn acquire(_: *Fixture, frame: *Frame) c.mln_status {
-            return c.mln_vulkan_texture_acquire_frame(frame.texture, &frame.vulkan);
+            return c.mln_vulkan_owned_texture_acquire_frame(frame.texture, &frame.vulkan);
         }
 
         pub fn release(_: *Fixture, frame: *const Frame) c.mln_status {
-            return c.mln_vulkan_texture_release_frame(frame.texture, &frame.vulkan);
+            return c.mln_vulkan_owned_texture_release_frame(frame.texture, &frame.vulkan);
         }
     };
 
     pub const Frame = struct {
         texture: *c.mln_texture_session,
-        vulkan: c.mln_vulkan_texture_frame,
+        vulkan: c.mln_vulkan_owned_texture_frame,
 
         pub fn empty(texture: *c.mln_texture_session) Frame {
             return .{
                 .texture = texture,
                 .vulkan = .{
-                    .size = @sizeOf(c.mln_vulkan_texture_frame),
+                    .size = @sizeOf(c.mln_vulkan_owned_texture_frame),
                     .generation = 0,
                     .width = 0,
                     .height = 0,
@@ -200,15 +192,15 @@ const Backend = struct {
         }
 
         pub fn resetSize(self: *Frame) void {
-            self.vulkan.size = @sizeOf(c.mln_vulkan_texture_frame);
+            self.vulkan.size = @sizeOf(c.mln_vulkan_owned_texture_frame);
         }
     };
 
-    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_vulkan_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
-        return c.mln_vulkan_texture_attach(map, descriptor, out_texture);
+    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_vulkan_owned_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
+        return c.mln_vulkan_owned_texture_attach(map, descriptor, out_texture);
     }
 
-    pub fn clearRequiredHandle(descriptor: *c.mln_vulkan_texture_descriptor) void {
+    pub fn clearRequiredHandle(descriptor: *c.mln_vulkan_owned_texture_descriptor) void {
         descriptor.device = null;
     }
 
@@ -242,18 +234,18 @@ test "Vulkan texture unsupported backend validates arguments" {
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    var descriptor = c.mln_vulkan_texture_descriptor_default();
+    var descriptor = c.mln_vulkan_owned_texture_descriptor_default();
     descriptor.instance = @ptrFromInt(1);
     descriptor.physical_device = @ptrFromInt(1);
     descriptor.device = @ptrFromInt(1);
     descriptor.graphics_queue = @ptrFromInt(1);
 
     var texture: ?*c.mln_texture_session = @ptrFromInt(1);
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture));
     try testing.expect(texture != null);
 
     texture = null;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture));
     try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }
 
@@ -281,9 +273,9 @@ test "Vulkan texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
-test "Vulkan native texture rejects shared acquire and readback" {
+test "Vulkan owned texture supports readback" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
-    try common.expectNativeTextureRejectsSharedAcquireAndReadback(Backend);
+    try common.expectOwnedTextureReadback(Backend);
 }
 
 test "Vulkan texture render emits observer events" {
@@ -294,30 +286,4 @@ test "Vulkan texture render emits observer events" {
 test "Vulkan texture detach leaves handle live but unusable for rendering" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
     try common.expectDetachLeavesHandleLiveButUnusable(Backend);
-}
-
-test "Vulkan shared texture attach reserves DMA-BUF export" {
-    if (builtin.os.tag != .linux) return error.SkipZigTest;
-
-    var context = Backend.AttachContext.initShared() catch return error.SkipZigTest;
-    defer context.deinit();
-
-    const runtime = try support.createRuntime();
-    defer support.destroyRuntime(runtime);
-    const map = try support.createMap(runtime);
-    defer support.destroyMap(map);
-
-    var descriptor = c.mln_shared_texture_descriptor_default();
-    descriptor.width = 64;
-    descriptor.height = 32;
-    descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF;
-    descriptor.instance = context.instance;
-    descriptor.physical_device = context.physical_device;
-    descriptor.device = context.device;
-    descriptor.graphics_queue = context.queue;
-    descriptor.graphics_queue_family_index = context.queue_family_index;
-
-    var texture: ?*c.mln_texture_session = null;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_shared_texture_attach(map, &descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }

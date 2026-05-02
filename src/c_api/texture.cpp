@@ -12,19 +12,24 @@ auto mln_owned_texture_descriptor_default(void) noexcept
   return mln::core::owned_texture_descriptor_default();
 }
 
-auto mln_shared_texture_descriptor_default(void) noexcept
-  -> mln_shared_texture_descriptor {
-  return mln::core::shared_texture_descriptor_default();
+auto mln_metal_owned_texture_descriptor_default(void) noexcept
+  -> mln_metal_owned_texture_descriptor {
+  return mln::core::metal_owned_texture_descriptor_default();
 }
 
-auto mln_metal_texture_descriptor_default(void) noexcept
-  -> mln_metal_texture_descriptor {
-  return mln::core::metal_texture_descriptor_default();
+auto mln_metal_borrowed_texture_descriptor_default(void) noexcept
+  -> mln_metal_borrowed_texture_descriptor {
+  return mln::core::metal_borrowed_texture_descriptor_default();
 }
 
-auto mln_vulkan_texture_descriptor_default(void) noexcept
-  -> mln_vulkan_texture_descriptor {
-  return mln::core::vulkan_texture_descriptor_default();
+auto mln_vulkan_owned_texture_descriptor_default(void) noexcept
+  -> mln_vulkan_owned_texture_descriptor {
+  return mln::core::vulkan_owned_texture_descriptor_default();
+}
+
+auto mln_vulkan_borrowed_texture_descriptor_default(void) noexcept
+  -> mln_vulkan_borrowed_texture_descriptor {
+  return mln::core::vulkan_borrowed_texture_descriptor_default();
 }
 
 auto mln_texture_image_info_default(void) noexcept -> mln_texture_image_info {
@@ -40,30 +45,43 @@ auto mln_owned_texture_attach(
   });
 }
 
-auto mln_metal_texture_attach(
-  mln_map* map, const mln_metal_texture_descriptor* descriptor,
+auto mln_metal_owned_texture_attach(
+  mln_map* map, const mln_metal_owned_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::metal_texture_attach(map, descriptor, out_texture);
+    return mln::core::metal_owned_texture_attach(map, descriptor, out_texture);
   });
 }
 
-auto mln_vulkan_texture_attach(
-  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+auto mln_metal_borrowed_texture_attach(
+  mln_map* map, const mln_metal_borrowed_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::vulkan_texture_attach(map, descriptor, out_texture);
+    return mln::core::metal_borrowed_texture_attach(
+      map, descriptor, out_texture
+    );
   });
 }
 
-auto mln_shared_texture_attach(
-  mln_map* map, const mln_shared_texture_descriptor* descriptor,
+auto mln_vulkan_owned_texture_attach(
+  mln_map* map, const mln_vulkan_owned_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::shared_texture_attach(map, descriptor, out_texture);
+    return mln::core::vulkan_owned_texture_attach(map, descriptor, out_texture);
+  });
+}
+
+auto mln_vulkan_borrowed_texture_attach(
+  mln_map* map, const mln_vulkan_borrowed_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::vulkan_borrowed_texture_attach(
+      map, descriptor, out_texture
+    );
   });
 }
 
@@ -94,51 +112,35 @@ auto mln_texture_read_premultiplied_rgba8(
   });
 }
 
-auto mln_metal_texture_acquire_frame(
-  mln_texture_session* texture, mln_metal_texture_frame* out_frame
+auto mln_metal_owned_texture_acquire_frame(
+  mln_texture_session* texture, mln_metal_owned_texture_frame* out_frame
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::metal_texture_acquire_frame(texture, out_frame);
+    return mln::core::metal_owned_texture_acquire_frame(texture, out_frame);
   });
 }
 
-auto mln_metal_texture_release_frame(
-  mln_texture_session* texture, const mln_metal_texture_frame* frame
+auto mln_metal_owned_texture_release_frame(
+  mln_texture_session* texture, const mln_metal_owned_texture_frame* frame
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::metal_texture_release_frame(texture, frame);
+    return mln::core::metal_owned_texture_release_frame(texture, frame);
   });
 }
 
-auto mln_vulkan_texture_acquire_frame(
-  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
+auto mln_vulkan_owned_texture_acquire_frame(
+  mln_texture_session* texture, mln_vulkan_owned_texture_frame* out_frame
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::vulkan_texture_acquire_frame(texture, out_frame);
+    return mln::core::vulkan_owned_texture_acquire_frame(texture, out_frame);
   });
 }
 
-auto mln_texture_acquire_shared_frame(
-  mln_texture_session* texture, mln_shared_texture_frame* out_frame
+auto mln_vulkan_owned_texture_release_frame(
+  mln_texture_session* texture, const mln_vulkan_owned_texture_frame* frame
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::texture_acquire_shared_frame(texture, out_frame);
-  });
-}
-
-auto mln_vulkan_texture_release_frame(
-  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
-) noexcept -> mln_status {
-  return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::vulkan_texture_release_frame(texture, frame);
-  });
-}
-
-auto mln_texture_release_shared_frame(
-  mln_texture_session* texture, const mln_shared_texture_frame* frame
-) noexcept -> mln_status {
-  return mln::c_api::status_boundary([&]() -> mln_status {
-    return mln::core::texture_release_shared_frame(texture, frame);
+    return mln::core::vulkan_owned_texture_release_frame(texture, frame);
   });
 }
 

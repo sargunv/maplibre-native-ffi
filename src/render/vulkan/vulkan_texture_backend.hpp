@@ -27,7 +27,10 @@ class VulkanTextureBackend final : public mbgl::vulkan::RendererBackend,
 
  public:
   VulkanTextureBackend(
-    const mln_vulkan_texture_descriptor& descriptor, mbgl::Size size
+    const mln_vulkan_owned_texture_descriptor& descriptor, mbgl::Size size
+  );
+  VulkanTextureBackend(
+    const mln_vulkan_borrowed_texture_descriptor& descriptor, mbgl::Size size
   );
   VulkanTextureBackend(const VulkanTextureBackend&) = delete;
   auto operator=(const VulkanTextureBackend&) -> VulkanTextureBackend& = delete;
@@ -56,7 +59,9 @@ class VulkanTextureBackend final : public mbgl::vulkan::RendererBackend,
   void initSharedDevice();
   auto rendered_resource() -> VulkanTextureRenderableResource&;
 
-  mln_vulkan_texture_descriptor descriptor_;
+  mln_vulkan_owned_texture_descriptor descriptor_;
+  mln_vulkan_borrowed_texture_descriptor borrowed_descriptor_{};
+  bool uses_borrowed_texture_ = false;
 };
 
 }  // namespace mln::core

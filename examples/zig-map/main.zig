@@ -122,7 +122,7 @@ fn parseRenderTargetMode(init_args: std.process.Init) !?types.RenderTargetMode {
     defer args.deinit();
     _ = args.skip();
 
-    var mode = types.RenderTargetMode.native_texture;
+    var mode = types.RenderTargetMode.owned_texture;
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             printUsage();
@@ -160,8 +160,8 @@ fn printUsage() void {
         \\Usage: zig build run -- --render-target=<mode>
         \\
         \\Modes:
-        \\  native-texture  Metal/Vulkan-specific texture attach/acquire APIs
-        \\  shared-texture  generic shared texture attach/acquire APIs
+        \\  owned-texture     MapLibre-owned Metal/Vulkan texture APIs
+        \\  borrowed-texture  caller-owned Metal/Vulkan texture APIs
         \\  native-surface  Metal/Vulkan native surface presentation APIs
         \\
     , .{});

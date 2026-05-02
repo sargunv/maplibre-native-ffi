@@ -28,21 +28,21 @@ pub const Viewport = struct {
 };
 
 pub const RenderTargetMode = enum {
-    native_texture,
-    shared_texture,
+    owned_texture,
+    borrowed_texture,
     native_surface,
 
     pub fn parse(value: []const u8) ?RenderTargetMode {
-        if (std.mem.eql(u8, value, "native-texture")) return .native_texture;
-        if (std.mem.eql(u8, value, "shared-texture")) return .shared_texture;
+        if (std.mem.eql(u8, value, "owned-texture")) return .owned_texture;
+        if (std.mem.eql(u8, value, "borrowed-texture")) return .borrowed_texture;
         if (std.mem.eql(u8, value, "native-surface")) return .native_surface;
         return null;
     }
 
     pub fn label(self: RenderTargetMode) []const u8 {
         return switch (self) {
-            .native_texture => "native-texture",
-            .shared_texture => "shared-texture",
+            .owned_texture => "owned-texture",
+            .borrowed_texture => "borrowed-texture",
             .native_surface => "native-surface",
         };
     }

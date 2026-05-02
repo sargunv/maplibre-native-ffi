@@ -10,13 +10,11 @@ const Pipeline = @import("pipeline.zig").Pipeline;
 const Swapchain = @import("swapchain.zig").Swapchain;
 const util = @import("util.zig");
 
-extern fn close(fd: c_int) c_int;
-
 pub const VulkanBackend = union(enum) {
     pub const window_flags = c.SDL_WINDOW_VULKAN;
 
-    native_texture: VulkanNativeTextureBackend,
-    shared_texture: VulkanSharedTextureBackend,
+    owned_texture: VulkanOwnedTextureBackend,
+    borrowed_texture: VulkanBorrowedTextureBackend,
     native_surface: VulkanSurfaceBackend,
 
     pub fn init(
@@ -26,32 +24,32 @@ pub const VulkanBackend = union(enum) {
         mode: types.RenderTargetMode,
     ) !VulkanBackend {
         return switch (mode) {
-            .native_texture => .{ .native_texture = try VulkanNativeTextureBackend.init(allocator, window, viewport) },
-            .shared_texture => .{ .shared_texture = try VulkanSharedTextureBackend.init(allocator, window, viewport) },
+            .owned_texture => .{ .owned_texture = try VulkanOwnedTextureBackend.init(allocator, window, viewport) },
+            .borrowed_texture => .{ .borrowed_texture = try VulkanBorrowedTextureBackend.init(allocator, window, viewport) },
             .native_surface => .{ .native_surface = try VulkanSurfaceBackend.init(allocator, window) },
         };
     }
 
     pub fn deinit(self: *VulkanBackend) void {
         switch (self.*) {
-            .native_texture => |*backend| backend.deinit(),
-            .shared_texture => |*backend| backend.deinit(),
+            .owned_texture => |*backend| backend.deinit(),
+            .borrowed_texture => |*backend| backend.deinit(),
             .native_surface => |*backend| backend.deinit(),
         }
     }
 
     pub fn resize(self: *VulkanBackend, viewport: types.Viewport) !void {
         switch (self.*) {
-            .native_texture => |*backend| try backend.resize(viewport),
-            .shared_texture => |*backend| try backend.resize(viewport),
+            .owned_texture => |*backend| try backend.resize(viewport),
+            .borrowed_texture => |*backend| try backend.resize(viewport),
             .native_surface => |*backend| try backend.resize(viewport),
         }
     }
 
     pub fn finishFrame(self: *VulkanBackend) !void {
         switch (self.*) {
-            .native_texture => |*backend| try backend.finishFrame(),
-            .shared_texture => |*backend| try backend.finishFrame(),
+            .owned_texture => |*backend| try backend.finishFrame(),
+            .borrowed_texture => |*backend| try backend.finishFrame(),
             .native_surface => |*backend| try backend.finishFrame(),
         }
     }
@@ -62,8 +60,8 @@ pub const VulkanBackend = union(enum) {
         viewport: types.Viewport,
     ) !render_target.Session {
         return switch (self.*) {
-            .native_texture => |*backend| backend.attachRenderTarget(map, viewport),
-            .shared_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .owned_texture => |*backend| backend.attachRenderTarget(map, viewport),
+            .borrowed_texture => |*backend| backend.attachRenderTarget(map, viewport),
             .native_surface => |*backend| backend.attachRenderTarget(map, viewport),
         };
     }
@@ -74,8 +72,8 @@ pub const VulkanBackend = union(enum) {
         viewport: types.Viewport,
     ) !bool {
         return switch (self.*) {
-            .native_texture => |*backend| backend.drawTexture(texture, viewport),
-            .shared_texture => |*backend| backend.drawTexture(texture, viewport),
+            .owned_texture => |*backend| backend.drawTexture(texture, viewport),
+            .borrowed_texture => |*backend| backend.drawTexture(texture, viewport),
             .native_surface => unreachable,
         };
     }
@@ -203,16 +201,16 @@ const VulkanTextureCompositor = struct {
     }
 };
 
-const VulkanNativeTextureBackend = struct {
+const VulkanOwnedTextureBackend = struct {
     compositor: VulkanTextureCompositor,
     pending_texture: ?*c.mln_texture_session,
-    pending_frame: ?c.mln_vulkan_texture_frame,
+    pending_frame: ?c.mln_vulkan_owned_texture_frame,
 
     fn init(
         allocator: std.mem.Allocator,
         window: *c.SDL_Window,
         viewport: types.Viewport,
-    ) !VulkanNativeTextureBackend {
+    ) !VulkanOwnedTextureBackend {
         return .{
             .compositor = try VulkanTextureCompositor.init(allocator, window, viewport, false),
             .pending_texture = null,
@@ -220,30 +218,30 @@ const VulkanNativeTextureBackend = struct {
         };
     }
 
-    fn deinit(self: *VulkanNativeTextureBackend) void {
+    fn deinit(self: *VulkanOwnedTextureBackend) void {
         self.compositor.waitIdle();
         self.releasePendingFrame();
         self.compositor.deinit();
     }
 
-    fn resize(self: *VulkanNativeTextureBackend, viewport: types.Viewport) !void {
+    fn resize(self: *VulkanOwnedTextureBackend, viewport: types.Viewport) !void {
         self.compositor.waitIdle();
         self.releasePendingFrame();
         try self.compositor.resize(viewport);
     }
 
-    fn finishFrame(self: *VulkanNativeTextureBackend) !void {
+    fn finishFrame(self: *VulkanOwnedTextureBackend) !void {
         if (self.pending_frame == null) return;
         try self.compositor.waitForFrame();
         self.releasePendingFrame();
     }
 
     fn attachRenderTarget(
-        self: *VulkanNativeTextureBackend,
+        self: *VulkanOwnedTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !render_target.Session {
-        var descriptor = c.mln_vulkan_texture_descriptor_default();
+        var descriptor = c.mln_vulkan_owned_texture_descriptor_default();
         descriptor.width = viewport.logical_width;
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
@@ -254,7 +252,7 @@ const VulkanNativeTextureBackend = struct {
         descriptor.graphics_queue_family_index = self.compositor.context.queue_family_index;
 
         var texture: ?*c.mln_texture_session = null;
-        if (c.mln_vulkan_texture_attach(map, &descriptor, &texture) !=
+        if (c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
             diagnostics.logAbiError("Vulkan texture attach failed");
@@ -264,12 +262,12 @@ const VulkanNativeTextureBackend = struct {
     }
 
     fn drawTexture(
-        self: *VulkanNativeTextureBackend,
+        self: *VulkanOwnedTextureBackend,
         texture: *c.mln_texture_session,
         _: types.Viewport,
     ) !bool {
-        var frame: c.mln_vulkan_texture_frame = .{
-            .size = @sizeOf(c.mln_vulkan_texture_frame),
+        var frame: c.mln_vulkan_owned_texture_frame = .{
+            .size = @sizeOf(c.mln_vulkan_owned_texture_frame),
             .generation = 0,
             .width = 0,
             .height = 0,
@@ -281,7 +279,7 @@ const VulkanNativeTextureBackend = struct {
             .format = 0,
             .layout = 0,
         };
-        const acquire_status = c.mln_vulkan_texture_acquire_frame(texture, &frame);
+        const acquire_status = c.mln_vulkan_owned_texture_acquire_frame(texture, &frame);
         if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
         if (acquire_status != c.MLN_STATUS_OK) {
             diagnostics.logAbiError("Vulkan texture acquire failed");
@@ -301,7 +299,7 @@ const VulkanNativeTextureBackend = struct {
         return true;
     }
 
-    fn releasePendingFrame(self: *VulkanNativeTextureBackend) void {
+    fn releasePendingFrame(self: *VulkanOwnedTextureBackend) void {
         if (self.pending_texture) |texture| {
             if (self.pending_frame) |*frame| releaseVulkanFrame(texture, frame);
         }
@@ -310,106 +308,156 @@ const VulkanNativeTextureBackend = struct {
     }
 };
 
-const VulkanSharedTextureBackend = struct {
+const BorrowedImage = struct {
+    image: c.VkImage,
+    memory: c.VkDeviceMemory,
+    view: c.VkImageView,
+
+    fn init(context: *const Context, viewport: types.Viewport) !BorrowedImage {
+        var self = BorrowedImage{ .image = null, .memory = null, .view = null };
+        errdefer self.deinit(context.device);
+
+        const image_info = c.VkImageCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            .imageType = c.VK_IMAGE_TYPE_2D,
+            .format = c.VK_FORMAT_R8G8B8A8_UNORM,
+            .extent = .{
+                .width = viewport.physical_width,
+                .height = viewport.physical_height,
+                .depth = 1,
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = c.VK_SAMPLE_COUNT_1_BIT,
+            .tiling = c.VK_IMAGE_TILING_OPTIMAL,
+            .usage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = null,
+            .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        try util.expectVk(c.vkCreateImage(context.device, &image_info, null, &self.image));
+
+        var requirements: c.VkMemoryRequirements = undefined;
+        c.vkGetImageMemoryRequirements(context.device, self.image, &requirements);
+        const memory_type_index = try findMemoryType(
+            context.physical_device,
+            requirements.memoryTypeBits,
+            c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        );
+        const allocate_info = c.VkMemoryAllocateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = null,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = memory_type_index,
+        };
+        try util.expectVk(c.vkAllocateMemory(context.device, &allocate_info, null, &self.memory));
+        try util.expectVk(c.vkBindImageMemory(context.device, self.image, self.memory, 0));
+
+        const view_info = c.VkImageViewCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            .image = self.image,
+            .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+            .format = c.VK_FORMAT_R8G8B8A8_UNORM,
+            .components = .{
+                .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = .{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        try util.expectVk(c.vkCreateImageView(context.device, &view_info, null, &self.view));
+        return self;
+    }
+
+    fn deinit(self: *BorrowedImage, device: c.VkDevice) void {
+        if (self.view != null) c.vkDestroyImageView(device, self.view, null);
+        if (self.image != null) c.vkDestroyImage(device, self.image, null);
+        if (self.memory != null) c.vkFreeMemory(device, self.memory, null);
+        self.* = .{ .image = null, .memory = null, .view = null };
+    }
+};
+
+const VulkanBorrowedTextureBackend = struct {
     compositor: VulkanTextureCompositor,
-    pending_texture: ?*c.mln_texture_session,
-    pending_frame: ?c.mln_shared_texture_frame,
+    borrowed_image: BorrowedImage,
 
     fn init(
         allocator: std.mem.Allocator,
         window: *c.SDL_Window,
         viewport: types.Viewport,
-    ) !VulkanSharedTextureBackend {
+    ) !VulkanBorrowedTextureBackend {
+        var compositor = try VulkanTextureCompositor.init(allocator, window, viewport, false);
+        errdefer compositor.deinit();
         return .{
-            .compositor = try VulkanTextureCompositor.init(allocator, window, viewport, true),
-            .pending_texture = null,
-            .pending_frame = null,
+            .borrowed_image = try BorrowedImage.init(&compositor.context, viewport),
+            .compositor = compositor,
         };
     }
 
-    fn deinit(self: *VulkanSharedTextureBackend) void {
+    fn deinit(self: *VulkanBorrowedTextureBackend) void {
         self.compositor.waitIdle();
-        self.releasePendingFrame();
+        self.borrowed_image.deinit(self.compositor.context.device);
         self.compositor.deinit();
     }
 
-    fn resize(self: *VulkanSharedTextureBackend, viewport: types.Viewport) !void {
+    fn resize(self: *VulkanBorrowedTextureBackend, viewport: types.Viewport) !void {
         self.compositor.waitIdle();
-        self.releasePendingFrame();
         try self.compositor.resize(viewport);
     }
 
-    fn finishFrame(self: *VulkanSharedTextureBackend) !void {
-        if (self.pending_frame == null) return;
+    fn finishFrame(self: *VulkanBorrowedTextureBackend) !void {
         try self.compositor.waitForFrame();
-        self.releasePendingFrame();
     }
 
     fn attachRenderTarget(
-        self: *VulkanSharedTextureBackend,
+        self: *VulkanBorrowedTextureBackend,
         map: *c.mln_map,
         viewport: types.Viewport,
     ) !render_target.Session {
-        var descriptor = c.mln_shared_texture_descriptor_default();
+        var descriptor = c.mln_vulkan_borrowed_texture_descriptor_default();
         descriptor.width = viewport.logical_width;
         descriptor.height = viewport.logical_height;
         descriptor.scale_factor = viewport.scale_factor;
-        descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF;
         descriptor.instance = self.compositor.context.instance;
         descriptor.physical_device = self.compositor.context.physical_device;
         descriptor.device = self.compositor.context.device;
         descriptor.graphics_queue = self.compositor.context.queue;
         descriptor.graphics_queue_family_index = self.compositor.context.queue_family_index;
+        descriptor.image = self.borrowed_image.image;
+        descriptor.image_view = self.borrowed_image.view;
+        descriptor.format = c.VK_FORMAT_R8G8B8A8_UNORM;
+        descriptor.initial_layout = c.VK_IMAGE_LAYOUT_UNDEFINED;
+        descriptor.final_layout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         var texture: ?*c.mln_texture_session = null;
-        if (c.mln_shared_texture_attach(map, &descriptor, &texture) !=
+        if (c.mln_vulkan_borrowed_texture_attach(map, &descriptor, &texture) !=
             c.MLN_STATUS_OK or texture == null)
         {
-            diagnostics.logAbiError("shared texture attach failed");
+            diagnostics.logAbiError("Vulkan borrowed texture attach failed");
             return types.AppError.TextureAttachFailed;
         }
         return .{ .texture = texture.? };
     }
 
     fn drawTexture(
-        self: *VulkanSharedTextureBackend,
+        self: *VulkanBorrowedTextureBackend,
         texture: *c.mln_texture_session,
         _: types.Viewport,
     ) !bool {
-        var frame = std.mem.zeroes(c.mln_shared_texture_frame);
-        frame.size = @sizeOf(c.mln_shared_texture_frame);
-        const acquire_status = c.mln_texture_acquire_shared_frame(texture, &frame);
-        if (acquire_status == c.MLN_STATUS_INVALID_STATE) return false;
-        if (acquire_status != c.MLN_STATUS_OK) {
-            diagnostics.logAbiError("shared texture acquire failed");
-            return types.AppError.BackendDrawFailed;
-        }
-        errdefer releaseSharedFrame(texture, &frame);
-
-        if (frame.producer_backend != c.MLN_TEXTURE_BACKEND_VULKAN or
-            frame.native_view == null or
-            frame.export_type != c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF or
-            frame.export_fd < 0)
-        {
-            return types.AppError.BackendDrawFailed;
-        }
-        const image_view: c.VkImageView = @ptrCast(frame.native_view.?);
-        if (!try self.compositor.presentImageView(image_view)) {
-            releaseSharedFrame(texture, &frame);
-            return false;
-        }
-
-        self.pending_texture = texture;
-        self.pending_frame = frame;
-        return true;
-    }
-
-    fn releasePendingFrame(self: *VulkanSharedTextureBackend) void {
-        if (self.pending_texture) |texture| {
-            if (self.pending_frame) |*frame| releaseSharedFrame(texture, frame);
-        }
-        self.pending_texture = null;
-        self.pending_frame = null;
+        _ = texture;
+        return try self.compositor.presentImageView(self.borrowed_image.view);
     }
 };
 
@@ -458,19 +506,27 @@ const VulkanSurfaceBackend = struct {
 
 fn releaseVulkanFrame(
     texture: *c.mln_texture_session,
-    frame: *const c.mln_vulkan_texture_frame,
+    frame: *const c.mln_vulkan_owned_texture_frame,
 ) void {
-    if (c.mln_vulkan_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {
+    if (c.mln_vulkan_owned_texture_release_frame(texture, frame) != c.MLN_STATUS_OK) {
         diagnostics.logAbiError("Vulkan texture release failed");
     }
 }
 
-fn releaseSharedFrame(
-    texture: *c.mln_texture_session,
-    frame: *const c.mln_shared_texture_frame,
-) void {
-    if (frame.export_fd >= 0) _ = close(frame.export_fd);
-    if (c.mln_texture_release_shared_frame(texture, frame) != c.MLN_STATUS_OK) {
-        diagnostics.logAbiError("shared texture release failed");
+fn findMemoryType(
+    physical_device: c.VkPhysicalDevice,
+    type_bits: u32,
+    properties: c.VkMemoryPropertyFlags,
+) !u32 {
+    var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
+    c.vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+    for (0..memory_properties.memoryTypeCount) |index| {
+        const bit = @as(u32, 1) << @intCast(index);
+        if ((type_bits & bit) == 0) continue;
+        const memory_type = memory_properties.memoryTypes[index];
+        if ((memory_type.propertyFlags & properties) == properties) {
+            return @intCast(index);
+        }
     }
+    return types.AppError.BackendSetupFailed;
 }

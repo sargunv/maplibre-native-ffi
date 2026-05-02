@@ -15,8 +15,8 @@ struct mln_texture_session;
 namespace mln::core {
 
 enum class TextureSessionBackend : uint8_t { Owned, Metal, Vulkan };
-enum class TextureSessionFrameKind : uint8_t { None, Metal, Vulkan, Shared };
-enum class TextureSessionMode : uint8_t { Owned, Native, Shared };
+enum class TextureSessionFrameKind : uint8_t { None, MetalOwned, VulkanOwned };
+enum class TextureSessionMode : uint8_t { Owned, Borrowed };
 
 using TextureSessionPrepareCallback = void (*)(mln_texture_session*);
 using TextureSessionAfterRenderCallback = mln_status (*)(mln_texture_session*);
@@ -39,7 +39,6 @@ struct mln_texture_session {
   bool acquired = false;
   mln::core::TextureSessionFrameKind acquired_frame_kind =
     mln::core::TextureSessionFrameKind::None;
-  uint32_t shared_required_export_type = MLN_SHARED_TEXTURE_EXPORT_NONE;
   mln::core::TextureSessionBackend backend_kind =
     mln::core::TextureSessionBackend::Owned;
   mln::core::TextureSessionMode mode = mln::core::TextureSessionMode::Owned;
@@ -55,21 +54,18 @@ namespace mln::core {
 
 auto owned_texture_descriptor_default() noexcept
   -> mln_owned_texture_descriptor;
-auto shared_texture_descriptor_default() noexcept
-  -> mln_shared_texture_descriptor;
-auto metal_texture_descriptor_default() noexcept
-  -> mln_metal_texture_descriptor;
-auto vulkan_texture_descriptor_default() noexcept
-  -> mln_vulkan_texture_descriptor;
+auto metal_owned_texture_descriptor_default() noexcept
+  -> mln_metal_owned_texture_descriptor;
+auto metal_borrowed_texture_descriptor_default() noexcept
+  -> mln_metal_borrowed_texture_descriptor;
+auto vulkan_owned_texture_descriptor_default() noexcept
+  -> mln_vulkan_owned_texture_descriptor;
+auto vulkan_borrowed_texture_descriptor_default() noexcept
+  -> mln_vulkan_borrowed_texture_descriptor;
 auto texture_image_info_default() noexcept -> mln_texture_image_info;
 auto validate_attach_output(mln_texture_session** out_texture) -> mln_status;
-auto validate_shared_texture_descriptor(
-  const mln_shared_texture_descriptor* descriptor
-) -> mln_status;
 auto validate_texture(mln_texture_session* texture) -> mln_status;
 auto validate_live_attached_texture(mln_texture_session* texture) -> mln_status;
-auto validate_shared_frame_output(mln_shared_texture_frame* out_frame)
-  -> mln_status;
 auto physical_dimension(uint32_t logical, double scale_factor) -> uint32_t;
 auto validate_physical_size(
   uint32_t width, uint32_t height, double scale_factor
@@ -82,16 +78,20 @@ auto owned_texture_attach(
   mln_map* map, const mln_owned_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status;
-auto metal_texture_attach(
-  mln_map* map, const mln_metal_texture_descriptor* descriptor,
+auto metal_owned_texture_attach(
+  mln_map* map, const mln_metal_owned_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status;
-auto vulkan_texture_attach(
-  mln_map* map, const mln_vulkan_texture_descriptor* descriptor,
+auto metal_borrowed_texture_attach(
+  mln_map* map, const mln_metal_borrowed_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status;
-auto shared_texture_attach(
-  mln_map* map, const mln_shared_texture_descriptor* descriptor,
+auto vulkan_owned_texture_attach(
+  mln_map* map, const mln_vulkan_owned_texture_descriptor* descriptor,
+  mln_texture_session** out_texture
+) -> mln_status;
+auto vulkan_borrowed_texture_attach(
+  mln_map* map, const mln_vulkan_borrowed_texture_descriptor* descriptor,
   mln_texture_session** out_texture
 ) -> mln_status;
 auto texture_resize(
@@ -103,23 +103,17 @@ auto texture_read_premultiplied_rgba8(
   mln_texture_session* texture, uint8_t* out_data, size_t out_data_capacity,
   mln_texture_image_info* out_info
 ) -> mln_status;
-auto metal_texture_acquire_frame(
-  mln_texture_session* texture, mln_metal_texture_frame* out_frame
+auto metal_owned_texture_acquire_frame(
+  mln_texture_session* texture, mln_metal_owned_texture_frame* out_frame
 ) -> mln_status;
-auto metal_texture_release_frame(
-  mln_texture_session* texture, const mln_metal_texture_frame* frame
+auto metal_owned_texture_release_frame(
+  mln_texture_session* texture, const mln_metal_owned_texture_frame* frame
 ) -> mln_status;
-auto vulkan_texture_acquire_frame(
-  mln_texture_session* texture, mln_vulkan_texture_frame* out_frame
+auto vulkan_owned_texture_acquire_frame(
+  mln_texture_session* texture, mln_vulkan_owned_texture_frame* out_frame
 ) -> mln_status;
-auto texture_acquire_shared_frame(
-  mln_texture_session* texture, mln_shared_texture_frame* out_frame
-) -> mln_status;
-auto vulkan_texture_release_frame(
-  mln_texture_session* texture, const mln_vulkan_texture_frame* frame
-) -> mln_status;
-auto texture_release_shared_frame(
-  mln_texture_session* texture, const mln_shared_texture_frame* frame
+auto vulkan_owned_texture_release_frame(
+  mln_texture_session* texture, const mln_vulkan_owned_texture_frame* frame
 ) -> mln_status;
 auto texture_detach(mln_texture_session* texture) -> mln_status;
 auto texture_destroy(mln_texture_session* texture) -> mln_status;

@@ -1,13 +1,14 @@
 const builtin = @import("builtin");
 const testing = @import("std").testing;
 const support = @import("support.zig");
+const metal_support = @import("metal_support.zig");
 const common = @import("texture.zig");
 const c = support.c;
 
 extern "c" fn MTLCreateSystemDefaultDevice() ?*anyopaque;
 
 const Backend = struct {
-    pub const descriptor_size = @sizeOf(c.mln_metal_texture_descriptor);
+    pub const descriptor_size = @sizeOf(c.mln_metal_owned_texture_descriptor);
     const expected_pixel_format_rgba8_unorm: u64 = 70;
 
     pub const AttachContext = struct {
@@ -19,8 +20,8 @@ const Backend = struct {
 
         pub fn deinit(_: *AttachContext) void {}
 
-        pub fn descriptor(self: *const AttachContext) c.mln_metal_texture_descriptor {
-            var value = c.mln_metal_texture_descriptor_default();
+        pub fn descriptor(self: *const AttachContext) c.mln_metal_owned_texture_descriptor {
+            var value = c.mln_metal_owned_texture_descriptor_default();
             value.device = self.device;
             return value;
         }
@@ -37,11 +38,11 @@ const Backend = struct {
             texture_descriptor.height = 256;
 
             var texture: ?*c.mln_texture_session = null;
-            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_texture_attach(map, &texture_descriptor, &texture));
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_owned_texture_attach(map, &texture_descriptor, &texture));
             return .{ .texture = texture orelse return error.TextureCreateFailed, .context = context };
         }
 
-        pub fn descriptor(self: *const Fixture) c.mln_metal_texture_descriptor {
+        pub fn descriptor(self: *const Fixture) c.mln_metal_owned_texture_descriptor {
             return self.context.?.descriptor();
         }
 
@@ -59,23 +60,23 @@ const Backend = struct {
         }
 
         pub fn acquire(_: *Fixture, frame: *Frame) c.mln_status {
-            return c.mln_metal_texture_acquire_frame(frame.texture, &frame.metal);
+            return c.mln_metal_owned_texture_acquire_frame(frame.texture, &frame.metal);
         }
 
         pub fn release(_: *Fixture, frame: *const Frame) c.mln_status {
-            return c.mln_metal_texture_release_frame(frame.texture, &frame.metal);
+            return c.mln_metal_owned_texture_release_frame(frame.texture, &frame.metal);
         }
     };
 
     pub const Frame = struct {
         texture: *c.mln_texture_session,
-        metal: c.mln_metal_texture_frame,
+        metal: c.mln_metal_owned_texture_frame,
 
         pub fn empty(texture: *c.mln_texture_session) Frame {
             return .{
                 .texture = texture,
                 .metal = .{
-                    .size = @sizeOf(c.mln_metal_texture_frame),
+                    .size = @sizeOf(c.mln_metal_owned_texture_frame),
                     .generation = 0,
                     .width = 0,
                     .height = 0,
@@ -98,15 +99,15 @@ const Backend = struct {
         }
 
         pub fn resetSize(self: *Frame) void {
-            self.metal.size = @sizeOf(c.mln_metal_texture_frame);
+            self.metal.size = @sizeOf(c.mln_metal_owned_texture_frame);
         }
     };
 
-    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
-        return c.mln_metal_texture_attach(map, descriptor, out_texture);
+    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_metal_owned_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
+        return c.mln_metal_owned_texture_attach(map, descriptor, out_texture);
     }
 
-    pub fn clearRequiredHandle(descriptor: *c.mln_metal_texture_descriptor) void {
+    pub fn clearRequiredHandle(descriptor: *c.mln_metal_owned_texture_descriptor) void {
         descriptor.device = null;
     }
 
@@ -138,15 +139,15 @@ test "Metal texture unsupported backend validates arguments" {
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    var descriptor = c.mln_metal_texture_descriptor_default();
+    var descriptor = c.mln_metal_owned_texture_descriptor_default();
     descriptor.device = @ptrFromInt(1);
 
     var texture: ?*c.mln_texture_session = @ptrFromInt(1);
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
     try testing.expect(texture != null);
 
     texture = null;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_texture_attach(map, &descriptor, &texture));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_attach(map, &descriptor, &texture));
     try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
 }
 
@@ -170,45 +171,52 @@ test "Metal texture render acquire release and resize generation" {
     try common.expectRenderAcquireReleaseAndResizeGeneration(Backend);
 }
 
-test "Metal native texture rejects shared acquire and readback" {
+test "Metal owned texture supports readback" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
-    try common.expectNativeTextureRejectsSharedAcquireAndReadback(Backend);
+    try common.expectOwnedTextureReadback(Backend);
 }
 
-test "Metal shared texture attach reserves IOSurface export" {
+test "Metal borrowed texture renders into caller texture" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const pool = try metal_support.AutoreleasePool.init();
+    defer pool.deinit();
+
+    var context = try Backend.AttachContext.init();
+    defer context.deinit();
+
+    const borrowed = try metal_support.createTexture(context.device, 128, 128);
+    defer metal_support.releaseObject(borrowed);
 
     const runtime = try support.createRuntime();
     defer support.destroyRuntime(runtime);
     const map = try support.createMap(runtime);
     defer support.destroyMap(map);
 
-    var descriptor = c.mln_shared_texture_descriptor_default();
-    descriptor.width = 64;
-    descriptor.height = 32;
-    descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_IOSURFACE;
+    var descriptor = c.mln_metal_borrowed_texture_descriptor_default();
+    descriptor.width = 128;
+    descriptor.height = 128;
 
     var texture: ?*c.mln_texture_session = null;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_shared_texture_attach(map, &descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
-}
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
 
-test "Metal shared texture attach rejects missing or unsupported export type" {
-    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    descriptor.texture = borrowed;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_borrowed_texture_attach(map, &descriptor, &texture));
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?)) catch @panic("texture destroy failed");
 
-    const runtime = try support.createRuntime();
-    defer support.destroyRuntime(runtime);
-    const map = try support.createMap(runtime);
-    defer support.destroyMap(map);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
 
-    var descriptor = c.mln_shared_texture_descriptor_default();
+    var frame = Backend.Frame.empty(texture.?);
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_owned_texture_acquire_frame(texture.?, &frame.metal));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_resize(texture.?, 64, 64, 1.0));
 
-    var texture: ?*c.mln_texture_session = null;
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_shared_texture_attach(map, &descriptor, &texture));
-
-    descriptor.required_export_type = c.MLN_SHARED_TEXTURE_EXPORT_DMA_BUF;
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_shared_texture_attach(map, &descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+    var image_info = c.mln_texture_image_info_default();
+    var pixel: [4]u8 = .{ 0, 0, 0, 0 };
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_read_premultiplied_rgba8(texture.?, pixel[0..].ptr, pixel.len, &image_info));
 }
 
 test "Metal texture render emits observer events" {

@@ -23,6 +23,26 @@ auto vulkan_loader_library_name() noexcept -> const char* {
 
 namespace mln::core {
 
+namespace {
+
+auto owned_descriptor_from_borrowed(
+  const mln_vulkan_borrowed_texture_descriptor& descriptor
+) -> mln_vulkan_owned_texture_descriptor {
+  return mln_vulkan_owned_texture_descriptor{
+    .size = sizeof(mln_vulkan_owned_texture_descriptor),
+    .width = descriptor.width,
+    .height = descriptor.height,
+    .scale_factor = descriptor.scale_factor,
+    .instance = descriptor.instance,
+    .physical_device = descriptor.physical_device,
+    .device = descriptor.device,
+    .graphics_queue = descriptor.graphics_queue,
+    .graphics_queue_family_index = descriptor.graphics_queue_family_index,
+  };
+}
+
+}  // namespace
+
 class VulkanTextureBackend::VulkanTextureRenderableResource final
     : public mbgl::vulkan::SurfaceRenderableResource {
  public:
@@ -36,7 +56,29 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
     init_sampled_color(width, height);
     create_color_image_views();
     initDepthStencil();
-    create_sampled_render_pass();
+    create_render_pass(
+      vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+    create_framebuffers();
+  }
+
+  void init_borrowed(
+    const mln_vulkan_borrowed_texture_descriptor& descriptor, uint32_t width,
+    uint32_t height
+  ) {
+    usesBorrowedImage = true;
+    borrowedImage = vk::Image(static_cast<VkImage>(descriptor.image));
+    borrowedImageView =
+      vk::ImageView(static_cast<VkImageView>(descriptor.image_view));
+    colorFormat = static_cast<vk::Format>(descriptor.format);
+    extent = vk::Extent2D(width, height);
+    swapchainImages.push_back(borrowedImage);
+
+    initDepthStencil();
+    create_render_pass(
+      static_cast<vk::ImageLayout>(descriptor.initial_layout),
+      static_cast<vk::ImageLayout>(descriptor.final_layout)
+    );
     create_framebuffers();
   }
 
@@ -48,9 +90,17 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
     static_cast<mbgl::vulkan::Context&>(backend.getContext()).waitFrame();
   }
 
-  [[nodiscard]] auto image() const -> VkImage { return getAcquiredImage(); }
+  [[nodiscard]] auto image() const -> VkImage {
+    if (usesBorrowedImage) {
+      return borrowedImage;
+    }
+    return getAcquiredImage();
+  }
 
   [[nodiscard]] auto image_view() const -> VkImageView {
+    if (usesBorrowedImage) {
+      return borrowedImageView;
+    }
     return swapchainImageViews.at(getAcquiredImageIndex()).get();
   }
 
@@ -127,7 +177,9 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
     }
   }
 
-  void create_sampled_render_pass() {
+  void create_render_pass(
+    vk::ImageLayout initial_layout, vk::ImageLayout final_layout
+  ) {
     const auto& device = backend.getDevice();
     const auto& dispatcher = backend.getDispatcher();
 
@@ -139,8 +191,8 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
         .setStoreOp(vk::AttachmentStoreOp::eStore)
         .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
         .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-        .setInitialLayout(vk::ImageLayout::eUndefined)
-        .setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
+        .setInitialLayout(initial_layout)
+        .setFinalLayout(final_layout),
       vk::AttachmentDescription()
         .setFormat(depthFormat)
         .setSamples(vk::SampleCountFlagBits::e1)
@@ -211,9 +263,11 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
                                      .setWidth(extent.width)
                                      .setHeight(extent.height)
                                      .setLayers(1);
-    for (const auto& image_view : swapchainImageViews) {
+    const auto image_count =
+      usesBorrowedImage ? size_t{1} : swapchainImageViews.size();
+    for (auto index = size_t{}; index < image_count; ++index) {
       const std::array<vk::ImageView, 2> image_views = {
-        image_view.get(), depthAllocation->imageView.get()
+        color_image_view(index), depthAllocation->imageView.get()
       };
       framebuffer_create_info.setAttachments(image_views);
       swapchainFramebuffers.push_back(device->createFramebufferUnique(
@@ -221,14 +275,37 @@ class VulkanTextureBackend::VulkanTextureRenderableResource final
       ));
     }
   }
+
+  [[nodiscard]] auto color_image_view(size_t index) const -> vk::ImageView {
+    if (usesBorrowedImage) {
+      return borrowedImageView;
+    }
+    return swapchainImageViews.at(index).get();
+  }
+
+  bool usesBorrowedImage = false;
+  vk::Image borrowedImage{};
+  vk::ImageView borrowedImageView{};
 };
 
 VulkanTextureBackend::VulkanTextureBackend(
-  const mln_vulkan_texture_descriptor& descriptor, mbgl::Size size
+  const mln_vulkan_owned_texture_descriptor& descriptor, mbgl::Size size
 )
     : mbgl::vulkan::RendererBackend(mbgl::gfx::ContextMode::Unique),
       mbgl::gfx::HeadlessBackend(size),
       descriptor_(descriptor) {
+  dynamicLoader = vk::DynamicLoader{vulkan_loader_library_name()};
+  initSharedDevice();
+}
+
+VulkanTextureBackend::VulkanTextureBackend(
+  const mln_vulkan_borrowed_texture_descriptor& descriptor, mbgl::Size size
+)
+    : mbgl::vulkan::RendererBackend(mbgl::gfx::ContextMode::Unique),
+      mbgl::gfx::HeadlessBackend(size),
+      descriptor_(owned_descriptor_from_borrowed(descriptor)),
+      borrowed_descriptor_(descriptor),
+      uses_borrowed_texture_(true) {
   dynamicLoader = vk::DynamicLoader{vulkan_loader_library_name()};
   initSharedDevice();
 }
@@ -454,7 +531,13 @@ void VulkanTextureBackend::initSwapchain() {
   const auto& size = renderable.getSize();
 
   maxFrames = 1;
-  renderable_resource.init_sampled(size.width, size.height);
+  if (uses_borrowed_texture_) {
+    renderable_resource.init_borrowed(
+      borrowed_descriptor_, size.width, size.height
+    );
+  } else {
+    renderable_resource.init_sampled(size.width, size.height);
+  }
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

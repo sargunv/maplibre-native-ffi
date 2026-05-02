@@ -29,6 +29,10 @@ pub const Session = union(enum) {
             ),
         };
         if (status == c.MLN_STATUS_OK) return;
+        if (status == c.MLN_STATUS_UNSUPPORTED) switch (self.*) {
+            .texture => return,
+            .surface => {},
+        };
         switch (self.*) {
             .texture => {
                 diagnostics.logAbiError("texture resize failed");
