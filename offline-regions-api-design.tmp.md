@@ -1,97 +1,129 @@
-# Offline Region C API Design
+# Offline Region Follow-Up Design
 
-This temporary design note is for contributors adding the first C ABI slice of
-MapLibre Native offline region management. It records the API boundary before
-implementation so the initial patch can stay focused on tile-pyramid regions.
+This temporary design note is for contributors adding the next C ABI slice of
+MapLibre Native offline region management. The tile-pyramid storage lifecycle is
+already implemented; this note focuses on download control, runtime events, and
+database merge while keeping behavior aligned with native MapLibre APIs.
 
 ## Scope
 
-The first slice exposes tile-pyramid offline regions through the runtime. It
-does not expose geometry regions yet. Geometry region creation returns
-`MLN_STATUS_UNSUPPORTED` until the shared geometry/value ABI is designed in
+The next slice should expose native offline download control and merge behavior
+without adding higher-level execution models. Geometry offline regions remain
+out of scope until the shared geometry/value ABI lands in
 [#19](https://github.com/sargunv/maplibre-native-ffi/issues/19).
 
-The API uses runtime-owned event delivery because offline downloads are
-runtime-level operations. The prerequisite runtime event model was tracked in
-[#14](https://github.com/sargunv/maplibre-native-ffi/issues/14). Offline region
-coverage is tracked in
-[#13](https://github.com/sargunv/maplibre-native-ffi/issues/13).
+Offline region coverage is tracked in
+[#13](https://github.com/sargunv/maplibre-native-ffi/issues/13). Runtime-owned
+event delivery was tracked in
+[#14](https://github.com/sargunv/maplibre-native-ffi/issues/14).
 
 ## Native References
 
-MapLibre Native provides the lower-level building blocks:
+Follow these native APIs directly:
 
-- `mbgl::OfflineTilePyramidRegionDefinition`,
-  `mbgl::OfflineGeometryRegionDefinition`, `mbgl::OfflineRegionDefinition`,
-  `mbgl::OfflineRegionMetadata`, `mbgl::OfflineRegionStatus`,
-  `mbgl::OfflineRegionObserver`, and `mbgl::OfflineRegion` in
-  `third_party/maplibre-native/include/mbgl/storage/offline.hpp`.
-- `mbgl::DatabaseFileSource` asynchronous offline methods in
+- `mbgl::DatabaseFileSource::setOfflineRegionObserver`,
+  `setOfflineRegionDownloadState`, `getOfflineRegionStatus`, and
+  `mergeOfflineRegions` in
   `third_party/maplibre-native/include/mbgl/storage/database_file_source.hpp`.
-- Default-platform database and download implementations in
-  `third_party/maplibre-native/platform/default/include/mbgl/storage/offline_database.hpp`
-  and
+- `mbgl::OfflineRegionObserver::statusChanged`, `responseError`, and
+  `mapboxTileCountLimitExceeded` in
+  `third_party/maplibre-native/include/mbgl/storage/offline.hpp`.
+- `mbgl::OfflineDownload` in
   `third_party/maplibre-native/platform/default/include/mbgl/storage/offline_download.hpp`.
+- `mbgl::Response::Error::Reason` in
+  `third_party/maplibre-native/include/mbgl/storage/response.hpp`.
 
-## Public Model
+## Download Control
 
-Offline management is a runtime feature. Region commands take an `mln_runtime*`,
-validate the runtime owner thread, and block until MapLibre's database callback
-reports completion when the native operation is asynchronous.
+MapLibre Native exposes observer registration and download state changes as
+separate operations. The C ABI should keep that explicit shape instead of
+implicitly observing when activating a download.
 
-Regions are addressed by stable `int64_t` IDs instead of live handles. Returned
-region data uses snapshot/list handles that own copied native values. Borrowed
-strings and metadata pointers inside a snapshot or list remain valid until that
-snapshot or list is destroyed.
+Add runtime-level commands that take a region ID:
 
-This avoids implying that a public region handle stays attached to live native
-download state. Download control uses the runtime plus region ID.
+- `mln_runtime_offline_region_set_observed(runtime, region_id, observed)`;
+- `mln_runtime_offline_region_set_download_state(runtime, region_id, state)`.
 
-## ABI Shape
+Both commands validate the runtime owner thread and synchronously validate that
+the region exists before forwarding to `DatabaseFileSource`. Return status means
+the command was accepted by the C ABI/native entry point. Later progress or
+download failures are reported as runtime events.
 
-The public types should include:
+Disabling observation should unregister the native observer. Deleting a region
+should also remove any native observer/download state for that region.
 
-- `mln_offline_region_id` as `int64_t`;
-- `mln_offline_region_definition_type` with tile-pyramid and geometry values;
-- `mln_offline_region_download_state` with inactive and active values;
-- `mln_lat_lng_bounds` for tile-pyramid bounds;
-- `mln_offline_tile_pyramid_region_definition`;
-- `mln_offline_region_definition`, tagged by definition type;
-- `mln_offline_region_status` mirroring `mbgl::OfflineRegionStatus`;
-- opaque `mln_offline_region_snapshot` and `mln_offline_region_list` handles;
-- `mln_offline_region_info` for copied region data borrowed from those handles.
+## Runtime Events
 
-The first implementation validates tile-pyramid definitions and returns
-`MLN_STATUS_UNSUPPORTED` for geometry definitions. A TODO comment in the
-geometry branch should point to
-`https://github.com/sargunv/maplibre-native-ffi/issues/19`.
+Observer callbacks run on MapLibre's database thread. The C ABI observer must
+copy callback data into runtime-owned event storage and must not expose callback
+thread pointers to hosts.
 
-## Operations
+Add runtime event types for:
 
-The first slice should expose database operations that can be validated without
-network downloads:
+- offline region status changed;
+- offline region response error;
+- offline region tile count limit exceeded.
 
-- create a tile-pyramid offline region with opaque binary metadata;
-- get a region by ID;
-- list regions;
-- update metadata;
-- get completed status;
-- invalidate a region;
-- delete a region.
+Use `source_type = MLN_RUNTIME_EVENT_SOURCE_RUNTIME` and `source = runtime` for
+all offline events. Payloads should contain plain copied data only:
 
-`mergeDatabase` and active download control can be added after the basic storage
-surface is covered. Download progress/error events should use
-`mln_runtime_poll_event()` rather than host callbacks.
+- status events carry `region_id` and `mln_offline_region_status`;
+- response-error events carry `region_id` and a reason mapped from
+  `mbgl::Response::Error::Reason` to `mln_resource_error_reason`; the native
+  error message goes in `mln_runtime_event.message`;
+- tile-count-limit events carry `region_id` and the native limit.
+
+Queued events for a region should be discarded when that region is deleted. Late
+native callbacks should check that the region is still observed before
+enqueueing. This keeps deletion from producing stale region events after the C
+ABI has accepted the delete operation.
+
+## Database Merge
+
+Expose native merge as a runtime-level blocking database operation:
+
+- `mln_runtime_offline_regions_merge_database(runtime, side_database_path,
+  out_regions)`.
+
+The function should return exactly the `OfflineRegions` value delivered by
+`DatabaseFileSource::mergeOfflineRegions`, wrapped in the existing
+`mln_offline_region_list` snapshot handle. Do not reinterpret the result as a
+full post-merge list or as only newly-created regions unless MapLibre Native
+does so.
+
+Document native side effects: MapLibre may upgrade the side database in place,
+so the side database path must be writable when native merge requires it.
+
+## Errors
+
+Synchronous validation failures use the existing status categories from
+`docs/development.md`.
+
+Native database callback failures convert to `MLN_STATUS_NATIVE_ERROR` with a
+thread-local diagnostic. Native download/response failures delivered through
+`OfflineRegionObserver::responseError` are runtime events, not synchronous
+status failures.
+
+For response-error event payloads, reuse `mln_resource_error_reason` rather than
+adding a second equivalent enum:
+
+- `Response::Error::Reason::Success` -> `MLN_RESOURCE_ERROR_REASON_NONE`;
+- `NotFound` -> `MLN_RESOURCE_ERROR_REASON_NOT_FOUND`;
+- `Server` -> `MLN_RESOURCE_ERROR_REASON_SERVER`;
+- `Connection` -> `MLN_RESOURCE_ERROR_REASON_CONNECTION`;
+- `RateLimit` -> `MLN_RESOURCE_ERROR_REASON_RATE_LIMIT`;
+- `Other` -> `MLN_RESOURCE_ERROR_REASON_OTHER`.
 
 ## Validation
 
 C ABI tests should cover:
 
-- validation failures for null pointers, unknown definition types, undersized
-  structs, invalid zooms, invalid bounds, and unsupported geometry;
-- create/list/get/update metadata through a persistent cache path;
-- reload from the same cache path in a new runtime;
-- completed-status query for a newly-created region;
-- invalidate and delete operations.
+- explicit observe/unobserve calls and invalid region IDs;
+- active/inactive download state commands;
+- status-changed events for a small downloadable region;
+- response-error events from a failing resource provider or local test server;
+- tile-count-limit events when native limits are exceeded, if practical;
+- delete discarding queued or late events for that region;
+- merge returning the native callback region list and preserving metadata.
 
 Use `mise run test` for the final verification pass.
