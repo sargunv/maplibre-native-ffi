@@ -115,7 +115,7 @@ const Backend = struct {
     };
 
     pub const Fixture = struct {
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         context: ?AttachContext,
 
         pub fn create(map: *c.mln_map) !Fixture {
@@ -126,7 +126,7 @@ const Backend = struct {
             texture_descriptor.width = 256;
             texture_descriptor.height = 256;
 
-            var texture: ?*c.mln_texture_session = null;
+            var texture: ?*c.mln_render_session = null;
             try testing.expectEqual(c.MLN_STATUS_OK, c.mln_vulkan_owned_texture_attach(map, &texture_descriptor, &texture));
             return .{ .texture = texture orelse return error.TextureCreateFailed, .context = context };
         }
@@ -136,7 +136,7 @@ const Backend = struct {
         }
 
         pub fn destroy(self: *Fixture) void {
-            testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(self.texture)) catch @panic("texture destroy failed");
+            testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(self.texture)) catch @panic("texture destroy failed");
             self.deinitContextOnly();
         }
 
@@ -159,10 +159,10 @@ const Backend = struct {
     };
 
     pub const Frame = struct {
-        texture: *c.mln_texture_session,
+        texture: *c.mln_render_session,
         vulkan: c.mln_vulkan_owned_texture_frame,
 
-        pub fn empty(texture: *c.mln_texture_session) Frame {
+        pub fn empty(texture: *c.mln_render_session) Frame {
             return .{
                 .texture = texture,
                 .vulkan = .{
@@ -196,7 +196,7 @@ const Backend = struct {
         }
     };
 
-    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_vulkan_owned_texture_descriptor, out_texture: ?*?*c.mln_texture_session) c.mln_status {
+    pub fn attach(map: ?*c.mln_map, descriptor: ?*const c.mln_vulkan_owned_texture_descriptor, out_texture: ?*?*c.mln_render_session) c.mln_status {
         return c.mln_vulkan_owned_texture_attach(map, descriptor, out_texture);
     }
 
@@ -335,13 +335,13 @@ test "Vulkan texture unsupported backend validates arguments" {
     descriptor.device = @ptrFromInt(1);
     descriptor.graphics_queue = @ptrFromInt(1);
 
-    var texture: ?*c.mln_texture_session = @ptrFromInt(1);
+    var texture: ?*c.mln_render_session = @ptrFromInt(1);
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture));
     try testing.expect(texture != null);
 
     texture = null;
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_owned_texture_attach(map, &descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), texture);
 }
 
 fn expectVk(result: vk.VkResult) !void {
@@ -401,30 +401,30 @@ test "Vulkan borrowed texture renders into caller image" {
     defer support.destroyMap(map);
 
     var descriptor = borrowed.descriptor();
-    var texture: ?*c.mln_texture_session = null;
+    var texture: ?*c.mln_render_session = null;
     var missing_image_descriptor = descriptor;
     missing_image_descriptor.image = null;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_borrowed_texture_attach(map, &missing_image_descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), texture);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_vulkan_borrowed_texture_attach(map, &descriptor, &texture));
     defer if (texture) |live_texture| {
-        testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(live_texture)) catch @panic("texture destroy failed");
+        testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(live_texture)) catch @panic("texture destroy failed");
     };
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_render_update(texture.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(texture.?));
 
     var frame = Backend.Frame.empty(texture.?);
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_owned_texture_acquire_frame(texture.?, &frame.vulkan));
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_resize(texture.?, 64, 64, 1.0));
+    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_render_session_resize(texture.?, 64, 64, 1.0));
 
     var image_info = c.mln_texture_image_info_default();
     var pixel: [4]u8 = .{ 0, 0, 0, 0 };
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_texture_read_premultiplied_rgba8(texture.?, pixel[0..].ptr, pixel.len, &image_info));
 
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_texture_destroy(texture.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(texture.?));
     texture = null;
 }
 

@@ -198,6 +198,7 @@ add_library(
     src/diagnostics/diagnostics.cpp
     src/logging/logging.cpp
     src/map/map.cpp
+    src/render/render_session_common.cpp
     src/render/surface_session.cpp
     src/render/texture_session.cpp
     src/resources/custom_resource_provider.cpp

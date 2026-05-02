@@ -100,6 +100,7 @@ auto surface_attach_session(
 ) -> mln_status {
   return attach_render_session(
     std::move(session), out_surface, surface_registry(),
+    RenderSessionKind::Surface,
     RenderSessionAttachMessages{
       .null_session = "surface session must not be null",
       .null_output = "out_surface must not be null",

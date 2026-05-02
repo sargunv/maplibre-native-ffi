@@ -8,6 +8,7 @@
 #include <mbgl/renderer/renderer.hpp>
 
 #include "maplibre_native_c.h"
+#include "render/render_session_common.hpp"
 
 struct mln_surface_session;
 
@@ -18,7 +19,7 @@ using SurfaceSessionResizeCallback =
 
 }  // namespace mln::core
 
-struct mln_surface_session {
+struct mln_surface_session : mln_render_session {
   mln_map* map = nullptr;
   std::thread::id owner_thread;
   uint32_t width = 0;

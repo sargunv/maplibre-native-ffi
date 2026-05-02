@@ -119,6 +119,7 @@ auto texture_attach_session(
 ) -> mln_status {
   return attach_render_session(
     std::move(session), out_texture, texture_registry(),
+    RenderSessionKind::Texture,
     RenderSessionAttachMessages{
       .null_session = "texture session must not be null",
       .null_output = "out_texture must not be null",

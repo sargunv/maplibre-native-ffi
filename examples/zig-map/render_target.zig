@@ -4,14 +4,14 @@ const types = @import("types.zig");
 
 pub const Session = union(enum) {
     none,
-    texture: *c.mln_texture_session,
-    surface: *c.mln_surface_session,
+    texture: *c.mln_render_session,
+    surface: *c.mln_render_session,
 
     pub fn deinit(self: *Session) void {
         switch (self.*) {
             .none => {},
-            .texture => |texture| _ = c.mln_texture_destroy(texture),
-            .surface => |surface| _ = c.mln_surface_destroy(surface),
+            .texture => |texture| _ = c.mln_render_session_destroy(texture),
+            .surface => |surface| _ = c.mln_render_session_destroy(surface),
         }
         self.* = .none;
     }
@@ -19,13 +19,13 @@ pub const Session = union(enum) {
     pub fn resize(self: *Session, viewport: types.Viewport) !void {
         const status = switch (self.*) {
             .none => c.MLN_STATUS_INVALID_STATE,
-            .texture => |texture| c.mln_texture_resize(
+            .texture => |texture| c.mln_render_session_resize(
                 texture,
                 viewport.logical_width,
                 viewport.logical_height,
                 viewport.scale_factor,
             ),
-            .surface => |surface| c.mln_surface_resize(
+            .surface => |surface| c.mln_render_session_resize(
                 surface,
                 viewport.logical_width,
                 viewport.logical_height,
@@ -48,8 +48,8 @@ pub const Session = union(enum) {
     pub fn renderUpdate(self: *Session) !bool {
         const status = switch (self.*) {
             .none => c.MLN_STATUS_INVALID_STATE,
-            .texture => |texture| c.mln_texture_render_update(texture),
-            .surface => |surface| c.mln_surface_render_update(surface),
+            .texture => |texture| c.mln_render_session_render_update(texture),
+            .surface => |surface| c.mln_render_session_render_update(surface),
         };
         if (status == c.MLN_STATUS_OK) return true;
         if (status == c.MLN_STATUS_INVALID_STATE) return false;

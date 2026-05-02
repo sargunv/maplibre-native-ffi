@@ -35,7 +35,7 @@ test "Metal surface attach rejects invalid arguments" {
     defer support.destroyMap(map);
 
     var descriptor = c.mln_metal_surface_descriptor_default();
-    var surface: ?*c.mln_surface_session = null;
+    var surface: ?*c.mln_render_session = null;
 
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_surface_attach(null, &descriptor, &surface));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_surface_attach(map, null, &surface));
@@ -80,23 +80,23 @@ test "Metal surface lifecycle and render update" {
     descriptor.height = 64;
     descriptor.layer = try metal_support.createLayer();
 
-    var surface: ?*c.mln_surface_session = null;
+    var surface: ?*c.mln_render_session = null;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_surface_attach(map, &descriptor, &surface));
 
     var texture_descriptor = c.mln_owned_texture_descriptor_default();
-    var texture: ?*c.mln_texture_session = null;
+    var texture: ?*c.mln_render_session = null;
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_owned_texture_attach(map, &texture_descriptor, &texture));
-    try testing.expectEqual(@as(?*c.mln_texture_session, null), texture);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), texture);
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_render_update(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(surface.?));
 
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_resize(surface.?, 32, 32, 2.0));
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_detach(surface.?));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_surface_render_update(surface.?));
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_destroy(surface.?));
-    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_surface_destroy(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_resize(surface.?, 32, 32, 2.0));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_detach(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_render_session_render_update(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_render_session_destroy(surface.?));
 }
 
 test "Metal surface renders to window-attached layer under autorelease pool" {
@@ -120,13 +120,13 @@ test "Metal surface renders to window-attached layer under autorelease pool" {
     descriptor.height = 64;
     descriptor.layer = window_layer.layer.?;
 
-    var surface: ?*c.mln_surface_session = null;
+    var surface: ?*c.mln_render_session = null;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_surface_attach(map, &descriptor, &surface));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_render_update(surface.?));
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_destroy(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(surface.?));
 }
 
 test "Metal surface render acquires one drawable per frame" {
@@ -150,15 +150,15 @@ test "Metal surface render acquires one drawable per frame" {
     descriptor.height = 64;
     descriptor.layer = window_layer.layer.?;
 
-    var surface: ?*c.mln_surface_session = null;
+    var surface: ?*c.mln_render_session = null;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_metal_surface_attach(map, &descriptor, &surface));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
     _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE);
     try testing.expectEqual(@as(u32, 0), metal_support.nextDrawableCount(window_layer.layer.?));
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_render_update(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(surface.?));
     try testing.expectEqual(@as(u32, 1), metal_support.nextDrawableCount(window_layer.layer.?));
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_surface_destroy(surface.?));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(surface.?));
 }
 
 test "Vulkan surface unsupported backend validates arguments" {
@@ -176,13 +176,13 @@ test "Vulkan surface unsupported backend validates arguments" {
     descriptor.graphics_queue = @ptrFromInt(1);
     descriptor.surface = @ptrFromInt(1);
 
-    var surface: ?*c.mln_surface_session = @ptrFromInt(1);
+    var surface: ?*c.mln_render_session = @ptrFromInt(1);
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_surface_attach(map, &descriptor, &surface));
     try testing.expect(surface != null);
 
     surface = null;
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_vulkan_surface_attach(map, &descriptor, &surface));
-    try testing.expectEqual(@as(?*c.mln_surface_session, null), surface);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), surface);
 }
 
 test "Vulkan surface attach rejects invalid arguments" {
@@ -194,7 +194,7 @@ test "Vulkan surface attach rejects invalid arguments" {
     defer support.destroyMap(map);
 
     var descriptor = c.mln_vulkan_surface_descriptor_default();
-    var surface: ?*c.mln_surface_session = null;
+    var surface: ?*c.mln_render_session = null;
 
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_surface_attach(null, &descriptor, &surface));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_surface_attach(map, null, &surface));
@@ -229,7 +229,7 @@ test "Vulkan surface attach rejects invalid arguments" {
 
     descriptor = c.mln_vulkan_surface_descriptor_default();
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_vulkan_surface_attach(map, &descriptor, &surface));
-    try testing.expectEqual(@as(?*c.mln_surface_session, null), surface);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), surface);
 }
 
 test "Metal surface unsupported backend validates arguments" {
@@ -243,11 +243,11 @@ test "Metal surface unsupported backend validates arguments" {
     var descriptor = c.mln_metal_surface_descriptor_default();
     descriptor.layer = @ptrFromInt(1);
 
-    var surface: ?*c.mln_surface_session = @ptrFromInt(1);
+    var surface: ?*c.mln_render_session = @ptrFromInt(1);
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_metal_surface_attach(map, &descriptor, &surface));
     try testing.expect(surface != null);
 
     surface = null;
     try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_metal_surface_attach(map, &descriptor, &surface));
-    try testing.expectEqual(@as(?*c.mln_surface_session, null), surface);
+    try testing.expectEqual(@as(?*c.mln_render_session, null), surface);
 }

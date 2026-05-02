@@ -17,6 +17,25 @@
 
 namespace mln::core {
 
+enum class RenderSessionKind : uint8_t { Surface, Texture };
+
+auto register_render_session(
+  mln_render_session* session, RenderSessionKind kind
+) -> void;
+auto unregister_render_session(mln_render_session* session) -> void;
+auto render_session_kind(
+  mln_render_session* session, RenderSessionKind* out_kind
+) -> mln_status;
+
+}  // namespace mln::core
+
+struct mln_render_session {
+  mln::core::RenderSessionKind kind = mln::core::RenderSessionKind::Surface;
+  void* concrete = nullptr;
+};
+
+namespace mln::core {
+
 struct RenderSessionAttachMessages {
   const char* null_session;
   const char* null_output;
@@ -122,7 +141,8 @@ inline auto validate_render_session_physical_size(
 template <typename Session>
 auto attach_render_session(
   std::unique_ptr<Session> session, Session** out_session,
-  RenderSessionRegistry<Session>& registry, RenderSessionAttachMessages messages
+  RenderSessionRegistry<Session>& registry, RenderSessionKind kind,
+  RenderSessionAttachMessages messages
 ) -> mln_status {
   if (session == nullptr) {
     set_thread_error(messages.null_session);
@@ -145,9 +165,14 @@ auto attach_render_session(
     if (auto* native_map = map_native(map); native_map != nullptr) {
       native_map->setSize(mbgl::Size{session->width, session->height});
     }
+    session->kind = kind;
+    session->concrete = handle;
     registry.emplace(handle, std::move(session));
+    register_render_session(static_cast<mln_render_session*>(handle), kind);
   } catch (...) {
+    unregister_render_session(static_cast<mln_render_session*>(handle));
     static_cast<void>(map_detach_render_target_session(map, handle));
+    static_cast<void>(registry.erase(handle));
     throw;
   }
 
