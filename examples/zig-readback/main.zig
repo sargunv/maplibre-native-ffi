@@ -6,25 +6,25 @@ const width = 512;
 const height = 512;
 
 const style_json =
-    \\\{
-    \\\  "version": 8,
-    \\\  "name": "zig-readback",
-    \\\  "sources": {
-    \\\    "point": {
-    \\\      "type": "geojson",
-    \\\      "data": {
-    \\\        "type": "FeatureCollection",
-    \\\        "features": [
-    \\\          {"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4194,37.7749]},"properties":{}}
-    \\\        ]
-    \\\      }
-    \\\    }
-    \\\  },
-    \\\  "layers": [
-    \\\    {"id":"background","type":"background","paint":{"background-color":"#d8f1ff"}},
-    \\\    {"id":"point-circle","type":"circle","source":"point","paint":{"circle-color":"#f97316","circle-radius":18}}
-    \\\  ]
-    \\\}
+    \\{
+    \\  "version": 8,
+    \\  "name": "zig-readback",
+    \\  "sources": {
+    \\    "point": {
+    \\      "type": "geojson",
+    \\      "data": {
+    \\        "type": "FeatureCollection",
+    \\        "features": [
+    \\          {"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4194,37.7749]},"properties":{}}
+    \\        ]
+    \\      }
+    \\    }
+    \\  },
+    \\  "layers": [
+    \\    {"id":"background","type":"background","paint":{"background-color":"#d8f1ff"}},
+    \\    {"id":"point-circle","type":"circle","source":"point","paint":{"circle-color":"#f97316","circle-radius":18}}
+    \\  ]
+    \\}
 ;
 
 pub fn main(init_args: std.process.Init) !void {

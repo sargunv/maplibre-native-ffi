@@ -10,4 +10,4 @@ run = "zig build"
 
 [tasks.run]
 depends = ["//:build"]
-run = "zig build run"
+run = "mkdir -p zig-out && zig build run -- zig-out/zig-readback.ppm"
