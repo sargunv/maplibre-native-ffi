@@ -39,6 +39,9 @@ test "observer event payload ABI is visible to C import" {
     try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_RENDER_MAP, @as(u32, 2));
     try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_STYLE_IMAGE_MISSING, @as(u32, 3));
     try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_TILE_ACTION, @as(u32, 4));
+    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_STATUS, @as(u32, 5));
+    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_RESPONSE_ERROR, @as(u32, 6));
+    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_TILE_COUNT_LIMIT, @as(u32, 7));
 
     try testing.expectEqual(c.MLN_RENDER_MODE_PARTIAL, @as(u32, 0));
     try testing.expectEqual(c.MLN_RENDER_MODE_FULL, @as(u32, 1));
@@ -80,6 +83,24 @@ test "observer event payload ABI is visible to C import" {
     };
     try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_event_tile_action)), tile.size);
     try testing.expectEqual(c.MLN_TILE_OPERATION_START_PARSE, tile.operation);
+
+    const offline_status = c.mln_runtime_event_offline_region_status{
+        .size = @sizeOf(c.mln_runtime_event_offline_region_status),
+        .region_id = 1,
+        .status = .{
+            .size = @sizeOf(c.mln_offline_region_status),
+            .download_state = c.MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE,
+            .completed_resource_count = 0,
+            .completed_resource_size = 0,
+            .completed_tile_count = 0,
+            .required_tile_count = 0,
+            .completed_tile_size = 0,
+            .required_resource_count = 0,
+            .required_resource_count_is_precise = false,
+            .complete = false,
+        },
+    };
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_event_offline_region_status)), offline_status.size);
 }
 
 test "event message storage is copied into caller output" {

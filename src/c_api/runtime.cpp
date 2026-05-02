@@ -103,6 +103,17 @@ auto mln_runtime_offline_regions_list(
   });
 }
 
+auto mln_runtime_offline_regions_merge_database(
+  mln_runtime* runtime, const char* side_database_path,
+  mln_offline_region_list** out_regions
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_regions_merge_database(
+      runtime, side_database_path, out_regions
+    );
+  });
+}
+
 auto mln_runtime_offline_region_update_metadata(
   mln_runtime* runtime, mln_offline_region_id region_id,
   const uint8_t* metadata, size_t metadata_size,
@@ -121,6 +132,24 @@ auto mln_runtime_offline_region_get_status(
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::offline_region_get_status(runtime, region_id, out_status);
+  });
+}
+
+auto mln_runtime_offline_region_set_observed(
+  mln_runtime* runtime, mln_offline_region_id region_id, bool observed
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_set_observed(runtime, region_id, observed);
+  });
+}
+
+auto mln_runtime_offline_region_set_download_state(
+  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_set_download_state(
+      runtime, region_id, state
+    );
   });
 }
 

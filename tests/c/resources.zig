@@ -88,6 +88,21 @@ fn checkOfflineRegionInfo(info: *const c.mln_offline_region_info, expected_id: c
     try testing.expectEqualSlices(u8, expected_metadata, info.metadata[0..info.metadata_size]);
 }
 
+fn waitForOfflineEvent(runtime: *c.mln_runtime, event_type: u32) !c.mln_runtime_event {
+    for (0..5000) |_| {
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+        while (true) {
+            var event = support.emptyEvent();
+            var has_event = false;
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_poll_event(runtime, &event, &has_event));
+            if (!has_event) break;
+            if (event.type == event_type and event.source_type == c.MLN_RUNTIME_EVENT_SOURCE_RUNTIME and event.source == @as(?*anyopaque, @ptrCast(runtime))) return event;
+        }
+        _ = usleep(1000);
+    }
+    return error.EventNotFound;
+}
+
 const AsyncProviderState = struct {
     handle: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     saw_style_kind: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -806,6 +821,141 @@ test "offline tile-pyramid regions persist and support metadata lifecycle" {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(list_handle, &count));
         try testing.expectEqual(@as(usize, 0), count);
     }
+}
+
+test "offline region download control emits status events" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var provider = c.mln_resource_provider{
+        .size = @sizeOf(c.mln_resource_provider),
+        .callback = customStyleProvider,
+        .user_data = null,
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_set_resource_provider(runtime, &provider));
+
+    const metadata = [_]u8{9};
+    var definition = offlineTileDefinition();
+    definition.data.tile_pyramid.style_url = "custom://style.json";
+    var created: ?*c.mln_offline_region_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &created));
+    const created_handle = created orelse return error.RegionCreateFailed;
+    defer c.mln_offline_region_snapshot_destroy(created_handle);
+
+    var info = offlineRegionInfo();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(created_handle, &info));
+    const region_id = info.id;
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_set_observed(runtime, region_id + 1000, true));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_set_download_state(runtime, region_id, 999));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_observed(runtime, region_id, true));
+    defer _ = c.mln_runtime_offline_region_set_observed(runtime, region_id, false);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_download_state(runtime, region_id, c.MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE));
+    const event = try waitForOfflineEvent(runtime, c.MLN_RUNTIME_EVENT_OFFLINE_REGION_STATUS_CHANGED);
+    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_STATUS, event.payload_type);
+    try testing.expectEqual(@as(usize, @sizeOf(c.mln_runtime_event_offline_region_status)), event.payload_size);
+    const payload: *const c.mln_runtime_event_offline_region_status = @ptrCast(@alignCast(event.payload.?));
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_runtime_event_offline_region_status)), payload.size);
+    try testing.expectEqual(region_id, payload.region_id);
+    try testing.expect(payload.status.download_state == c.MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE or payload.status.download_state == c.MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_download_state(runtime, region_id, c.MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE));
+}
+
+test "offline region download errors are runtime events" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+
+    var provider = c.mln_resource_provider{
+        .size = @sizeOf(c.mln_resource_provider),
+        .callback = errorStyleProvider,
+        .user_data = null,
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_set_resource_provider(runtime, &provider));
+
+    const metadata = [_]u8{8};
+    var definition = offlineTileDefinition();
+    definition.data.tile_pyramid.style_url = "custom://offline-error-style.json";
+    var created: ?*c.mln_offline_region_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &created));
+    const created_handle = created orelse return error.RegionCreateFailed;
+    defer c.mln_offline_region_snapshot_destroy(created_handle);
+
+    var info = offlineRegionInfo();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(created_handle, &info));
+    const region_id = info.id;
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_observed(runtime, region_id, true));
+    defer _ = c.mln_runtime_offline_region_set_observed(runtime, region_id, false);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_download_state(runtime, region_id, c.MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE));
+    const event = try waitForOfflineEvent(runtime, c.MLN_RUNTIME_EVENT_OFFLINE_REGION_RESPONSE_ERROR);
+    try testing.expectEqual(c.MLN_RUNTIME_EVENT_PAYLOAD_OFFLINE_REGION_RESPONSE_ERROR, event.payload_type);
+    const payload: *const c.mln_runtime_event_offline_region_response_error = @ptrCast(@alignCast(event.payload.?));
+    try testing.expectEqual(region_id, payload.region_id);
+    try testing.expectEqual(c.MLN_RESOURCE_ERROR_REASON_NOT_FOUND, payload.reason);
+    try testing.expect(event.message != null);
+    try testing.expect(event.message_size > 0);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_set_download_state(runtime, region_id, c.MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE));
+}
+
+test "offline database merge returns native region list" {
+    var main_tmp = testing.tmpDir(.{});
+    defer main_tmp.cleanup();
+    var side_tmp = testing.tmpDir(.{});
+    defer side_tmp.cleanup();
+    const cwd = try std.process.currentPathAlloc(testing.io, testing.allocator);
+    defer testing.allocator.free(cwd);
+    const main_cache_path = try std.fmt.allocPrintSentinel(testing.allocator, "{s}/.zig-cache/tmp/{s}/cache.db", .{ cwd, main_tmp.sub_path[0..] }, 0);
+    defer testing.allocator.free(main_cache_path);
+    const side_cache_path = try std.fmt.allocPrintSentinel(testing.allocator, "{s}/.zig-cache/tmp/{s}/cache.db", .{ cwd, side_tmp.sub_path[0..] }, 0);
+    defer testing.allocator.free(side_cache_path);
+
+    const metadata = [_]u8{ 5, 4, 3 };
+
+    {
+        var side_runtime: ?*c.mln_runtime = null;
+        var side_options = c.mln_runtime_options_default();
+        side_options.cache_path = side_cache_path.ptr;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&side_options, &side_runtime));
+        const side_runtime_handle = side_runtime orelse return error.RuntimeCreateFailed;
+        defer support.destroyRuntime(side_runtime_handle);
+
+        var definition = offlineTileDefinition();
+        var created: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(side_runtime_handle, &definition, metadata[0..].ptr, metadata.len, &created));
+        const created_handle = created orelse return error.RegionCreateFailed;
+        defer c.mln_offline_region_snapshot_destroy(created_handle);
+    }
+
+    var main_runtime: ?*c.mln_runtime = null;
+    var main_options = c.mln_runtime_options_default();
+    main_options.cache_path = main_cache_path.ptr;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&main_options, &main_runtime));
+    const main_runtime_handle = main_runtime orelse return error.RuntimeCreateFailed;
+    defer support.destroyRuntime(main_runtime_handle);
+
+    var merged: ?*c.mln_offline_region_list = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_regions_merge_database(main_runtime_handle, null, &merged));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_regions_merge_database(main_runtime_handle, side_cache_path.ptr, &merged));
+    const merged_handle = merged orelse return error.RegionListFailed;
+    defer c.mln_offline_region_list_destroy(merged_handle);
+
+    var count: usize = 0;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(merged_handle, &count));
+    try testing.expectEqual(@as(usize, 1), count);
+    var info = offlineRegionInfo();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_get(merged_handle, 0, &info));
+    try testing.expectEqualSlices(u8, metadata[0..], info.metadata[0..info.metadata_size]);
 }
 
 test "http URL style loads through network provider" {

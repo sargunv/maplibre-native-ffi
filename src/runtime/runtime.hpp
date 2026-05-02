@@ -16,11 +16,21 @@
 
 #include "maplibre_native_c.h"
 
+namespace mbgl {
+class DatabaseFileSource;
+}  // namespace mbgl
+
 namespace mln::core {
 
 struct ResourceProvider {
   mln_resource_provider_callback callback = nullptr;
   void* user_data = nullptr;
+};
+
+struct OfflineRegionEventState {
+  std::mutex mutex;
+  mln_runtime* runtime = nullptr;
+  bool alive = false;
 };
 
 struct QueuedRuntimeEvent {
@@ -32,6 +42,8 @@ struct QueuedRuntimeEvent {
   uint32_t payload_type;
   std::vector<std::byte> payload;
   std::string message;
+  bool has_offline_region = false;
+  mln_offline_region_id offline_region_id = 0;
 };
 
 }  // namespace mln::core
@@ -41,16 +53,19 @@ struct mln_runtime {
   std::unique_ptr<mbgl::util::RunLoop> run_loop;
   std::string asset_path;
   std::string cache_path;
+  std::shared_ptr<mbgl::DatabaseFileSource> database_source;
   bool has_maximum_cache_size = false;
   std::uint64_t maximum_cache_size = 0;
   bool has_resource_provider = false;
   mln::core::ResourceProvider resource_provider;
+  std::shared_ptr<mln::core::OfflineRegionEventState> offline_event_state;
   mln_resource_transform_callback resource_transform_callback = nullptr;
   void* resource_transform_user_data = nullptr;
   std::size_t live_maps = 0;
   mutable std::mutex event_mutex;
   std::unordered_set<const mln_map*> event_maps;
   std::deque<mln::core::QueuedRuntimeEvent> events;
+  std::unordered_set<mln_offline_region_id> observed_offline_regions;
   std::vector<std::byte> last_polled_event_payload;
   std::string last_polled_event_message;
   std::unordered_map<const mln_map*, std::string> map_loading_failures;
@@ -86,6 +101,10 @@ auto offline_region_get(
 auto offline_regions_list(
   mln_runtime* runtime, mln_offline_region_list** out_regions
 ) -> mln_status;
+auto offline_regions_merge_database(
+  mln_runtime* runtime, const char* side_database_path,
+  mln_offline_region_list** out_regions
+) -> mln_status;
 auto offline_region_update_metadata(
   mln_runtime* runtime, mln_offline_region_id region_id,
   const uint8_t* metadata, size_t metadata_size,
@@ -94,6 +113,12 @@ auto offline_region_update_metadata(
 auto offline_region_get_status(
   mln_runtime* runtime, mln_offline_region_id region_id,
   mln_offline_region_status* out_status
+) -> mln_status;
+auto offline_region_set_observed(
+  mln_runtime* runtime, mln_offline_region_id region_id, bool observed
+) -> mln_status;
+auto offline_region_set_download_state(
+  mln_runtime* runtime, mln_offline_region_id region_id, uint32_t state
 ) -> mln_status;
 auto offline_region_invalidate(
   mln_runtime* runtime, mln_offline_region_id region_id
