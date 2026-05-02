@@ -217,7 +217,6 @@ auto validate_vulkan_handles(
 void prepare_vulkan_render_resources(mln_render_session* texture) {
   // Renderer::render creates the Vulkan context before requesting the default
   // renderable, so shared-device resources must be ready first.
-  // Vulkan sessions always store a Vulkan backend.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
   static_cast<mln::core::VulkanTextureBackend&>(*texture->texture.backend)
     .prepareRenderResources();
@@ -419,7 +418,6 @@ auto vulkan_owned_texture_acquire_frame(
 
   // The Vulkan acquire path is only valid for owned Vulkan sessions, and this
   // Linux build only creates Vulkan sessions.
-  // api_kind validates the concrete backend type.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
   auto& backend = static_cast<VulkanTextureBackend&>(*texture->texture.backend);
   const auto resources = backend.frame_resources();
