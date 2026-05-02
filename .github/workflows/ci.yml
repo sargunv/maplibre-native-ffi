@@ -54,6 +54,7 @@ jobs:
       - run: mise run _verify-clean-worktree
       - run: mise run test
       - run: mise run //examples/zig-map:build
+      - run: mise run //examples/zig-readback:run
       - if: matrix.id == 'macos-arm64'
         run: mise run //examples/swift-map:build
 

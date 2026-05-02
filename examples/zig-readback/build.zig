@@ -23,13 +23,6 @@ fn addReadbackExample(b: *std.Build, options: BuildOptions) *std.Build.Step.Comp
     linkMapLibreC(example.root_module);
     example.root_module.addLibraryPath(b.path("../../.pixi/envs/default/lib"));
     example.root_module.addRPath(b.path("../../.pixi/envs/default/lib"));
-    if (options.target.result.os.tag == .macos) {
-        example.root_module.linkFramework("Metal", .{});
-        example.root_module.linkFramework("QuartzCore", .{});
-    } else if (options.target.result.os.tag == .linux) {
-        example.root_module.addIncludePath(b.path("../../third_party/maplibre-native/vendor/Vulkan-Headers/include"));
-        example.root_module.linkSystemLibrary("vulkan", .{});
-    }
     b.installArtifact(example);
     return example;
 }

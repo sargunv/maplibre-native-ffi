@@ -143,6 +143,9 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   pkg_search_module(LIBUV libuv REQUIRED)
   pkg_search_module(ICUUC icu-uc REQUIRED)
   pkg_search_module(ICUI18N icu-i18n REQUIRED)
+  if(MLN_WITH_VULKAN)
+    find_library(MLN_VULKAN_LOADER_LIBRARY NAMES vulkan REQUIRED)
+  endif()
   list(
     APPEND
     MLN_PLATFORM_SUPPORT_SOURCES
@@ -171,6 +174,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     ${WEBP_LIBRARIES}
     ${ICUUC_LIBRARIES}
     ${ICUI18N_LIBRARIES}
+    $<$<BOOL:${MLN_WITH_VULKAN}>:${MLN_VULKAN_LOADER_LIBRARY}>
     PNG::PNG
     Threads::Threads)
   set(MLN_TEXTURE_SESSION_SOURCE src/render/vulkan/vulkan_texture_session.cpp
