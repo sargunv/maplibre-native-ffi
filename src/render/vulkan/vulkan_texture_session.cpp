@@ -7,6 +7,7 @@
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
 #include "maplibre_native_c.h"
+#include "render/render_session_common.hpp"
 #include "render/texture_session.hpp"
 #include "render/vulkan/vulkan_texture_backend.hpp"
 
@@ -213,11 +214,11 @@ auto validate_vulkan_handles(
   return MLN_STATUS_OK;
 }
 
-void prepare_vulkan_render_resources(mln_texture_session* texture) {
+void prepare_vulkan_render_resources(mln_render_session* texture) {
   // Renderer::render creates the Vulkan context before requesting the default
   // renderable, so shared-device resources must be ready first.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-  static_cast<mln::core::VulkanTextureBackend&>(*texture->backend)
+  static_cast<mln::core::VulkanTextureBackend&>(*texture->texture_backend)
     .prepareRenderResources();
 }
 
@@ -262,7 +263,7 @@ auto vulkan_borrowed_texture_descriptor_default() noexcept
 
 auto vulkan_owned_texture_attach(
   mln_map* map, const mln_vulkan_owned_texture_descriptor* descriptor,
-  mln_texture_session** out_texture
+  mln_render_session** out_texture
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -287,7 +288,7 @@ auto vulkan_owned_texture_attach(
     return vulkan_status;
   }
 
-  auto session = std::make_unique<mln_texture_session>();
+  auto session = std::make_unique<mln_render_session>();
   session->map = map;
   session->owner_thread = map_owner_thread(map);
   session->width = descriptor->width;
@@ -299,7 +300,7 @@ auto vulkan_owned_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->api_kind = TextureSessionApi::Vulkan;
   session->mode = TextureSessionMode::Owned;
-  session->backend = std::make_unique<VulkanTextureBackend>(
+  session->texture_backend = std::make_unique<VulkanTextureBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
   session->prepare_render_resources = prepare_vulkan_render_resources;
@@ -308,7 +309,7 @@ auto vulkan_owned_texture_attach(
 
 auto vulkan_borrowed_texture_attach(
   mln_map* map, const mln_vulkan_borrowed_texture_descriptor* descriptor,
-  mln_texture_session** out_texture
+  mln_render_session** out_texture
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -344,7 +345,7 @@ auto vulkan_borrowed_texture_attach(
     return vulkan_status;
   }
 
-  auto session = std::make_unique<mln_texture_session>();
+  auto session = std::make_unique<mln_render_session>();
   session->map = map;
   session->owner_thread = map_owner_thread(map);
   session->width = descriptor->width;
@@ -356,7 +357,7 @@ auto vulkan_borrowed_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->api_kind = TextureSessionApi::Vulkan;
   session->mode = TextureSessionMode::Borrowed;
-  session->backend = std::make_unique<VulkanTextureBackend>(
+  session->texture_backend = std::make_unique<VulkanTextureBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
   session->prepare_render_resources = prepare_vulkan_render_resources;
@@ -364,7 +365,7 @@ auto vulkan_borrowed_texture_attach(
 }
 
 auto vulkan_owned_texture_acquire_frame(
-  mln_texture_session* texture, mln_vulkan_owned_texture_frame* out_frame
+  mln_render_session* texture, mln_vulkan_owned_texture_frame* out_frame
 ) -> mln_status {
   const auto status = validate_live_attached_texture(texture);
   if (status != MLN_STATUS_OK) {
@@ -396,7 +397,7 @@ auto vulkan_owned_texture_acquire_frame(
   // The Vulkan acquire path is only valid for owned Vulkan sessions, and this
   // Linux build only creates Vulkan sessions.
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-  auto& backend = static_cast<VulkanTextureBackend&>(*texture->backend);
+  auto& backend = static_cast<VulkanTextureBackend&>(*texture->texture_backend);
   const auto resources = backend.frame_resources();
   *out_frame = mln_vulkan_owned_texture_frame{
     .size = sizeof(mln_vulkan_owned_texture_frame),
@@ -419,7 +420,7 @@ auto vulkan_owned_texture_acquire_frame(
 }
 
 auto vulkan_owned_texture_release_frame(
-  mln_texture_session* texture, const mln_vulkan_owned_texture_frame* frame
+  mln_render_session* texture, const mln_vulkan_owned_texture_frame* frame
 ) -> mln_status {
   const auto status = validate_texture(texture);
   if (status != MLN_STATUS_OK) {
@@ -476,7 +477,7 @@ auto metal_borrowed_texture_descriptor_default() noexcept
 
 auto metal_owned_texture_attach(
   mln_map* map, const mln_metal_owned_texture_descriptor* descriptor,
-  mln_texture_session** out_texture
+  mln_render_session** out_texture
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -502,7 +503,7 @@ auto metal_owned_texture_attach(
 
 auto metal_borrowed_texture_attach(
   mln_map* map, const mln_metal_borrowed_texture_descriptor* descriptor,
-  mln_texture_session** out_texture
+  mln_render_session** out_texture
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -527,7 +528,7 @@ auto metal_borrowed_texture_attach(
 }
 
 auto metal_owned_texture_acquire_frame(
-  mln_texture_session* texture, mln_metal_owned_texture_frame* out_frame
+  mln_render_session* texture, mln_metal_owned_texture_frame* out_frame
 ) -> mln_status {
   const auto status = validate_texture(texture);
   if (status != MLN_STATUS_OK) {
@@ -545,7 +546,7 @@ auto metal_owned_texture_acquire_frame(
 }
 
 auto metal_owned_texture_release_frame(
-  mln_texture_session* texture, const mln_metal_owned_texture_frame* frame
+  mln_render_session* texture, const mln_metal_owned_texture_frame* frame
 ) -> mln_status {
   const auto status = validate_texture(texture);
   if (status != MLN_STATUS_OK) {

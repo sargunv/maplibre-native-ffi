@@ -4,34 +4,59 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <thread>
-#include <unordered_map>
-#include <utility>
 
-#include <mbgl/util/size.hpp>
+#include <mbgl/gfx/headless_backend.hpp>
+#include <mbgl/gfx/renderer_backend.hpp>
+#include <mbgl/renderer/renderer.hpp>
 
 #include "diagnostics/diagnostics.hpp"
-#include "map/map.hpp"
 #include "maplibre_native_c.h"
 
 namespace mln::core {
 
 enum class RenderSessionKind : uint8_t { Surface, Texture };
+enum class TextureSessionApi : uint8_t { Generic, Metal, Vulkan };
+enum class TextureSessionFrameKind : uint8_t { None, MetalOwned, VulkanOwned };
+enum class TextureSessionMode : uint8_t { Owned, Borrowed };
 
-auto register_render_session(
-  mln_render_session* session, RenderSessionKind kind
-) -> void;
-auto unregister_render_session(mln_render_session* session) -> void;
-auto render_session_kind(
-  mln_render_session* session, RenderSessionKind* out_kind
-) -> mln_status;
+using SurfaceSessionResizeCallback =
+  void (*)(mln_render_session*, uint32_t, uint32_t);
+using TextureSessionPrepareCallback = void (*)(mln_render_session*);
+using TextureSessionAfterRenderCallback = mln_status (*)(mln_render_session*);
 
 }  // namespace mln::core
 
 struct mln_render_session {
   mln::core::RenderSessionKind kind = mln::core::RenderSessionKind::Surface;
-  void* concrete = nullptr;
+  mln_map* map = nullptr;
+  std::thread::id owner_thread;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t physical_width = 0;
+  uint32_t physical_height = 0;
+  double scale_factor = 1.0;
+  uint64_t generation = 1;
+  uint64_t rendered_generation = 0;
+  bool attached = true;
+
+  std::unique_ptr<mbgl::Renderer> renderer = nullptr;
+
+  std::unique_ptr<mbgl::gfx::RendererBackend> surface_backend = nullptr;
+  mln::core::SurfaceSessionResizeCallback resize_surface_backend = nullptr;
+
+  std::unique_ptr<mbgl::gfx::HeadlessBackend> texture_backend = nullptr;
+  uint64_t next_frame_id = 1;
+  uint64_t acquired_frame_id = 0;
+  bool acquired = false;
+  mln::core::TextureSessionFrameKind acquired_frame_kind =
+    mln::core::TextureSessionFrameKind::None;
+  mln::core::TextureSessionApi api_kind = mln::core::TextureSessionApi::Generic;
+  mln::core::TextureSessionMode mode = mln::core::TextureSessionMode::Owned;
+  void* rendered_native_texture = nullptr;
+  void* acquired_native_texture = nullptr;
+  mln::core::TextureSessionPrepareCallback prepare_render_resources = nullptr;
+  mln::core::TextureSessionAfterRenderCallback after_render = nullptr;
 };
 
 namespace mln::core {
@@ -42,53 +67,19 @@ struct RenderSessionAttachMessages {
   const char* non_null_output;
 };
 
-template <typename Session>
-class RenderSessionRegistry final {
- public:
-  auto validate(
-    Session* session, const char* null_message, const char* not_live_message,
-    const char* wrong_thread_message
-  ) -> mln_status {
-    if (session == nullptr) {
-      set_thread_error(null_message);
-      return MLN_STATUS_INVALID_ARGUMENT;
-    }
-    const std::scoped_lock lock(mutex_);
-    if (!sessions_.contains(session)) {
-      set_thread_error(not_live_message);
-      return MLN_STATUS_INVALID_ARGUMENT;
-    }
-    if (session->owner_thread != std::this_thread::get_id()) {
-      set_thread_error(wrong_thread_message);
-      return MLN_STATUS_WRONG_THREAD;
-    }
-    return MLN_STATUS_OK;
-  }
+auto register_render_session(
+  mln_render_session* handle, std::unique_ptr<mln_render_session> session
+) -> void;
+auto unregister_render_session(mln_render_session* session) -> void;
+auto validate_render_session(mln_render_session* session) -> mln_status;
+auto validate_live_attached_render_session(mln_render_session* session)
+  -> mln_status;
+auto erase_render_session(mln_render_session* session)
+  -> std::unique_ptr<mln_render_session>;
 
-  auto emplace(Session* handle, std::unique_ptr<Session> session) -> void {
-    const std::scoped_lock lock(mutex_);
-    sessions_.emplace(handle, std::move(session));
-  }
-
-  auto erase(Session* handle) -> std::unique_ptr<Session> {
-    const std::scoped_lock lock(mutex_);
-    auto found = sessions_.find(handle);
-    if (found == sessions_.end()) {
-      return nullptr;
-    }
-    auto session = std::move(found->second);
-    sessions_.erase(found);
-    return session;
-  }
-
- private:
-  std::mutex mutex_;
-  std::unordered_map<Session*, std::unique_ptr<Session>> sessions_;
-};
-
-template <typename Session>
-auto validate_render_session_attach_output(
-  Session** out_session, const char* null_message, const char* not_null_message
+inline auto validate_render_session_attach_output(
+  mln_render_session** out_session, const char* null_message,
+  const char* not_null_message
 ) -> mln_status {
   if (out_session == nullptr) {
     set_thread_error(null_message);
@@ -97,21 +88,6 @@ auto validate_render_session_attach_output(
   if (*out_session != nullptr) {
     set_thread_error(not_null_message);
     return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  return MLN_STATUS_OK;
-}
-
-template <typename Session, typename Validate>
-auto validate_live_attached_render_session(
-  Session* session, Validate validate, const char* detached_message
-) -> mln_status {
-  const auto status = validate(session);
-  if (status != MLN_STATUS_OK) {
-    return status;
-  }
-  if (!session->attached || session->backend == nullptr) {
-    set_thread_error(detached_message);
-    return MLN_STATUS_INVALID_STATE;
   }
   return MLN_STATUS_OK;
 }
@@ -138,46 +114,21 @@ inline auto validate_render_session_physical_size(
   return MLN_STATUS_OK;
 }
 
-template <typename Session>
 auto attach_render_session(
-  std::unique_ptr<Session> session, Session** out_session,
-  RenderSessionRegistry<Session>& registry, RenderSessionKind kind,
-  RenderSessionAttachMessages messages
-) -> mln_status {
-  if (session == nullptr) {
-    set_thread_error(messages.null_session);
-    return MLN_STATUS_INVALID_ARGUMENT;
-  }
-  const auto output_status = validate_render_session_attach_output(
-    out_session, messages.null_output, messages.non_null_output
-  );
-  if (output_status != MLN_STATUS_OK) {
-    return output_status;
-  }
+  std::unique_ptr<mln_render_session> session, mln_render_session** out_session,
+  RenderSessionKind kind, RenderSessionAttachMessages messages
+) -> mln_status;
 
-  auto* map = session->map;
-  auto* handle = session.get();
-  const auto attach_status = map_attach_render_target_session(map, handle);
-  if (attach_status != MLN_STATUS_OK) {
-    return attach_status;
-  }
-  try {
-    if (auto* native_map = map_native(map); native_map != nullptr) {
-      native_map->setSize(mbgl::Size{session->width, session->height});
-    }
-    session->kind = kind;
-    session->concrete = handle;
-    registry.emplace(handle, std::move(session));
-    register_render_session(static_cast<mln_render_session*>(handle), kind);
-  } catch (...) {
-    unregister_render_session(static_cast<mln_render_session*>(handle));
-    static_cast<void>(map_detach_render_target_session(map, handle));
-    static_cast<void>(registry.erase(handle));
-    throw;
-  }
-
-  *out_session = handle;
-  return MLN_STATUS_OK;
-}
+auto render_session_resize(
+  mln_render_session* session, uint32_t width, uint32_t height,
+  double scale_factor
+) -> mln_status;
+auto render_session_render_update(mln_render_session* session) -> mln_status;
+auto render_session_detach(mln_render_session* session) -> mln_status;
+auto render_session_destroy(mln_render_session* session) -> mln_status;
+auto render_session_reduce_memory_use(mln_render_session* session)
+  -> mln_status;
+auto render_session_clear_data(mln_render_session* session) -> mln_status;
+auto render_session_dump_debug_logs(mln_render_session* session) -> mln_status;
 
 }  // namespace mln::core

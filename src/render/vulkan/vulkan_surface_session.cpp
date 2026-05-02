@@ -13,6 +13,7 @@
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
+#include "render/render_session_common.hpp"
 #include "render/surface_session.hpp"
 
 namespace {
@@ -379,10 +380,9 @@ class VulkanSurfaceBackend final : public mbgl::vulkan::RendererBackend,
 };
 
 void resize_vulkan_surface(
-  mln_surface_session* surface, uint32_t physical_width,
-  uint32_t physical_height
+  mln_render_session* surface, uint32_t physical_width, uint32_t physical_height
 ) {
-  static_cast<VulkanSurfaceBackend&>(*surface->backend)
+  static_cast<VulkanSurfaceBackend&>(*surface->surface_backend)
     .setSize(mbgl::Size{physical_width, physical_height});
 }
 
@@ -392,7 +392,7 @@ namespace mln::core {
 
 auto metal_surface_attach(
   mln_map* map, const mln_metal_surface_descriptor* descriptor,
-  mln_surface_session** out_surface
+  mln_render_session** out_surface
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -418,7 +418,7 @@ auto metal_surface_attach(
 
 auto vulkan_surface_attach(
   mln_map* map, const mln_vulkan_surface_descriptor* descriptor,
-  mln_surface_session** out_surface
+  mln_render_session** out_surface
 ) -> mln_status {
   const auto map_status = validate_map(map);
   if (map_status != MLN_STATUS_OK) {
@@ -443,7 +443,7 @@ auto vulkan_surface_attach(
     return vulkan_status;
   }
 
-  auto session = std::make_unique<mln_surface_session>();
+  auto session = std::make_unique<mln_render_session>();
   session->map = map;
   session->owner_thread = map_owner_thread(map);
   session->width = descriptor->width;
@@ -453,10 +453,10 @@ auto vulkan_surface_attach(
     surface_physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     surface_physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->backend = std::make_unique<VulkanSurfaceBackend>(
+  session->surface_backend = std::make_unique<VulkanSurfaceBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->resize_backend = resize_vulkan_surface;
+  session->resize_surface_backend = resize_vulkan_surface;
   return surface_attach_session(std::move(session), out_surface);
 }
 
