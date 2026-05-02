@@ -4,28 +4,7 @@ const c = @import("c.zig").c;
 
 const width = 512;
 const height = 512;
-
-const style_json =
-    \\{
-    \\  "version": 8,
-    \\  "name": "zig-readback",
-    \\  "sources": {
-    \\    "point": {
-    \\      "type": "geojson",
-    \\      "data": {
-    \\        "type": "FeatureCollection",
-    \\        "features": [
-    \\          {"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4194,37.7749]},"properties":{}}
-    \\        ]
-    \\      }
-    \\    }
-    \\  },
-    \\  "layers": [
-    \\    {"id":"background","type":"background","paint":{"background-color":"#d8f1ff"}},
-    \\    {"id":"point-circle","type":"circle","source":"point","paint":{"circle-color":"#f97316","circle-radius":18}}
-    \\  ]
-    \\}
-;
+const style_url = "https://tiles.openfreemap.org/styles/bright";
 
 pub fn main(init_args: std.process.Init) !void {
     const allocator = init_args.gpa;
@@ -48,7 +27,7 @@ pub fn main(init_args: std.process.Init) !void {
     map_options.width = width;
     map_options.height = height;
     map_options.scale_factor = 1.0;
-    map_options.map_mode = c.MLN_MAP_MODE_CONTINUOUS;
+    map_options.map_mode = c.MLN_MAP_MODE_STATIC;
     try check(c.mln_map_create(runtime.?, &map_options, &map), "map create failed");
     defer _ = c.mln_map_destroy(map.?);
 
@@ -61,7 +40,8 @@ pub fn main(init_args: std.process.Init) !void {
     defer _ = c.mln_texture_destroy(texture.?);
 
     try setInitialCamera(map.?);
-    try check(c.mln_map_set_style_json(map.?, style_json), "style load failed");
+    try check(c.mln_map_set_style_url(map.?, style_url), "style load failed");
+    try check(c.mln_map_request_still_image(map.?), "still image request failed");
     try renderTexture(runtime.?, map.?, texture.?);
 
     var info = c.mln_texture_image_info_default();
@@ -85,34 +65,45 @@ fn setInitialCamera(map: *c.mln_map) !void {
         c.MLN_CAMERA_OPTION_PITCH;
     camera.latitude = 37.7749;
     camera.longitude = -122.4194;
-    camera.zoom = 12.0;
+    camera.zoom = 13.0;
     camera.bearing = 12.0;
     camera.pitch = 30.0;
     try check(c.mln_map_jump_to(map, &camera), "camera jump failed");
 }
 
 fn renderTexture(runtime: *c.mln_runtime, map: *c.mln_map, texture: *c.mln_texture_session) !void {
-    for (0..2000) |_| {
+    var rendered_frame = false;
+    while (true) {
         try check(c.mln_runtime_run_once(runtime), "runtime pump failed");
 
-        var should_render = false;
         while (true) {
             var event = emptyEvent();
             var has_event = false;
             try check(c.mln_runtime_poll_event(runtime, &event, &has_event), "event poll failed");
             if (!has_event) break;
-            if (event.source_type == c.MLN_RUNTIME_EVENT_SOURCE_MAP and
-                event.source == @as(?*anyopaque, @ptrCast(map)) and
-                event.type == c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE) should_render = true;
-        }
+            if (event.source_type != c.MLN_RUNTIME_EVENT_SOURCE_MAP or
+                event.source != @as(?*anyopaque, @ptrCast(map))) continue;
 
-        if (should_render) {
-            const status = c.mln_texture_render_update(texture);
-            if (status == c.MLN_STATUS_OK) return;
-            if (status != c.MLN_STATUS_INVALID_STATE) try check(status, "texture render failed");
+            switch (event.type) {
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE => {
+                    const status = c.mln_texture_render_update(texture);
+                    if (status == c.MLN_STATUS_OK) {
+                        rendered_frame = true;
+                    } else if (status != c.MLN_STATUS_INVALID_STATE) {
+                        try check(status, "texture render failed");
+                    }
+                },
+                c.MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FINISHED => {
+                    if (!rendered_frame) return error.StillImageFinishedWithoutFrame;
+                    return;
+                },
+                c.MLN_RUNTIME_EVENT_MAP_LOADING_FAILED => return error.MapLoadingFailed,
+                c.MLN_RUNTIME_EVENT_MAP_RENDER_ERROR => return error.MapRenderFailed,
+                c.MLN_RUNTIME_EVENT_MAP_STILL_IMAGE_FAILED => return error.StillImageFailed,
+                else => {},
+            }
         }
     }
-    return error.RenderUpdateTimeout;
 }
 
 fn emptyEvent() c.mln_runtime_event {
