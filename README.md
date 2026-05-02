@@ -91,7 +91,7 @@ API coverage tracks MapLibre Native domains exposed through the C API.
 | Expressions, filters  | ❌       | [#30](https://github.com/sargunv/maplibre-native-ffi/issues/30)                                                                                                                                                                                                   |
 | Sources, layers       | ❌       | [#29](https://github.com/sargunv/maplibre-native-ffi/issues/29), [#31](https://github.com/sargunv/maplibre-native-ffi/issues/31), [#33](https://github.com/sargunv/maplibre-native-ffi/issues/33)-[#36](https://github.com/sargunv/maplibre-native-ffi/issues/36) |
 | Feature state         | ❌       | [#27](https://github.com/sargunv/maplibre-native-ffi/issues/27)                                                                                                                                                                                                   |
-| Offline regions       | ❌       | [#13](https://github.com/sargunv/maplibre-native-ffi/issues/13)                                                                                                                                                                                                   |
+| Offline regions       | 🟡       | [#13](https://github.com/sargunv/maplibre-native-ffi/issues/13)                                                                                                                                                                                                   |
 
 Language binding support tracks low-level bindings intended to sit directly
 above the C API. No bindings are implemented yet.

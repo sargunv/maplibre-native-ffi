@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -7,24 +8,51 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <mbgl/actor/scheduler.hpp>
 #include <mbgl/storage/database_file_source.hpp>
 #include <mbgl/storage/file_source.hpp>
 #include <mbgl/storage/file_source_manager.hpp>
+#include <mbgl/storage/offline.hpp>
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/util/client_options.hpp>
+#include <mbgl/util/expected.hpp>
+#include <mbgl/util/geo.hpp>
 #include <mbgl/util/run_loop.hpp>
 
 #include "runtime/runtime.hpp"
 
 #include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_c.h"
+
+// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
+
+struct OfflineRegionData {
+  mln_offline_region_id id = 0;
+  uint32_t definition_type = 0;
+  std::string style_url;
+  mln_lat_lng_bounds bounds{};
+  double min_zoom = 0.0;
+  double max_zoom = 0.0;
+  float pixel_ratio = 0.0F;
+  bool include_ideographs = false;
+  std::vector<uint8_t> metadata;
+};
+
+struct mln_offline_region_snapshot {
+  OfflineRegionData data;
+};
+
+struct mln_offline_region_list {
+  std::vector<OfflineRegionData> regions;
+};
 
 namespace {
 using RuntimeRegistry =
@@ -38,6 +66,308 @@ auto runtime_registry_mutex() -> std::mutex& {
 auto runtime_registry() -> RuntimeRegistry& {
   static RuntimeRegistry value;
   return value;
+}
+
+using OfflineRegionSnapshotRegistry = std::unordered_map<
+  const mln_offline_region_snapshot*,
+  std::unique_ptr<mln_offline_region_snapshot>>;
+using OfflineRegionListRegistry = std::unordered_map<
+  const mln_offline_region_list*, std::unique_ptr<mln_offline_region_list>>;
+
+auto offline_region_handle_mutex() -> std::mutex& {
+  static std::mutex value;
+  return value;
+}
+
+auto offline_region_snapshots() -> OfflineRegionSnapshotRegistry& {
+  static OfflineRegionSnapshotRegistry value;
+  return value;
+}
+
+auto offline_region_lists() -> OfflineRegionListRegistry& {
+  static OfflineRegionListRegistry value;
+  return value;
+}
+
+auto set_status_from_exception(
+  std::exception_ptr exception, const char* fallback_message
+) -> mln_status {
+  if (exception) {
+    try {
+      std::rethrow_exception(exception);
+    } catch (const std::exception& caught) {
+      mln::core::set_thread_error(caught.what());
+    } catch (...) {
+      mln::core::set_thread_error(fallback_message);
+    }
+  } else {
+    mln::core::set_thread_error(fallback_message);
+  }
+  return MLN_STATUS_NATIVE_ERROR;
+}
+
+template <typename Result, typename Start>
+auto wait_for_database_result(Start start) -> Result {
+  auto mutex = std::mutex{};
+  auto condition = std::condition_variable{};
+  auto result = std::optional<Result>{};
+
+  start([&](Result value) -> void {
+    {
+      const std::scoped_lock lock(mutex);
+      result.emplace(std::move(value));
+    }
+    condition.notify_one();
+  });
+
+  auto lock = std::unique_lock{mutex};
+  condition.wait(lock, [&]() -> bool { return result.has_value(); });
+  if (!result.has_value()) {
+    std::terminate();
+  }
+  return std::move(result.value());
+}
+
+auto valid_coordinate(const mln_lat_lng& coordinate) -> bool {
+  return std::isfinite(coordinate.latitude) && coordinate.latitude >= -90.0 &&
+         coordinate.latitude <= 90.0 && std::isfinite(coordinate.longitude);
+}
+
+auto validate_tile_pyramid_definition(
+  const mln_offline_tile_pyramid_region_definition& definition
+) -> mln_status {
+  if (definition.size < sizeof(mln_offline_tile_pyramid_region_definition)) {
+    mln::core::set_thread_error(
+      "mln_offline_tile_pyramid_region_definition.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (definition.style_url == nullptr) {
+    mln::core::set_thread_error("offline region style_url must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    !valid_coordinate(definition.bounds.southwest) ||
+    !valid_coordinate(definition.bounds.northeast) ||
+    definition.bounds.southwest.latitude >
+      definition.bounds.northeast.latitude ||
+    definition.bounds.southwest.longitude >
+      definition.bounds.northeast.longitude
+  ) {
+    mln::core::set_thread_error("offline region bounds are invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    !std::isfinite(definition.min_zoom) || definition.min_zoom < 0.0 ||
+    std::isnan(definition.max_zoom) || definition.max_zoom < definition.min_zoom
+  ) {
+    mln::core::set_thread_error("offline region zoom range is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!std::isfinite(definition.pixel_ratio) || definition.pixel_ratio < 0.0F) {
+    mln::core::set_thread_error("offline region pixel_ratio is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_offline_region_definition(
+  const mln_offline_region_definition* definition
+) -> mln_status {
+  if (definition == nullptr) {
+    mln::core::set_thread_error("offline region definition must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (definition->size < sizeof(mln_offline_region_definition)) {
+    mln::core::set_thread_error(
+      "mln_offline_region_definition.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  switch (definition->type) {
+    case MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID:
+      return validate_tile_pyramid_definition(definition->data.tile_pyramid);
+    case MLN_OFFLINE_REGION_DEFINITION_GEOMETRY:
+      // TODO: Support geometry regions after the shared geometry ABI lands:
+      // https://github.com/sargunv/maplibre-native-ffi/issues/19
+      mln::core::set_thread_error(
+        "offline geometry region definitions are not supported"
+      );
+      return MLN_STATUS_UNSUPPORTED;
+    default:
+      mln::core::set_thread_error("offline region definition type is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+}
+
+auto to_native_offline_region_definition(
+  const mln_offline_region_definition& definition
+) -> mbgl::OfflineRegionDefinition {
+  const auto& tile = definition.data.tile_pyramid;
+  auto bounds = mbgl::LatLngBounds::hull(
+    {tile.bounds.southwest.latitude, tile.bounds.southwest.longitude},
+    {tile.bounds.northeast.latitude, tile.bounds.northeast.longitude}
+  );
+  return mbgl::OfflineTilePyramidRegionDefinition{
+    std::string{tile.style_url},
+    bounds,
+    tile.min_zoom,
+    tile.max_zoom,
+    tile.pixel_ratio,
+    tile.include_ideographs
+  };
+}
+
+auto to_c_download_state(mbgl::OfflineRegionDownloadState state) -> uint32_t {
+  switch (state) {
+    case mbgl::OfflineRegionDownloadState::Inactive:
+      return MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE;
+    case mbgl::OfflineRegionDownloadState::Active:
+      return MLN_OFFLINE_REGION_DOWNLOAD_ACTIVE;
+  }
+  return MLN_OFFLINE_REGION_DOWNLOAD_INACTIVE;
+}
+
+auto to_c_status(const mbgl::OfflineRegionStatus& status)
+  -> mln_offline_region_status {
+  return mln_offline_region_status{
+    .size = sizeof(mln_offline_region_status),
+    .download_state = to_c_download_state(status.downloadState),
+    .completed_resource_count = status.completedResourceCount,
+    .completed_resource_size = status.completedResourceSize,
+    .completed_tile_count = status.completedTileCount,
+    .required_tile_count = status.requiredTileCount,
+    .completed_tile_size = status.completedTileSize,
+    .required_resource_count = status.requiredResourceCount,
+    .required_resource_count_is_precise = status.requiredResourceCountIsPrecise,
+    .complete = status.complete()
+  };
+}
+
+auto to_c_region_data(const mbgl::OfflineRegion& region)
+  -> std::optional<OfflineRegionData> {
+  auto data = OfflineRegionData{
+    .id = region.getID(),
+    .definition_type = MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID,
+    .style_url = {},
+    .bounds = {},
+    .min_zoom = 0.0,
+    .max_zoom = 0.0,
+    .pixel_ratio = 0.0F,
+    .include_ideographs = false,
+    .metadata = region.getMetadata()
+  };
+
+  if (
+    const auto* tile = std::get_if<mbgl::OfflineTilePyramidRegionDefinition>(
+      &region.getDefinition()
+    )
+  ) {
+    data.style_url = tile->styleURL;
+    data.bounds = mln_lat_lng_bounds{
+      .southwest =
+        mln_lat_lng{
+          .latitude = tile->bounds.south(), .longitude = tile->bounds.west()
+        },
+      .northeast = mln_lat_lng{
+        .latitude = tile->bounds.north(), .longitude = tile->bounds.east()
+      }
+    };
+    data.min_zoom = tile->minZoom;
+    data.max_zoom = tile->maxZoom;
+    data.pixel_ratio = tile->pixelRatio;
+    data.include_ideographs = tile->includeIdeographs;
+    return data;
+  }
+
+  mln::core::set_thread_error(
+    "offline geometry region definitions are not supported"
+  );
+  return std::nullopt;
+}
+
+auto fill_region_info(
+  const OfflineRegionData& data, mln_offline_region_info* out_info
+) -> mln_status {
+  if (out_info == nullptr || out_info->size < sizeof(mln_offline_region_info)) {
+    mln::core::set_thread_error(
+      "out_info must not be null and must have a valid size"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_info = mln_offline_region_info{
+    .size = sizeof(mln_offline_region_info),
+    .id = data.id,
+    .definition =
+      mln_offline_region_definition{
+        .size = sizeof(mln_offline_region_definition),
+        .type = data.definition_type,
+        .data =
+          {.tile_pyramid =
+             mln_offline_tile_pyramid_region_definition{
+               .size = sizeof(mln_offline_tile_pyramid_region_definition),
+               .style_url = data.style_url.c_str(),
+               .bounds = data.bounds,
+               .min_zoom = data.min_zoom,
+               .max_zoom = data.max_zoom,
+               .pixel_ratio = data.pixel_ratio,
+               .include_ideographs = data.include_ideographs
+             }}
+      },
+    .metadata = data.metadata.empty() ? nullptr : data.metadata.data(),
+    .metadata_size = data.metadata.size()
+  };
+  return MLN_STATUS_OK;
+}
+
+auto register_offline_region_snapshot(OfflineRegionData data)
+  -> mln_offline_region_snapshot* {
+  auto owned = std::make_unique<mln_offline_region_snapshot>();
+  owned->data = std::move(data);
+  auto* handle = owned.get();
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  offline_region_snapshots().emplace(handle, std::move(owned));
+  return handle;
+}
+
+auto register_offline_region_list(std::vector<OfflineRegionData> regions)
+  -> mln_offline_region_list* {
+  auto owned = std::make_unique<mln_offline_region_list>();
+  owned->regions = std::move(regions);
+  auto* handle = owned.get();
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  offline_region_lists().emplace(handle, std::move(owned));
+  return handle;
+}
+
+auto validate_snapshot_handle(const mln_offline_region_snapshot* snapshot)
+  -> const mln_offline_region_snapshot* {
+  if (snapshot == nullptr) {
+    mln::core::set_thread_error("offline region snapshot must not be null");
+    return nullptr;
+  }
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  if (!offline_region_snapshots().contains(snapshot)) {
+    mln::core::set_thread_error("offline region snapshot is not a live handle");
+    return nullptr;
+  }
+  return snapshot;
+}
+
+auto validate_list_handle(const mln_offline_region_list* list)
+  -> const mln_offline_region_list* {
+  if (list == nullptr) {
+    mln::core::set_thread_error("offline region list must not be null");
+    return nullptr;
+  }
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  if (!offline_region_lists().contains(list)) {
+    mln::core::set_thread_error("offline region list is not a live handle");
+    return nullptr;
+  }
+  return list;
 }
 
 auto validate_runtime_options(const mln_runtime_options* options)
@@ -330,6 +660,403 @@ auto run_ambient_cache_operation(mln_runtime* runtime, uint32_t operation)
   }
 }
 
+auto offline_region_create(
+  mln_runtime* runtime, const mln_offline_region_definition* definition,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  const auto definition_status = validate_offline_region_definition(definition);
+  if (definition_status != MLN_STATUS_OK) {
+    return definition_status;
+  }
+  if (metadata == nullptr && metadata_size != 0) {
+    set_thread_error("offline region metadata must not be null when non-empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_region == nullptr || *out_region != nullptr) {
+    set_thread_error("out_region must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  const auto native_definition =
+    to_native_offline_region_definition(*definition);
+  auto native_metadata = mbgl::OfflineRegionMetadata{};
+  if (metadata_size != 0) {
+    native_metadata.resize(metadata_size);
+    std::memcpy(native_metadata.data(), metadata, metadata_size);
+  }
+  auto result = wait_for_database_result<
+    mbgl::expected<mbgl::OfflineRegion, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->createOfflineRegion(
+        native_definition, native_metadata, std::move(callback)
+      );
+    }
+  );
+  if (!result) {
+    return set_status_from_exception(
+      result.error(), "offline region creation failed"
+    );
+  }
+
+  auto data = to_c_region_data(result.value());
+  if (!data) {
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  *out_region = register_offline_region_snapshot(std::move(*data));
+  return MLN_STATUS_OK;
+}
+
+auto offline_region_get(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_snapshot** out_region, bool* out_found
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  if (out_region == nullptr || *out_region != nullptr || out_found == nullptr) {
+    set_thread_error(
+      "out_region must point to null and out_found must not be null"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!result) {
+    return set_status_from_exception(
+      result.error(), "offline region get failed"
+    );
+  }
+  if (!result.value()) {
+    *out_found = false;
+    return MLN_STATUS_OK;
+  }
+
+  auto data = to_c_region_data(*result.value());
+  if (!data) {
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  *out_region = register_offline_region_snapshot(std::move(*data));
+  *out_found = true;
+  return MLN_STATUS_OK;
+}
+
+auto offline_regions_list(
+  mln_runtime* runtime, mln_offline_region_list** out_regions
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  if (out_regions == nullptr || *out_regions != nullptr) {
+    set_thread_error("out_regions must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto result = wait_for_database_result<
+    mbgl::expected<mbgl::OfflineRegions, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->listOfflineRegions(std::move(callback));
+    }
+  );
+  if (!result) {
+    return set_status_from_exception(
+      result.error(), "offline region list failed"
+    );
+  }
+
+  auto regions = std::vector<OfflineRegionData>{};
+  regions.reserve(result.value().size());
+  for (const auto& region : result.value()) {
+    auto data = to_c_region_data(region);
+    if (!data) {
+      return MLN_STATUS_UNSUPPORTED;
+    }
+    regions.push_back(std::move(*data));
+  }
+  *out_regions = register_offline_region_list(std::move(regions));
+  return MLN_STATUS_OK;
+}
+
+auto offline_region_update_metadata(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  if (metadata == nullptr && metadata_size != 0) {
+    set_thread_error("offline region metadata must not be null when non-empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_region == nullptr || *out_region != nullptr) {
+    set_thread_error("out_region must point to a null handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto native_metadata = mbgl::OfflineRegionMetadata{};
+  if (metadata_size != 0) {
+    native_metadata.resize(metadata_size);
+    std::memcpy(native_metadata.data(), metadata, metadata_size);
+  }
+  auto update_result = wait_for_database_result<
+    mbgl::expected<mbgl::OfflineRegionMetadata, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->updateOfflineMetadata(
+        region_id, native_metadata, std::move(callback)
+      );
+    }
+  );
+  if (!update_result) {
+    return set_status_from_exception(
+      update_result.error(), "offline region metadata update failed"
+    );
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto data = to_c_region_data(*get_result.value());
+  if (!data) {
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  *out_region = register_offline_region_snapshot(std::move(*data));
+  return MLN_STATUS_OK;
+}
+
+auto offline_region_get_status(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_status* out_status
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+  if (
+    out_status == nullptr ||
+    out_status->size < sizeof(mln_offline_region_status)
+  ) {
+    set_thread_error("out_status must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto status_result = wait_for_database_result<
+    mbgl::expected<mbgl::OfflineRegionStatus, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegionStatus(
+        *get_result.value(), std::move(callback)
+      );
+    }
+  );
+  if (!status_result) {
+    return set_status_from_exception(
+      status_result.error(), "offline region status query failed"
+    );
+  }
+  *out_status = to_c_status(status_result.value());
+  return MLN_STATUS_OK;
+}
+
+auto offline_region_invalidate(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  return wait_for_database_operation([&](auto callback) -> void {
+    database->invalidateOfflineRegion(*get_result.value(), std::move(callback));
+  });
+}
+
+auto offline_region_delete(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) -> mln_status {
+  const auto runtime_status = validate_runtime(runtime);
+  if (runtime_status != MLN_STATUS_OK) {
+    return runtime_status;
+  }
+
+  auto database = database_source_for_runtime(runtime);
+  if (database == nullptr) {
+    set_thread_error("database file source is unavailable");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+
+  auto get_result = wait_for_database_result<
+    mbgl::expected<std::optional<mbgl::OfflineRegion>, std::exception_ptr>>(
+    [&](auto callback) -> void {
+      database->getOfflineRegion(region_id, std::move(callback));
+    }
+  );
+  if (!get_result) {
+    return set_status_from_exception(
+      get_result.error(), "offline region get failed"
+    );
+  }
+  if (!get_result.value()) {
+    set_thread_error("offline region not found");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  return wait_for_database_operation([&](auto callback) -> void {
+    database->deleteOfflineRegion(*get_result.value(), std::move(callback));
+  });
+}
+
+auto offline_region_snapshot_get(
+  const mln_offline_region_snapshot* snapshot, mln_offline_region_info* out_info
+) -> mln_status {
+  const auto* live_snapshot = validate_snapshot_handle(snapshot);
+  if (live_snapshot == nullptr) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return fill_region_info(live_snapshot->data, out_info);
+}
+
+auto offline_region_snapshot_destroy(
+  mln_offline_region_snapshot* snapshot
+) noexcept -> void {
+  if (snapshot == nullptr) {
+    return;
+  }
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  offline_region_snapshots().erase(snapshot);
+}
+
+auto offline_region_list_count(
+  const mln_offline_region_list* list, size_t* out_count
+) -> mln_status {
+  const auto* live_list = validate_list_handle(list);
+  if (live_list == nullptr) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_count == nullptr) {
+    set_thread_error("out_count must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_count = live_list->regions.size();
+  return MLN_STATUS_OK;
+}
+
+auto offline_region_list_get(
+  const mln_offline_region_list* list, size_t index,
+  mln_offline_region_info* out_info
+) -> mln_status {
+  const auto* live_list = validate_list_handle(list);
+  if (live_list == nullptr) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (index >= live_list->regions.size()) {
+    set_thread_error("offline region list index is out of range");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return fill_region_info(live_list->regions.at(index), out_info);
+}
+
+auto offline_region_list_destroy(mln_offline_region_list* list) noexcept
+  -> void {
+  if (list == nullptr) {
+    return;
+  }
+  const std::scoped_lock lock(offline_region_handle_mutex());
+  offline_region_lists().erase(list);
+}
+
 auto set_resource_provider(
   mln_runtime* runtime, const mln_resource_provider* provider
 ) -> mln_status {
@@ -610,3 +1337,5 @@ auto discard_runtime_map_events(mln_runtime* runtime, const mln_map* map)
 }
 
 }  // namespace mln::core
+
+// NOLINTEND(cppcoreguidelines-pro-type-union-access)

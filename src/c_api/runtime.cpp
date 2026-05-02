@@ -1,5 +1,6 @@
 #define MLN_BUILDING_C
 
+#include <cstddef>
 #include <cstdint>
 
 #include "runtime/runtime.hpp"
@@ -69,6 +70,110 @@ auto mln_runtime_run_ambient_cache_operation(
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::run_ambient_cache_operation(runtime, operation);
   });
+}
+
+auto mln_runtime_offline_region_create(
+  mln_runtime* runtime, const mln_offline_region_definition* definition,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_create(
+      runtime, definition, metadata, metadata_size, out_region
+    );
+  });
+}
+
+auto mln_runtime_offline_region_get(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_snapshot** out_region, bool* out_found
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_get(
+      runtime, region_id, out_region, out_found
+    );
+  });
+}
+
+auto mln_runtime_offline_regions_list(
+  mln_runtime* runtime, mln_offline_region_list** out_regions
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_regions_list(runtime, out_regions);
+  });
+}
+
+auto mln_runtime_offline_region_update_metadata(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  const uint8_t* metadata, size_t metadata_size,
+  mln_offline_region_snapshot** out_region
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_update_metadata(
+      runtime, region_id, metadata, metadata_size, out_region
+    );
+  });
+}
+
+auto mln_runtime_offline_region_get_status(
+  mln_runtime* runtime, mln_offline_region_id region_id,
+  mln_offline_region_status* out_status
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_get_status(runtime, region_id, out_status);
+  });
+}
+
+auto mln_runtime_offline_region_invalidate(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_invalidate(runtime, region_id);
+  });
+}
+
+auto mln_runtime_offline_region_delete(
+  mln_runtime* runtime, mln_offline_region_id region_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_delete(runtime, region_id);
+  });
+}
+
+auto mln_offline_region_snapshot_get(
+  const mln_offline_region_snapshot* snapshot, mln_offline_region_info* out_info
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_snapshot_get(snapshot, out_info);
+  });
+}
+
+auto mln_offline_region_snapshot_destroy(
+  mln_offline_region_snapshot* snapshot
+) noexcept -> void {
+  mln::core::offline_region_snapshot_destroy(snapshot);
+}
+
+auto mln_offline_region_list_count(
+  const mln_offline_region_list* list, size_t* out_count
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_list_count(list, out_count);
+  });
+}
+
+auto mln_offline_region_list_get(
+  const mln_offline_region_list* list, size_t index,
+  mln_offline_region_info* out_info
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::offline_region_list_get(list, index, out_info);
+  });
+}
+
+auto mln_offline_region_list_destroy(mln_offline_region_list* list) noexcept
+  -> void {
+  mln::core::offline_region_list_destroy(list);
 }
 
 auto mln_runtime_destroy(mln_runtime* runtime) noexcept -> mln_status {
