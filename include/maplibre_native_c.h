@@ -1668,16 +1668,32 @@ typedef struct mln_vulkan_borrowed_texture_descriptor {
   void* graphics_queue;
   /** Queue family index for graphics_queue. Must support graphics commands. */
   uint32_t graphics_queue_family_index;
-  /** Borrowed VkImage. Required. */
+  /**
+   * Borrowed VkImage. Required.
+   *
+   * The image must be a 2D, single-sample color image with
+   * VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT and physical dimensions matching width,
+   * height, and scale_factor. Include VK_IMAGE_USAGE_SAMPLED_BIT when the host
+   * will sample from the image after rendering.
+   */
   void* image;
-  /** Borrowed VkImageView for image. Required. */
+  /**
+   * Borrowed VkImageView for image. Required.
+   *
+   * The view must be a 2D color view that matches image and format.
+   */
   void* image_view;
   /** Backend-native VkFormat value for image. VK_FORMAT_UNDEFINED is invalid.
    */
   uint32_t format;
-  /** Backend-native VkImageLayout value expected at render-pass begin. */
+  /**
+   * Backend-native VkImageLayout value expected at render-pass begin.
+   *
+   * Use VK_IMAGE_LAYOUT_UNDEFINED when the previous image contents may be
+   * discarded.
+   */
   uint32_t initial_layout;
-  /** Backend-native VkImageLayout value left after rendering. */
+  /** Backend-native VkImageLayout value left after rendering succeeds. */
   uint32_t final_layout;
 } mln_vulkan_borrowed_texture_descriptor;
 
@@ -1872,9 +1888,15 @@ MLN_API mln_status mln_vulkan_owned_texture_attach(
  * every texture-session call are owner-thread affine to the map owner thread.
  * The wrapper renders into descriptor->image using descriptor->image_view. The
  * caller owns the image and view, must keep them valid until detach or destroy,
- * and is responsible for queue ownership and external synchronization before
- * using the image outside this session. On success, *out_texture receives a
- * handle the caller destroys with mln_texture_destroy().
+ * and is responsible for queue-family ownership and external synchronization
+ * outside this session. On success, *out_texture receives a handle the caller
+ * destroys with mln_texture_destroy().
+ *
+ * Before each mln_texture_render_update(), the caller must ensure the image is
+ * not in concurrent use and is available on descriptor->graphics_queue in
+ * descriptor->initial_layout. The wrapper submits rendering on that queue,
+ * waits for the submitted work to finish, and leaves the image in
+ * descriptor->final_layout before mln_texture_render_update() returns.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
