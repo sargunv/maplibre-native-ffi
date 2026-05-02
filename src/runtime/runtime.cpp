@@ -554,6 +554,9 @@ auto database_source_for_runtime(mln_runtime* runtime)
   if (runtime == nullptr) {
     return nullptr;
   }
+  if (runtime->database_source != nullptr) {
+    return runtime->database_source;
+  }
 
   auto source = mbgl::FileSourceManager::get()->getFileSource(
     mbgl::FileSourceType::Database, resource_options_for_runtime(runtime),
@@ -568,7 +571,8 @@ auto database_source_for_runtime(mln_runtime* runtime)
       runtime->maximum_cache_size, [](std::exception_ptr) -> void {}
     );
   }
-  return database;
+  runtime->database_source = database;
+  return runtime->database_source;
 }
 
 auto wait_for_database_operation(

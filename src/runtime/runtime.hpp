@@ -16,6 +16,10 @@
 
 #include "maplibre_native_c.h"
 
+namespace mbgl {
+class DatabaseFileSource;
+}  // namespace mbgl
+
 namespace mln::core {
 
 struct ResourceProvider {
@@ -49,6 +53,7 @@ struct mln_runtime {
   std::unique_ptr<mbgl::util::RunLoop> run_loop;
   std::string asset_path;
   std::string cache_path;
+  std::shared_ptr<mbgl::DatabaseFileSource> database_source;
   bool has_maximum_cache_size = false;
   std::uint64_t maximum_cache_size = 0;
   bool has_resource_provider = false;
