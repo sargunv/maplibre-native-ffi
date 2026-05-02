@@ -478,6 +478,15 @@ auto validate_frustum_offset(mln_edge_insets offset) -> mln_status {
     mln::core::set_thread_error("frustum offset values must be finite");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
+  if (
+    offset.top < 0.0 || offset.left < 0.0 || offset.bottom < 0.0 ||
+    offset.right < 0.0
+  ) {
+    mln::core::set_thread_error(
+      "frustum offset values must be greater than or equal to 0"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
   return MLN_STATUS_OK;
 }
 

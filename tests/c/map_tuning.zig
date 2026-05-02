@@ -78,7 +78,7 @@ test "map viewport options update selected fields" {
     options.north_orientation = c.MLN_NORTH_ORIENTATION_RIGHT;
     options.constrain_mode = c.MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT;
     options.viewport_mode = c.MLN_VIEWPORT_MODE_FLIPPED_Y;
-    options.frustum_offset = .{ .top = 1.0, .left = -2.0, .bottom = 3.0, .right = -4.0 };
+    options.frustum_offset = .{ .top = 1.0, .left = 2.0, .bottom = 3.0, .right = 4.0 };
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_viewport_options(map, &options));
 
     var snapshot = c.mln_map_viewport_options_default();
@@ -91,9 +91,9 @@ test "map viewport options update selected fields" {
     try testing.expectEqual(@as(u32, c.MLN_CONSTRAIN_MODE_WIDTH_AND_HEIGHT), snapshot.constrain_mode);
     try testing.expectEqual(@as(u32, c.MLN_VIEWPORT_MODE_FLIPPED_Y), snapshot.viewport_mode);
     try testing.expectApproxEqAbs(@as(f64, 1.0), snapshot.frustum_offset.top, 0.000001);
-    try testing.expectApproxEqAbs(@as(f64, -2.0), snapshot.frustum_offset.left, 0.000001);
+    try testing.expectApproxEqAbs(@as(f64, 2.0), snapshot.frustum_offset.left, 0.000001);
     try testing.expectApproxEqAbs(@as(f64, 3.0), snapshot.frustum_offset.bottom, 0.000001);
-    try testing.expectApproxEqAbs(@as(f64, -4.0), snapshot.frustum_offset.right, 0.000001);
+    try testing.expectApproxEqAbs(@as(f64, 4.0), snapshot.frustum_offset.right, 0.000001);
 
     options = c.mln_map_viewport_options_default();
     options.fields = c.MLN_MAP_VIEWPORT_OPTION_NORTH_ORIENTATION;
@@ -142,6 +142,11 @@ test "map viewport options reject invalid arguments" {
     options = c.mln_map_viewport_options_default();
     options.fields = c.MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET;
     options.frustum_offset.top = std.math.inf(f64);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_viewport_options(map, &options));
+
+    options = c.mln_map_viewport_options_default();
+    options.fields = c.MLN_MAP_VIEWPORT_OPTION_FRUSTUM_OFFSET;
+    options.frustum_offset.left = -1.0;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_viewport_options(map, &options));
 }
 
