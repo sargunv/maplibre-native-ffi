@@ -57,8 +57,6 @@ class VulkanTextureBackend final : public mbgl::vulkan::RendererBackend,
 
  private:
   void initSharedDevice();
-  auto rendered_resource() -> VulkanTextureRenderableResource&;
-
   mln_vulkan_owned_texture_descriptor descriptor_;
   mln_vulkan_borrowed_texture_descriptor borrowed_descriptor_{};
   bool uses_borrowed_texture_ = false;
