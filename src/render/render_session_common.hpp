@@ -133,5 +133,16 @@ auto render_session_reduce_memory_use(mln_render_session* session)
   -> mln_status;
 auto render_session_clear_data(mln_render_session* session) -> mln_status;
 auto render_session_dump_debug_logs(mln_render_session* session) -> mln_status;
+auto render_session_set_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  const mln_json_value* state
+) -> mln_status;
+auto render_session_get_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  mln_json_snapshot** out_state
+) -> mln_status;
+auto render_session_remove_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector
+) -> mln_status;
 
 }  // namespace mln::core

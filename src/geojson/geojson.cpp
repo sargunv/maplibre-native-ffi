@@ -2,10 +2,12 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -21,6 +23,10 @@
 #include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_c.h"
 
+struct mln_json_snapshot {
+  std::unique_ptr<mln::core::OwnedJsonDescriptor> value;
+};
+
 namespace {
 
 constexpr std::size_t max_recursive_depth = 64;
@@ -32,6 +38,19 @@ struct Overloaded : Ts... {
 
 using GeometryDescriptorPtr =
   std::unique_ptr<mln::core::OwnedGeometryDescriptor>;
+using JsonDescriptorPtr = std::unique_ptr<mln::core::OwnedJsonDescriptor>;
+
+auto json_snapshot_mutex() -> std::mutex& {
+  static auto value = std::mutex{};
+  return value;
+}
+
+auto json_snapshots() -> std::unordered_map<
+  const mln_json_snapshot*, std::unique_ptr<mln_json_snapshot>>& {
+  static auto value = std::unordered_map<
+    const mln_json_snapshot*, std::unique_ptr<mln_json_snapshot>>{};
+  return value;
+}
 
 auto validate_depth(std::size_t depth) -> bool {
   if (depth > max_recursive_depth) {
@@ -626,6 +645,142 @@ auto make_geometry_descriptor(
   );
 }
 
+auto string_view(const std::string& string) -> mln_string_view {
+  return mln_string_view{
+    .data = string.empty() ? nullptr : string.data(), .size = string.size()
+  };
+}
+
+auto make_json_descriptor(const mbgl::Value& value, std::size_t depth)
+  -> JsonDescriptorPtr;
+
+auto make_array_json_descriptor(
+  const mbgl::Value::array_type& array, std::size_t depth
+) -> JsonDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedJsonDescriptor>();
+  result->children.reserve(array.size());
+  result->child_values.reserve(array.size());
+  for (const auto& child : array) {
+    result->children.emplace_back(make_json_descriptor(child, depth + 1));
+  }
+  for (const auto& child : result->children) {
+    result->child_values.emplace_back(child->root);
+  }
+
+  result->root = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_ARRAY,
+    .data = {
+      .array_value = {
+        .values =
+          result->child_values.empty() ? nullptr : result->child_values.data(),
+        .value_count = result->child_values.size()
+      }
+    }
+  };
+  return result;
+}
+
+auto make_object_json_descriptor(
+  const mbgl::Value::object_type& object, std::size_t depth
+) -> JsonDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedJsonDescriptor>();
+  result->strings.reserve(object.size());
+  result->children.reserve(object.size());
+  result->child_values.reserve(object.size());
+  result->members.reserve(object.size());
+
+  for (const auto& [key, child] : object) {
+    result->strings.emplace_back(key);
+    result->children.emplace_back(make_json_descriptor(child, depth + 1));
+  }
+  for (std::size_t index = 0; index < result->children.size(); ++index) {
+    result->child_values.emplace_back(result->children.at(index)->root);
+    result->members.emplace_back(
+      mln_json_member{
+        .key = string_view(result->strings.at(index)),
+        .value = &result->child_values.back()
+      }
+    );
+  }
+
+  result->root = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_OBJECT,
+    .data = {
+      .object_value = {
+        .members = result->members.empty() ? nullptr : result->members.data(),
+        .member_count = result->members.size()
+      }
+    }
+  };
+  return result;
+}
+
+auto make_json_descriptor(const mbgl::Value& value, std::size_t depth)
+  -> JsonDescriptorPtr {
+  validate_export_depth(depth);
+
+  auto result = std::make_unique<mln::core::OwnedJsonDescriptor>();
+  if (value.is<mbgl::NullValue>()) {
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_NULL,
+      .data = {.bool_value = false}
+    };
+    return result;
+  }
+  if (const auto* bool_value = value.getBool(); bool_value != nullptr) {
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_BOOL,
+      .data = {.bool_value = *bool_value}
+    };
+    return result;
+  }
+  if (const auto* uint_value = value.getUint(); uint_value != nullptr) {
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_UINT,
+      .data = {.uint_value = *uint_value}
+    };
+    return result;
+  }
+  if (const auto* int_value = value.getInt(); int_value != nullptr) {
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_INT,
+      .data = {.int_value = *int_value}
+    };
+    return result;
+  }
+  if (const auto* double_value = value.getDouble(); double_value != nullptr) {
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+      .data = {.double_value = *double_value}
+    };
+    return result;
+  }
+  if (const auto* string_value = value.getString(); string_value != nullptr) {
+    result->strings.emplace_back(*string_value);
+    result->root = mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_STRING,
+      .data = {.string_value = string_view(result->strings.front())}
+    };
+    return result;
+  }
+  if (const auto* array_value = value.getArray(); array_value != nullptr) {
+    return make_array_json_descriptor(*array_value, depth);
+  }
+  if (const auto* object_value = value.getObject(); object_value != nullptr) {
+    return make_object_json_descriptor(*object_value, depth);
+  }
+
+  throw std::runtime_error("unsupported JSON value type");
+}
+
 }  // namespace
 
 namespace mln::core {
@@ -643,6 +798,62 @@ auto to_c_geometry(const mbgl::Geometry<double>& geometry)
 auto to_native_json_value(const mln_json_value* value)
   -> std::optional<mbgl::Value> {
   return convert_value(value, 0);
+}
+
+auto to_c_json_value(const mbgl::Value& value)
+  -> std::unique_ptr<OwnedJsonDescriptor> {
+  return make_json_descriptor(value, 0);
+}
+
+auto json_snapshot_create(mbgl::Value value, mln_json_snapshot** out_snapshot)
+  -> mln_status {
+  if (out_snapshot == nullptr) {
+    set_thread_error("out_state must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (*out_snapshot != nullptr) {
+    set_thread_error("*out_state must be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto snapshot = std::make_unique<mln_json_snapshot>();
+  snapshot->value = to_c_json_value(value);
+  auto* handle = snapshot.get();
+  const auto lock = std::scoped_lock{json_snapshot_mutex()};
+  json_snapshots().emplace(handle, std::move(snapshot));
+  *out_snapshot = handle;
+  return MLN_STATUS_OK;
+}
+
+auto json_snapshot_get(
+  const mln_json_snapshot* snapshot, const mln_json_value** out_value
+) -> mln_status {
+  if (snapshot == nullptr) {
+    set_thread_error("JSON snapshot must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_value == nullptr) {
+    set_thread_error("out_value must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{json_snapshot_mutex()};
+  const auto found = json_snapshots().find(snapshot);
+  if (found == json_snapshots().end()) {
+    set_thread_error("JSON snapshot is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_value = &found->second->value->root;
+  return MLN_STATUS_OK;
+}
+
+auto json_snapshot_destroy(mln_json_snapshot* snapshot) -> void {
+  if (snapshot == nullptr) {
+    return;
+  }
+
+  const auto lock = std::scoped_lock{json_snapshot_mutex()};
+  json_snapshots().erase(snapshot);
 }
 
 auto to_native_feature(const mln_feature* feature)
