@@ -73,6 +73,13 @@ typedef enum mln_style_image_option_field : uint32_t {
   MLN_STYLE_IMAGE_OPTION_SDF = 1U << 1U,
 } mln_style_image_option_field;
 
+/** Location indicator image-name properties. */
+typedef enum mln_location_indicator_image_kind : uint32_t {
+  MLN_LOCATION_INDICATOR_IMAGE_KIND_TOP = 0,
+  MLN_LOCATION_INDICATOR_IMAGE_KIND_BEARING = 1,
+  MLN_LOCATION_INDICATOR_IMAGE_KIND_SHADOW = 2,
+} mln_location_indicator_image_kind;
+
 /** Fixed source metadata returned by mln_map_get_style_source_info(). */
 typedef struct mln_style_source_info {
   uint32_t size;
@@ -800,6 +807,98 @@ MLN_API mln_status mln_map_add_hillshade_layer(
 MLN_API mln_status mln_map_add_color_relief_layer(
   mln_map* map, mln_string_view layer_id, mln_string_view source_id,
   mln_string_view before_layer_id
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a source-free location indicator layer.
+ *
+ * layer_id and before_layer_id are borrowed for the call. Passing an empty
+ * before_layer_id appends the layer; otherwise the layer is inserted before
+ * that existing layer.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id is
+ *   invalid or empty, before_layer_id is invalid or does not exist, or layer_id
+ *   already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_location_indicator_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) MLN_NOEXCEPT;
+
+/**
+ * Sets a location indicator layer location.
+ *
+ * coordinate uses normal C API latitude/longitude order. The underlying style
+ * property is written as [longitude, latitude, altitude].
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id is
+ *   invalid or empty, coordinate or altitude is invalid, the layer does not
+ *   exist, or the layer is not a location indicator layer.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_location_indicator_location(
+  mln_map* map, mln_string_view layer_id, mln_lat_lng coordinate,
+  double altitude
+) MLN_NOEXCEPT;
+
+/**
+ * Sets a location indicator layer bearing in degrees.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id is
+ *   invalid or empty, bearing is not finite float32, the layer does not exist,
+ *   or the layer is not a location indicator layer.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_location_indicator_bearing(
+  mln_map* map, mln_string_view layer_id, double bearing
+) MLN_NOEXCEPT;
+
+/**
+ * Sets a location indicator layer accuracy radius in logical pixels.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id is
+ *   invalid or empty, radius is negative or not finite float32, the layer does
+ *   not exist, or the layer is not a location indicator layer.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_location_indicator_accuracy_radius(
+  mln_map* map, mln_string_view layer_id, double radius
+) MLN_NOEXCEPT;
+
+/**
+ * Sets one location indicator image-name property.
+ *
+ * image_id is borrowed for the call and copied into native style storage. The
+ * named style image does not need to exist when this function is called.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id or
+ *   image_id is invalid or empty, image_kind is invalid, the layer does not
+ *   exist, or the layer is not a location indicator layer.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_location_indicator_image_name(
+  mln_map* map, mln_string_view layer_id, uint32_t image_kind,
+  mln_string_view image_id
 ) MLN_NOEXCEPT;
 
 /**
