@@ -1,0 +1,19 @@
+[tools]
+node = "22.11.0"
+
+[tasks."docs:install"]
+run = "npm --prefix docs install"
+
+[tasks."docs:dev"]
+depends = ["docs:install", "docs:sync-generated-api"]
+run = "npm --prefix docs run dev"
+
+[tasks."docs:sync-generated-api"]
+run = [
+  "pixi run cmake -E rm -rf docs/public/generated/api/c",
+  "pixi run cmake -E copy_directory docs/api/c/html docs/public/generated/api/c",
+]
+
+[tasks."docs:site"]
+depends = ["docs:install", "docs:sync-generated-api"]
+run = "npm --prefix docs run build"

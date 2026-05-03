@@ -9,3 +9,8 @@ workpad.md
 # Fetched on demand by CMake (see cmake/mln_version.cmake) when
 # MLN_SOURCE_DIR is not set externally.
 third_party/maplibre-native/
+
+docs/dist/
+docs/node_modules/
+docs/.astro/
+docs/public/generated/api/*/

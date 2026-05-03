@@ -53,3 +53,7 @@ run = "doxygen docs/api/Doxyfile"
 description = "Verify the worktree is clean after the task run"
 hide = true
 run = "git update-index -q --refresh && git diff --exit-code && git diff --cached --exit-code"
+
+[tasks.docs]
+depends = ["docs:c", "//docs:docs:site"]
+run = "true"

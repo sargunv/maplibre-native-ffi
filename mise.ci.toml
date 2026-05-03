@@ -28,7 +28,7 @@ run = [
 ]
 
 [tasks."ci:docs"]
-run = "mise run docs:c"
+run = "mise run docs"
 
 [tasks."ci:examples:zig-map"]
 run = "mise run //examples/zig-map:build"
