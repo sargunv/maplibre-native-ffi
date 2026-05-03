@@ -351,3 +351,57 @@ test "style registry exposes primary source and layer ID APIs" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_remove_style_source(map, stringView("vector-meta"), &vector_source_removed));
     try testing.expect(vector_source_removed);
 }
+
+test "style light accepts full JSON and property updates" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    const light_color = jsonString("blue");
+    const light_intensity = jsonDouble(0.3);
+    const position_values = [_]c.mln_json_value{ jsonDouble(1.0), jsonDouble(2.0), jsonDouble(3.0) };
+    const light_position = jsonArray(&position_values);
+    const light_members = [_]c.mln_json_member{
+        jsonMember("color", &light_color),
+        jsonMember("intensity", &light_intensity),
+        jsonMember("position", &light_position),
+    };
+    const light = jsonObject(&light_members);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_light_json(map, &light));
+
+    var snapshot: ?*c.mln_json_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_light_property(map, stringView("intensity"), &snapshot));
+    defer c.mln_json_snapshot_destroy(snapshot.?);
+    var root = try snapshotRoot(snapshot.?);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_DOUBLE, root.type);
+    try testing.expectApproxEqAbs(@as(f64, 0.3), root.data.double_value, 0.000001);
+
+    const updated_intensity = jsonDouble(0.75);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_light_property(map, stringView("intensity"), &updated_intensity));
+
+    var updated_snapshot: ?*c.mln_json_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_light_property(map, stringView("intensity"), &updated_snapshot));
+    defer c.mln_json_snapshot_destroy(updated_snapshot.?);
+    root = try snapshotRoot(updated_snapshot.?);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_DOUBLE, root.type);
+    try testing.expectApproxEqAbs(@as(f64, 0.75), root.data.double_value, 0.000001);
+
+    var missing_snapshot: ?*c.mln_json_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_light_property(map, stringView("unknown-light-property"), &missing_snapshot));
+    try testing.expectEqual(@as(?*c.mln_json_snapshot, null), missing_snapshot);
+
+    const invalid_intensity = jsonBool(false);
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_set_style_light_property(map, stringView("intensity"), &invalid_intensity),
+    );
+    try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
+}

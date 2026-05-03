@@ -32,9 +32,11 @@
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/style/conversion.hpp>
 #include <mbgl/style/conversion/layer.hpp>   // IWYU pragma: keep
+#include <mbgl/style/conversion/light.hpp>   // IWYU pragma: keep
 #include <mbgl/style/conversion/source.hpp>  // IWYU pragma: keep
 #include <mbgl/style/conversion_impl.hpp>
 #include <mbgl/style/layer.hpp>
+#include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/style/style_property.hpp>
@@ -2514,6 +2516,95 @@ auto map_get_style_layer_json(
     return MLN_STATUS_OK;
   }
   return json_snapshot_create(layer->serialize(), out_layer);
+}
+
+auto map_set_style_light_json(mln_map* map, const mln_json_value* light_json)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_style_json_value(light_json)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto error = mbgl::style::conversion::Error{};
+  auto light = mbgl::style::conversion::convert<mbgl::style::Light>(
+    mbgl::style::conversion::Convertible{light_json}, error
+  );
+  if (!light) {
+    set_style_conversion_error("style light", error);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  map->map->getStyle().setLight(std::make_unique<mbgl::style::Light>(*light));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_style_light_property(
+  mln_map* map, mln_string_view property_name, const mln_json_value* value
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(property_name, "property_name")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (property_name.size == 0) {
+    set_thread_error("property_name must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!validate_style_json_value(value)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* light = map->map->getStyle().getLight();
+  if (light == nullptr) {
+    set_thread_error("style light does not exist");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto error = light->setProperty(
+    string_from_view(property_name), mbgl::style::conversion::Convertible{value}
+  );
+  if (error) {
+    set_style_conversion_error("style light property", *error);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_light_property(
+  mln_map* map, mln_string_view property_name, mln_json_snapshot** out_value
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(property_name, "property_name")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (property_name.size == 0) {
+    set_thread_error("property_name must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_value == nullptr || *out_value != nullptr) {
+    set_thread_error("out_value must not be null and *out_value must be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* light = map->map->getStyle().getLight();
+  if (light == nullptr) {
+    set_thread_error("style light does not exist");
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  const auto property = light->getProperty(string_from_view(property_name));
+  if (property.getKind() == mbgl::style::StyleProperty::Kind::Undefined) {
+    return MLN_STATUS_OK;
+  }
+  return json_snapshot_create(property.getValue(), out_value);
 }
 
 auto map_set_layer_property(

@@ -350,6 +350,64 @@ MLN_API mln_status mln_map_get_style_layer_json(
 ) MLN_NOEXCEPT;
 
 /**
+ * Sets the style light from a style-spec light JSON object.
+ *
+ * light_json is borrowed for the call. The function parses and copies the
+ * accepted light into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, light_json is
+ *   null or invalid, or the light JSON cannot be converted.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_style_light_json(
+  mln_map* map, const mln_json_value* light_json
+) MLN_NOEXCEPT;
+
+/**
+ * Sets one style light property using its MapLibre style-spec property name.
+ *
+ * property_name and value are borrowed for the call. value is a style-spec JSON
+ * value descriptor. The function parses and copies the accepted value into
+ * MapLibre Native's typed light property storage before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, property_name is
+ *   invalid or empty, value is null or invalid, the property name is unknown,
+ *   or the property value cannot be converted for that property.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_style_light_property(
+  mln_map* map, mln_string_view property_name, const mln_json_value* value
+) MLN_NOEXCEPT;
+
+/**
+ * Copies one style light property as a style-spec JSON value snapshot.
+ *
+ * On success, *out_value receives an owned snapshot handle. Use
+ * mln_json_snapshot_get() to borrow its root JSON value. Destroy the snapshot
+ * with mln_json_snapshot_destroy(). Undefined native style light properties
+ * return null snapshots.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, property_name is
+ *   invalid or empty, out_value is null, or *out_value is not null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_style_light_property(
+  mln_map* map, mln_string_view property_name, mln_json_snapshot** out_value
+) MLN_NOEXCEPT;
+
+/**
  * Sets one layer property using its MapLibre style-spec property name.
  *
  * layer_id, property_name, and value are borrowed for the call. value is a
