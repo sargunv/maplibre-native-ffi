@@ -50,6 +50,11 @@ auto mln_style_tile_source_options_default(void) noexcept
   return mln::core::style_tile_source_options_default();
 }
 
+auto mln_custom_geometry_source_options_default(void) noexcept
+  -> mln_custom_geometry_source_options {
+  return mln::core::custom_geometry_source_options_default();
+}
+
 auto mln_premultiplied_rgba8_image_default(void) noexcept
   -> mln_premultiplied_rgba8_image {
   return mln::core::premultiplied_rgba8_image_default();
@@ -279,6 +284,46 @@ auto mln_map_add_raster_dem_source_tiles(
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_add_raster_dem_source_tiles(
       map, source_id, tiles, tile_count, options
+    );
+  });
+}
+
+auto mln_map_add_custom_geometry_source(
+  mln_map* map, mln_string_view source_id,
+  const mln_custom_geometry_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_custom_geometry_source(map, source_id, options);
+  });
+}
+
+auto mln_map_set_custom_geometry_source_tile_data(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id,
+  const mln_geojson* data
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_custom_geometry_source_tile_data(
+      map, source_id, tile_id, data
+    );
+  });
+}
+
+auto mln_map_invalidate_custom_geometry_source_tile(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_invalidate_custom_geometry_source_tile(
+      map, source_id, tile_id
+    );
+  });
+}
+
+auto mln_map_invalidate_custom_geometry_source_region(
+  mln_map* map, mln_string_view source_id, mln_lat_lng_bounds bounds
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_invalidate_custom_geometry_source_region(
+      map, source_id, bounds
     );
   });
 }

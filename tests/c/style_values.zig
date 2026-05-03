@@ -98,6 +98,34 @@ fn snapshotRoot(snapshot: *c.mln_json_snapshot) !*const c.mln_json_value {
     return root orelse error.MissingSnapshotRoot;
 }
 
+const CustomGeometryCallbackState = struct {
+    fetch_count: usize = 0,
+    cancel_count: usize = 0,
+    last_tile: c.mln_canonical_tile_id = .{ .z = 0, .x = 0, .y = 0 },
+};
+
+fn customGeometryFetch(user_data: ?*anyopaque, tile_id: c.mln_canonical_tile_id) callconv(.c) void {
+    if (user_data == null) return;
+    const state: *CustomGeometryCallbackState = @ptrCast(@alignCast(user_data.?));
+    state.fetch_count += 1;
+    state.last_tile = tile_id;
+}
+
+fn customGeometryCancel(user_data: ?*anyopaque, tile_id: c.mln_canonical_tile_id) callconv(.c) void {
+    if (user_data == null) return;
+    const state: *CustomGeometryCallbackState = @ptrCast(@alignCast(user_data.?));
+    state.cancel_count += 1;
+    state.last_tile = tile_id;
+}
+
+fn emptyFeatureCollectionGeoJSON() c.mln_geojson {
+    return .{
+        .size = @sizeOf(c.mln_geojson),
+        .type = c.MLN_GEOJSON_TYPE_FEATURE_COLLECTION,
+        .data = .{ .feature_collection = .{ .features = null, .feature_count = 0 } },
+    };
+}
+
 test "layer properties accept style JSON values" {
     try support.suppressLogs();
     defer support.restoreLogs();
@@ -805,6 +833,107 @@ test "raster DEM sources support hillshade and color relief layers" {
     try testing.expectEqual(
         c.MLN_STATUS_INVALID_ARGUMENT,
         c.mln_map_add_raster_source_tiles(map, stringView("bad-raster"), &dem_tiles, dem_tiles.len, &options),
+    );
+}
+
+test "custom geometry source helpers add sources and accept tile updates" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    var options = c.mln_custom_geometry_source_options_default();
+    try testing.expectEqual(@as(u32, @sizeOf(c.mln_custom_geometry_source_options)), options.size);
+    try testing.expectEqual(@as(u32, 0), options.fields);
+    try testing.expectEqual(@as(f64, 0.0), options.min_zoom);
+    try testing.expectEqual(@as(f64, 18.0), options.max_zoom);
+    try testing.expectEqual(@as(u32, 512), options.tile_size);
+    try testing.expectEqual(@as(u32, 128), options.buffer);
+    try testing.expect(!options.clip);
+    try testing.expect(!options.wrap);
+
+    var state = CustomGeometryCallbackState{};
+    options.fetch_tile = customGeometryFetch;
+    options.cancel_tile = customGeometryCancel;
+    options.user_data = &state;
+    options.fields = c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MIN_ZOOM |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TOLERANCE |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TILE_SIZE |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_BUFFER |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_CLIP |
+        c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_WRAP;
+    options.min_zoom = 0.0;
+    options.max_zoom = 14.0;
+    options.tolerance = 0.5;
+    options.tile_size = 256;
+    options.buffer = 64;
+    options.clip = true;
+    options.wrap = true;
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_custom_geometry_source(map, stringView("custom"), &options));
+
+    var found = false;
+    var source_type: u32 = c.MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_source_type(map, stringView("custom"), &source_type, &found));
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_CUSTOM_VECTOR, source_type);
+
+    const layer_id = jsonString("custom-circle");
+    const layer_type = jsonString("circle");
+    const layer_source = jsonString("custom");
+    const layer_members = [_]c.mln_json_member{
+        jsonMember("id", &layer_id),
+        jsonMember("type", &layer_type),
+        jsonMember("source", &layer_source),
+    };
+    const layer = jsonObject(&layer_members);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_style_layer_json(map, &layer, stringView("point-circle")));
+
+    const tile_id = c.mln_canonical_tile_id{ .z = 0, .x = 0, .y = 0 };
+    var empty_collection = emptyFeatureCollectionGeoJSON();
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_set_custom_geometry_source_tile_data(map, stringView("custom"), tile_id, &empty_collection),
+    );
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_invalidate_custom_geometry_source_tile(map, stringView("custom"), tile_id));
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_invalidate_custom_geometry_source_region(
+            map,
+            stringView("custom"),
+            .{
+                .southwest = .{ .latitude = -1.0, .longitude = -1.0 },
+                .northeast = .{ .latitude = 1.0, .longitude = 1.0 },
+            },
+        ),
+    );
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_add_custom_geometry_source(map, stringView("custom"), &options));
+
+    var invalid_options = c.mln_custom_geometry_source_options_default();
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_add_custom_geometry_source(map, stringView("missing-callback"), &invalid_options));
+    invalid_options.fetch_tile = customGeometryFetch;
+    invalid_options.fields = 1 << 31;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_add_custom_geometry_source(map, stringView("bad-fields"), &invalid_options));
+    invalid_options.fields = c.MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM;
+    invalid_options.max_zoom = 33.0;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_add_custom_geometry_source(map, stringView("bad-zoom"), &invalid_options));
+
+    const invalid_tile_id = c.mln_canonical_tile_id{ .z = 1, .x = 2, .y = 0 };
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_set_custom_geometry_source_tile_data(map, stringView("custom"), invalid_tile_id, &empty_collection),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_invalidate_custom_geometry_source_tile(map, stringView("point"), tile_id),
     );
 }
 

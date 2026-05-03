@@ -67,6 +67,17 @@ typedef enum mln_style_raster_dem_encoding : uint32_t {
   MLN_STYLE_RASTER_DEM_ENCODING_TERRARIUM = 1,
 } mln_style_raster_dem_encoding;
 
+/** Field mask values for mln_custom_geometry_source_options. */
+typedef enum mln_custom_geometry_source_option_field : uint32_t {
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MIN_ZOOM = 1U << 0U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM = 1U << 1U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TOLERANCE = 1U << 2U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TILE_SIZE = 1U << 3U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_BUFFER = 1U << 4U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_CLIP = 1U << 5U,
+  MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_WRAP = 1U << 6U,
+} mln_custom_geometry_source_option_field;
+
 /** Field mask values for mln_style_image_options. */
 typedef enum mln_style_image_option_field : uint32_t {
   MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO = 1U << 0U,
@@ -111,6 +122,37 @@ typedef struct mln_style_tile_source_options {
   uint32_t raster_encoding;
 } mln_style_tile_source_options;
 
+/** Canonical tile identity used by custom geometry source callbacks. */
+typedef struct mln_canonical_tile_id {
+  uint32_t z;
+  uint32_t x;
+  uint32_t y;
+} mln_canonical_tile_id;
+
+/** Callback invoked for custom geometry source tile requests and cancels. */
+typedef void (*mln_custom_geometry_source_tile_callback)(
+  void* user_data, mln_canonical_tile_id tile_id
+);
+
+/** Options for custom geometry sources. */
+typedef struct mln_custom_geometry_source_options {
+  uint32_t size;
+  uint32_t fields;
+  /** Required tile fetch callback. */
+  mln_custom_geometry_source_tile_callback fetch_tile;
+  /** Optional best-effort tile cancel callback. */
+  mln_custom_geometry_source_tile_callback cancel_tile;
+  /** Caller-owned callback context retained by pointer. */
+  void* user_data;
+  double min_zoom;
+  double max_zoom;
+  double tolerance;
+  uint32_t tile_size;
+  uint32_t buffer;
+  bool clip;
+  bool wrap;
+} mln_custom_geometry_source_options;
+
 /** Caller-owned premultiplied RGBA8 image pixels. */
 typedef struct mln_premultiplied_rgba8_image {
   uint32_t size;
@@ -149,6 +191,10 @@ typedef struct mln_style_image_info {
 /** Returns default tile source options. */
 MLN_API mln_style_tile_source_options
 mln_style_tile_source_options_default(void) MLN_NOEXCEPT;
+
+/** Returns default custom geometry source options. */
+MLN_API mln_custom_geometry_source_options
+mln_custom_geometry_source_options_default(void) MLN_NOEXCEPT;
 
 /** Returns a default premultiplied RGBA8 image descriptor. */
 MLN_API mln_premultiplied_rgba8_image
@@ -523,6 +569,91 @@ MLN_API mln_status mln_map_add_raster_dem_source_url(
 MLN_API mln_status mln_map_add_raster_dem_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
   size_t tile_count, const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a custom geometry source.
+ *
+ * source_id is borrowed for the call. options is borrowed for the call, but the
+ * callback function pointers and user_data pointer are retained by value. The
+ * callback functions and user_data must remain valid until the source is
+ * removed, the style is replaced, or the map is destroyed, and until any
+ * in-flight callback invocation has returned.
+ *
+ * fetch_tile and cancel_tile may run on arbitrary native worker threads, may be
+ * concurrent with owner-thread map calls, and must not call thread-affine map
+ * APIs directly. Queue work back to the map owner thread before calling
+ * mln_map_set_custom_geometry_source_tile_data() or invalidation functions.
+ * Callbacks must not throw, panic, longjmp, or otherwise unwind through the C
+ * ABI. cancel_tile is best-effort and may be repeated or race with fetch_tile.
+ *
+ * Custom geometry sources belong to the current style. Loading another style
+ * URL or JSON document drops sources that were added to the previous style.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, options is null or invalid, fetch_tile is null, or the
+ *   source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_custom_geometry_source(
+  mln_map* map, mln_string_view source_id,
+  const mln_custom_geometry_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Sets custom geometry source data for one canonical tile.
+ *
+ * source_id and data are borrowed for the call. The accepted GeoJSON descriptor
+ * is copied into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, tile_id is invalid, data is null or invalid, the source
+ *   does not exist, or the source is not a custom geometry source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_custom_geometry_source_tile_data(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id,
+  const mln_geojson* data
+) MLN_NOEXCEPT;
+
+/**
+ * Invalidates custom geometry source data for one canonical tile.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, tile_id is invalid, the source does not exist, or the
+ *   source is not a custom geometry source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_invalidate_custom_geometry_source_tile(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id
+) MLN_NOEXCEPT;
+
+/**
+ * Invalidates custom geometry source data inside one geographic region.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, bounds is invalid, the source does not exist, or the
+ *   source is not a custom geometry source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_invalidate_custom_geometry_source_region(
+  mln_map* map, mln_string_view source_id, mln_lat_lng_bounds bounds
 ) MLN_NOEXCEPT;
 
 /**
