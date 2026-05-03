@@ -207,6 +207,7 @@ add_library(
     src/resources/file_source_manager.cpp
     src/resources/network_status.cpp
     src/resources/resource_loader.cpp
+    src/style/style_value.cpp
     ${MLN_TEXTURE_SESSION_SOURCE}
     ${MLN_SURFACE_SESSION_SOURCE}
     src/runtime/runtime.cpp

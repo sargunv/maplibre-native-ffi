@@ -25,6 +25,7 @@
 #include "maplibre_native_c/projection.h"      // IWYU pragma: export
 #include "maplibre_native_c/render_session.h"  // IWYU pragma: export
 #include "maplibre_native_c/runtime.h"         // IWYU pragma: export
+#include "maplibre_native_c/style.h"           // IWYU pragma: export
 #include "maplibre_native_c/surface.h"         // IWYU pragma: export
 #include "maplibre_native_c/texture.h"         // IWYU pragma: export
 

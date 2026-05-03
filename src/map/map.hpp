@@ -32,6 +32,20 @@ auto map_request_repaint(mln_map* map) -> mln_status;
 auto map_request_still_image(mln_map* map) -> mln_status;
 auto map_set_style_url(mln_map* map, const char* url) -> mln_status;
 auto map_set_style_json(mln_map* map, const char* json) -> mln_status;
+auto map_set_layer_property(
+  mln_map* map, mln_string_view layer_id, mln_string_view property_name,
+  const mln_json_value* value
+) -> mln_status;
+auto map_get_layer_property(
+  mln_map* map, mln_string_view layer_id, mln_string_view property_name,
+  mln_json_snapshot** out_value
+) -> mln_status;
+auto map_set_layer_filter(
+  mln_map* map, mln_string_view layer_id, const mln_json_value* filter
+) -> mln_status;
+auto map_get_layer_filter(
+  mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_filter
+) -> mln_status;
 auto map_get_camera(mln_map* map, mln_camera_options* out_camera) -> mln_status;
 auto map_jump_to(mln_map* map, const mln_camera_options* camera) -> mln_status;
 auto map_ease_to(
