@@ -572,6 +572,142 @@ MLN_API mln_status mln_map_copy_style_image_premultiplied_rgba8(
 ) MLN_NOEXCEPT;
 
 /**
+ * Adds an image source that loads its image from a URL.
+ *
+ * source_id, coordinates, and url are borrowed for the call. coordinates must
+ * contain exactly four coordinates in top-left, top-right, bottom-right,
+ * bottom-left order. The function copies accepted strings and coordinates into
+ * the current style before return. Later URL load or decode failures are
+ * reported through runtime events.
+ *
+ * Image sources belong to the current style. Loading another style URL or JSON
+ * document drops sources that were added to the previous style.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, coordinates is null or invalid, coordinate_count is
+ * not 4, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_image_source_url(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_string_view url
+) MLN_NOEXCEPT;
+
+/**
+ * Adds an image source with inline image pixels.
+ *
+ * source_id, coordinates, image, and image pixels are borrowed for the call.
+ * coordinates must contain exactly four coordinates in top-left, top-right,
+ * bottom-right, bottom-left order. The function copies accepted coordinates and
+ * pixels into the current style before return.
+ *
+ * Image sources belong to the current style. Loading another style URL or JSON
+ * document drops sources that were added to the previous style.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, coordinates is null or invalid, coordinate_count is not
+ * 4, image is invalid, image pixels are null, image dimensions or stride are
+ *   invalid, image byte_length is too small, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_image_source_image(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, const mln_premultiplied_rgba8_image* image
+) MLN_NOEXCEPT;
+
+/**
+ * Updates an image source to load its image from a URL.
+ *
+ * source_id and url are borrowed for the call. Later URL load or decode
+ * failures are reported through runtime events.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, the source does not exist, or the source is not an
+ *   image source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_image_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) MLN_NOEXCEPT;
+
+/**
+ * Updates an image source with inline image pixels.
+ *
+ * source_id, image, and image pixels are borrowed for the call. The function
+ * copies accepted pixels into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, image is invalid, image pixels are null, image dimensions
+ *   or stride are invalid, image byte_length is too small, the source does not
+ *   exist, or the source is not an image source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_image_source_image(
+  mln_map* map, mln_string_view source_id,
+  const mln_premultiplied_rgba8_image* image
+) MLN_NOEXCEPT;
+
+/**
+ * Updates image source coordinates.
+ *
+ * coordinates is borrowed for the call and must contain exactly four
+ * coordinates in top-left, top-right, bottom-right, bottom-left order. The
+ * function copies accepted coordinates into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, coordinates is null or invalid, coordinate_count is not
+ * 4, the source does not exist, or the source is not an image source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count
+) MLN_NOEXCEPT;
+
+/**
+ * Copies image source coordinates.
+ *
+ * On success, out_found reports whether source_id exists. When found,
+ * out_coordinate_count receives 4. If coordinate_capacity is less than 4,
+ * out_coordinate_count still receives 4 and the function returns
+ * MLN_STATUS_INVALID_ARGUMENT.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, out_coordinates is null with non-zero capacity,
+ *   coordinate_capacity is too small for a found source, out_coordinate_count
+ * is null, out_found is null, or the source exists and is not an image source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
+  size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) MLN_NOEXCEPT;
+
+/**
  * Adds one style layer from a full style-spec layer JSON object.
  *
  * layer_json and before_layer_id are borrowed for the call. layer_json must

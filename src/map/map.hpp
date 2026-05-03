@@ -114,6 +114,29 @@ auto map_copy_style_image_premultiplied_rgba8(
   mln_map* map, mln_string_view image_id, uint8_t* out_pixels,
   size_t pixel_capacity, size_t* out_byte_length, bool* out_found
 ) -> mln_status;
+auto map_add_image_source_url(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_string_view url
+) -> mln_status;
+auto map_add_image_source_image(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, const mln_premultiplied_rgba8_image* image
+) -> mln_status;
+auto map_set_image_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status;
+auto map_set_image_source_image(
+  mln_map* map, mln_string_view source_id,
+  const mln_premultiplied_rgba8_image* image
+) -> mln_status;
+auto map_set_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count
+) -> mln_status;
+auto map_get_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
+  size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) -> mln_status;
 auto map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
   mln_string_view before_layer_id

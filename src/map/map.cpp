@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -40,6 +41,7 @@
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
 #include <mbgl/style/sources/geojson_source.hpp>
+#include <mbgl/style/sources/image_source.hpp>
 #include <mbgl/style/sources/raster_source.hpp>
 #include <mbgl/style/sources/vector_source.hpp>
 #include <mbgl/style/style.hpp>
@@ -136,6 +138,11 @@ auto string_view_from_literal(const char* string) -> mln_string_view {
 }
 
 auto validate_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mln_status;
+auto validate_lat_lng_array(
+  const mln_lat_lng* coordinates, size_t coordinate_count, bool allow_empty
+) -> mln_status;
+auto to_native_lat_lng(mln_lat_lng coordinate) -> mbgl::LatLng;
+auto from_native_lat_lng(const mbgl::LatLng& coordinate) -> mln_lat_lng;
 auto to_native_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mbgl::LatLngBounds;
 
 auto to_c_source_type(mbgl::style::SourceType type) -> uint32_t {
@@ -614,6 +621,55 @@ auto style_image_info_from_native(const mbgl::style::Image& image)
     .pixel_ratio = image.getPixelRatio(),
     .sdf = image.isSdf()
   };
+}
+
+auto validate_image_source_coordinates(
+  const mln_lat_lng* coordinates, size_t coordinate_count
+) -> mln_status {
+  if (coordinate_count != 4) {
+    mln::core::set_thread_error("image source coordinate_count must be 4");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto status =
+    validate_lat_lng_array(coordinates, coordinate_count, false);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  const auto coordinate_span = std::span<const mln_lat_lng>{coordinates, 4};
+  const auto first = coordinate_span.front();
+  const auto all_same =
+    std::ranges::all_of(coordinate_span, [first](mln_lat_lng value) -> bool {
+      return value.latitude == first.latitude &&
+             value.longitude == first.longitude;
+    });
+  if (all_same) {
+    mln::core::set_thread_error("image source coordinates must not all match");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto to_native_image_source_coordinates(const mln_lat_lng* coordinates)
+  -> std::array<mbgl::LatLng, 4> {
+  auto result = std::array<mbgl::LatLng, 4>{};
+  const auto coordinate_span = std::span<const mln_lat_lng>{coordinates, 4};
+  auto index = size_t{0};
+  for (const auto coordinate : coordinate_span) {
+    result.at(index) = to_native_lat_lng(coordinate);
+    ++index;
+  }
+  return result;
+}
+
+auto from_native_image_source_coordinates(
+  const std::array<mbgl::LatLng, 4>& coordinates
+) -> std::array<mln_lat_lng, 4> {
+  auto result = std::array<mln_lat_lng, 4>{};
+  for (auto index = size_t{0}; index < result.size(); ++index) {
+    result.at(index) = from_native_lat_lng(coordinates.at(index));
+  }
+  return result;
 }
 
 auto create_style_id_list(
@@ -3272,6 +3328,236 @@ auto map_copy_style_image_premultiplied_rgba8(
   if (pixels.bytes() > 0) {
     std::copy_n(pixels.data.get(), pixels.bytes(), out_pixels);
   }
+  return MLN_STATUS_OK;
+}
+
+auto map_add_image_source_url(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_string_view url
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto coordinate_status =
+    validate_image_source_coordinates(coordinates, coordinate_count);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  auto source = std::make_unique<mbgl::style::ImageSource>(
+    id, to_native_image_source_coordinates(coordinates)
+  );
+  source->setURL(string_from_view(url));
+  style.addSource(std::move(source));
+  return MLN_STATUS_OK;
+}
+
+auto map_add_image_source_image(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, const mln_premultiplied_rgba8_image* image
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto coordinate_status =
+    validate_image_source_coordinates(coordinates, coordinate_count);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+  const auto image_status = validate_premultiplied_rgba8_image(image);
+  if (image_status != MLN_STATUS_OK) {
+    return image_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  style.addSource(
+    std::make_unique<mbgl::style::ImageSource>(
+      id, to_native_image_source_coordinates(coordinates)
+    )
+  );
+  auto* added_source = style.getSource(id);
+  auto* image_source = added_source == nullptr
+                         ? nullptr
+                         : added_source->as<mbgl::style::ImageSource>();
+  if (image_source == nullptr) {
+    set_thread_error("added source is not an image source");
+    return MLN_STATUS_NATIVE_ERROR;
+  }
+  image_source->setImage(to_native_premultiplied_rgba8_image(*image));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_image_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* image_source = source->as<mbgl::style::ImageSource>();
+  if (image_source == nullptr) {
+    set_thread_error("source is not an image source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  image_source->setURL(string_from_view(url));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_image_source_image(
+  mln_map* map, mln_string_view source_id,
+  const mln_premultiplied_rgba8_image* image
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto image_status = validate_premultiplied_rgba8_image(image);
+  if (image_status != MLN_STATUS_OK) {
+    return image_status;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* image_source = source->as<mbgl::style::ImageSource>();
+  if (image_source == nullptr) {
+    set_thread_error("source is not an image source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  image_source->setImage(to_native_premultiplied_rgba8_image(*image));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto coordinate_status =
+    validate_image_source_coordinates(coordinates, coordinate_count);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* image_source = source->as<mbgl::style::ImageSource>();
+  if (image_source == nullptr) {
+    set_thread_error("source is not an image source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  image_source->setCoordinates(to_native_image_source_coordinates(coordinates));
+  return MLN_STATUS_OK;
+}
+
+auto map_get_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
+  size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (out_coordinates == nullptr && coordinate_capacity > 0) {
+    set_thread_error(
+      "out_coordinates must not be null when capacity is non-zero"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_coordinate_count == nullptr || out_found == nullptr) {
+    set_thread_error("out_coordinate_count and out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  *out_found = source != nullptr;
+  *out_coordinate_count = 0;
+  if (source == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  auto* image_source = source->as<mbgl::style::ImageSource>();
+  if (image_source == nullptr) {
+    set_thread_error("source is not an image source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto image_source_coordinate_count = size_t{4};
+  *out_coordinate_count = image_source_coordinate_count;
+  if (coordinate_capacity < image_source_coordinate_count) {
+    set_thread_error("coordinate_capacity is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinates =
+    from_native_image_source_coordinates(image_source->getCoordinates());
+  auto output = std::span<mln_lat_lng>{out_coordinates, coordinate_capacity};
+  std::ranges::copy(coordinates, output.begin());
   return MLN_STATUS_OK;
 }
 
