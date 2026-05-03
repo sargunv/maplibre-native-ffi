@@ -24,6 +24,8 @@ auto free_camera_options_default() noexcept -> mln_free_camera_options;
 auto projection_mode_default() noexcept -> mln_projection_mode;
 auto map_viewport_options_default() noexcept -> mln_map_viewport_options;
 auto map_tile_options_default() noexcept -> mln_map_tile_options;
+auto style_tile_source_options_default() noexcept
+  -> mln_style_tile_source_options;
 auto create_map(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) -> mln_status;
@@ -61,6 +63,34 @@ auto map_copy_style_source_attribution(
 ) -> mln_status;
 auto map_list_style_source_ids(mln_map* map, mln_style_id_list** out_source_ids)
   -> mln_status;
+auto map_add_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status;
+auto map_add_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) -> mln_status;
+auto map_set_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status;
+auto map_set_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) -> mln_status;
+auto map_add_vector_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_add_vector_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_add_raster_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_add_raster_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status;
 auto map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
   mln_string_view before_layer_id

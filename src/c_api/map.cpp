@@ -45,6 +45,11 @@ auto mln_map_tile_options_default(void) noexcept -> mln_map_tile_options {
   return mln::core::map_tile_options_default();
 }
 
+auto mln_style_tile_source_options_default(void) noexcept
+  -> mln_style_tile_source_options {
+  return mln::core::style_tile_source_options_default();
+}
+
 auto mln_map_create(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) noexcept -> mln_status {
@@ -168,6 +173,78 @@ auto mln_map_list_style_source_ids(
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_list_style_source_ids(map, out_source_ids);
+  });
+}
+
+auto mln_map_add_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_geojson_source_url(map, source_id, url);
+  });
+}
+
+auto mln_map_add_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_geojson_source_data(map, source_id, data);
+  });
+}
+
+auto mln_map_set_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_geojson_source_url(map, source_id, url);
+  });
+}
+
+auto mln_map_set_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_geojson_source_data(map, source_id, data);
+  });
+}
+
+auto mln_map_add_vector_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_vector_source_url(map, source_id, url, options);
+  });
+}
+
+auto mln_map_add_vector_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_vector_source_tiles(
+      map, source_id, tiles, tile_count, options
+    );
+  });
+}
+
+auto mln_map_add_raster_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_raster_source_url(map, source_id, url, options);
+  });
+}
+
+auto mln_map_add_raster_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_raster_source_tiles(
+      map, source_id, tiles, tile_count, options
+    );
   });
 }
 

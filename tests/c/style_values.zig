@@ -405,3 +405,121 @@ test "style light accepts full JSON and property updates" {
     );
     try testing.expect(std.mem.len(c.mln_thread_last_error_message()) > 0);
 }
+
+test "core source helpers add and update ordinary sources" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    const point = c.mln_geometry{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_POINT,
+        .data = .{ .point = .{ .latitude = 37.7749, .longitude = -122.4194 } },
+    };
+    const geojson = c.mln_geojson{
+        .size = @sizeOf(c.mln_geojson),
+        .type = c.MLN_GEOJSON_TYPE_GEOMETRY,
+        .data = .{ .geometry = &point },
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_geojson_source_data(map, stringView("geo-helper"), &geojson));
+
+    var found = false;
+    var source_type: u32 = c.MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_style_source_type(map, stringView("geo-helper"), &source_type, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_GEOJSON, source_type);
+
+    const empty_collection = c.mln_geojson{
+        .size = @sizeOf(c.mln_geojson),
+        .type = c.MLN_GEOJSON_TYPE_FEATURE_COLLECTION,
+        .data = .{ .feature_collection = .{ .features = null, .feature_count = 0 } },
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_geojson_source_data(map, stringView("geo-helper"), &empty_collection));
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_set_geojson_source_url(map, stringView("geo-helper"), stringView("https://example.com/data.geojson")),
+    );
+
+    var tile_options = c.mln_style_tile_source_options_default();
+    try testing.expectEqual(@as(u32, 512), tile_options.tile_size);
+    tile_options.fields = c.MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_SCHEME |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING;
+    tile_options.min_zoom = 1.0;
+    tile_options.max_zoom = 14.0;
+    tile_options.attribution = stringView("Helper attribution");
+    tile_options.scheme = c.MLN_STYLE_TILE_SCHEME_TMS;
+    tile_options.bounds = .{
+        .southwest = .{ .latitude = -45.0, .longitude = -120.0 },
+        .northeast = .{ .latitude = 45.0, .longitude = 120.0 },
+    };
+    tile_options.vector_encoding = c.MLN_STYLE_VECTOR_TILE_ENCODING_MLT;
+    const vector_tiles = [_]c.mln_string_view{stringView("https://example.com/vector/{z}/{x}/{y}.mvt")};
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_vector_source_tiles(map, stringView("vector-helper"), &vector_tiles, vector_tiles.len, &tile_options),
+    );
+
+    var info: c.mln_style_source_info = .{
+        .size = @sizeOf(c.mln_style_source_info),
+        .type = c.MLN_STYLE_SOURCE_TYPE_UNKNOWN,
+        .id_size = 0,
+        .is_volatile = false,
+        .has_attribution = false,
+        .attribution_size = 0,
+    };
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_style_source_info(map, stringView("vector-helper"), &info, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_VECTOR, info.type);
+    try testing.expect(info.has_attribution);
+    try testing.expectEqual(@as(usize, "Helper attribution".len), info.attribution_size);
+
+    var raster_options = c.mln_style_tile_source_options_default();
+    raster_options.fields = c.MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE;
+    raster_options.tile_size = 256;
+    const raster_tiles = [_]c.mln_string_view{stringView("https://example.com/raster/{z}/{x}/{y}.png")};
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_raster_source_tiles(map, stringView("raster-helper"), &raster_tiles, raster_tiles.len, &raster_options),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_style_source_type(map, stringView("raster-helper"), &source_type, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_RASTER, source_type);
+
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_vector_source_url(map, stringView("vector-url-helper"), stringView("https://example.com/vector.json"), null),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_raster_source_url(map, stringView("raster-url-helper"), stringView("https://example.com/raster.json"), &raster_options),
+    );
+
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_add_geojson_source_url(map, stringView("geo-helper"), stringView("https://example.com/again.geojson")),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_set_geojson_source_url(map, stringView("vector-helper"), stringView("https://example.com/not-geojson")),
+    );
+}
