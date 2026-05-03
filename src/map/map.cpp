@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -29,9 +30,15 @@
 #include <mbgl/renderer/renderer_frontend.hpp>
 #include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
+#include <mbgl/style/conversion.hpp>
+#include <mbgl/style/conversion/layer.hpp>   // IWYU pragma: keep
+#include <mbgl/style/conversion/source.hpp>  // IWYU pragma: keep
+#include <mbgl/style/conversion_impl.hpp>
 #include <mbgl/style/layer.hpp>
+#include <mbgl/style/source.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/style/style_property.hpp>
+#include <mbgl/style/types.hpp>
 #include <mbgl/tile/tile_id.hpp>
 #include <mbgl/tile/tile_operation.hpp>
 #include <mbgl/util/chrono.hpp>
@@ -49,10 +56,16 @@
 #include "runtime/runtime.hpp"
 #include "style/style_value.hpp"
 
+struct mln_style_id_list {
+  std::vector<std::string> ids;
+};
+
 namespace {
 using MapRegistry = std::unordered_map<mln_map*, std::unique_ptr<mln_map>>;
 using ProjectionRegistry =
   std::unordered_map<mln_map_projection*, std::unique_ptr<mln_map_projection>>;
+using StyleIdListRegistry = std::unordered_map<
+  const mln_style_id_list*, std::unique_ptr<mln_style_id_list>>;
 
 constexpr auto default_map_width = uint32_t{256};
 constexpr auto default_map_height = uint32_t{256};
@@ -78,6 +91,16 @@ auto map_projection_registry() -> ProjectionRegistry& {
   return value;
 }
 
+auto style_id_list_registry_mutex() -> std::mutex& {
+  static std::mutex value;
+  return value;
+}
+
+auto style_id_list_registry() -> StyleIdListRegistry& {
+  static StyleIdListRegistry value;
+  return value;
+}
+
 auto validate_string_view(mln_string_view string, const char* name) -> bool {
   if (string.size > 0 && string.data == nullptr) {
     auto message = std::string{name} + " data must not be null";
@@ -92,6 +115,64 @@ auto string_from_view(mln_string_view string) -> std::string {
     return {};
   }
   return std::string{string.data, string.size};
+}
+
+auto string_view_from_string(const std::string& string) -> mln_string_view {
+  return mln_string_view{.data = string.data(), .size = string.size()};
+}
+
+auto string_view_from_literal(const char* string) -> mln_string_view {
+  return mln_string_view{.data = string, .size = std::strlen(string)};
+}
+
+auto to_c_source_type(mbgl::style::SourceType type) -> uint32_t {
+  switch (type) {
+    case mbgl::style::SourceType::Vector:
+      return MLN_STYLE_SOURCE_TYPE_VECTOR;
+    case mbgl::style::SourceType::Raster:
+      return MLN_STYLE_SOURCE_TYPE_RASTER;
+    case mbgl::style::SourceType::RasterDEM:
+      return MLN_STYLE_SOURCE_TYPE_RASTER_DEM;
+    case mbgl::style::SourceType::GeoJSON:
+      return MLN_STYLE_SOURCE_TYPE_GEOJSON;
+    case mbgl::style::SourceType::Video:
+      return MLN_STYLE_SOURCE_TYPE_VIDEO;
+    case mbgl::style::SourceType::Annotations:
+      return MLN_STYLE_SOURCE_TYPE_ANNOTATIONS;
+    case mbgl::style::SourceType::Image:
+      return MLN_STYLE_SOURCE_TYPE_IMAGE;
+    case mbgl::style::SourceType::CustomVector:
+      return MLN_STYLE_SOURCE_TYPE_CUSTOM_VECTOR;
+  }
+  return MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+}
+
+auto create_style_id_list(
+  std::vector<std::string> ids, mln_style_id_list** out_list
+) -> mln_status {
+  if (out_list == nullptr || *out_list != nullptr) {
+    mln::core::set_thread_error(
+      "out_list must not be null and *out_list must be null"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto list = std::make_unique<mln_style_id_list>();
+  list->ids = std::move(ids);
+  auto* handle = list.get();
+  const auto lock = std::scoped_lock{style_id_list_registry_mutex()};
+  style_id_list_registry().emplace(handle, std::move(list));
+  *out_list = handle;
+  return MLN_STATUS_OK;
+}
+
+auto find_style_id_list_locked(const mln_style_id_list* list)
+  -> const mln_style_id_list* {
+  const auto found = style_id_list_registry().find(list);
+  if (found == style_id_list_registry().end()) {
+    return nullptr;
+  }
+  return found->second.get();
 }
 
 template <typename Payload>
@@ -1915,6 +1996,524 @@ auto map_set_style_json(mln_map* map, const char* json) -> mln_status {
     return MLN_STATUS_NATIVE_ERROR;
   }
   return MLN_STATUS_OK;
+}
+
+auto style_id_list_count(const mln_style_id_list* list, size_t* out_count)
+  -> mln_status {
+  if (list == nullptr) {
+    set_thread_error("style ID list must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_count == nullptr) {
+    set_thread_error("out_count must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{style_id_list_registry_mutex()};
+  const auto* live_list = find_style_id_list_locked(list);
+  if (live_list == nullptr) {
+    set_thread_error("style ID list is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_count = live_list->ids.size();
+  return MLN_STATUS_OK;
+}
+
+auto style_id_list_get(
+  const mln_style_id_list* list, size_t index, mln_string_view* out_id
+) -> mln_status {
+  if (list == nullptr) {
+    set_thread_error("style ID list must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_id == nullptr) {
+    set_thread_error("out_id must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{style_id_list_registry_mutex()};
+  const auto* live_list = find_style_id_list_locked(list);
+  if (live_list == nullptr) {
+    set_thread_error("style ID list is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (index >= live_list->ids.size()) {
+    set_thread_error("index is out of range");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_id = string_view_from_string(live_list->ids.at(index));
+  return MLN_STATUS_OK;
+}
+
+auto style_id_list_destroy(mln_style_id_list* list) -> void {
+  if (list == nullptr) {
+    return;
+  }
+  const auto lock = std::scoped_lock{style_id_list_registry_mutex()};
+  style_id_list_registry().erase(list);
+}
+
+auto map_add_style_source_json(
+  mln_map* map, mln_string_view source_id, const mln_json_value* source_json
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!validate_style_json_value(source_json)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  if (style.getSource(id) != nullptr) {
+    set_thread_error("source already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto error = mbgl::style::conversion::Error{};
+  auto source =
+    mbgl::style::conversion::convert<std::unique_ptr<mbgl::style::Source>>(
+      mbgl::style::conversion::Convertible{source_json}, error, id
+    );
+  if (!source) {
+    set_style_conversion_error("style source", error);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  style.addSource(std::move(*source));
+  return MLN_STATUS_OK;
+}
+
+auto map_remove_style_source(
+  mln_map* map, mln_string_view source_id, bool* out_removed
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_removed == nullptr) {
+    set_thread_error("out_removed must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  if (style.getSource(id) == nullptr) {
+    *out_removed = false;
+    return MLN_STATUS_OK;
+  }
+
+  auto removed = style.removeSource(id);
+  if (!removed) {
+    set_thread_error("source is used by a layer");
+    return MLN_STATUS_INVALID_STATE;
+  }
+  *out_removed = true;
+  return MLN_STATUS_OK;
+}
+
+auto map_style_source_exists(
+  mln_map* map, mln_string_view source_id, bool* out_exists
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_exists == nullptr) {
+    set_thread_error("out_exists must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_exists =
+    map->map->getStyle().getSource(string_from_view(source_id)) != nullptr;
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_source_type(
+  mln_map* map, mln_string_view source_id, uint32_t* out_source_type,
+  bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_source_type == nullptr || out_found == nullptr) {
+    set_thread_error("out_source_type and out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto* source =
+    map->map->getStyle().getSource(string_from_view(source_id));
+  *out_found = source != nullptr;
+  *out_source_type = MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+  if (source != nullptr) {
+    *out_source_type = to_c_source_type(source->getType());
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_source_info(
+  mln_map* map, mln_string_view source_id, mln_style_source_info* out_info,
+  bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_info == nullptr || out_info->size < sizeof(mln_style_source_info)) {
+    set_thread_error("out_info must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_found == nullptr) {
+    set_thread_error("out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto* source =
+    map->map->getStyle().getSource(string_from_view(source_id));
+  *out_found = source != nullptr;
+  *out_info = mln_style_source_info{
+    .size = sizeof(mln_style_source_info),
+    .type = MLN_STYLE_SOURCE_TYPE_UNKNOWN,
+    .id_size = 0,
+    .is_volatile = false,
+    .has_attribution = false,
+    .attribution_size = 0
+  };
+  if (source == nullptr) {
+    return MLN_STATUS_OK;
+  }
+
+  const auto attribution = source->getAttribution();
+  *out_info = mln_style_source_info{
+    .size = sizeof(mln_style_source_info),
+    .type = to_c_source_type(source->getType()),
+    .id_size = source->getID().size(),
+    .is_volatile = source->isVolatile(),
+    .has_attribution = attribution.has_value(),
+    .attribution_size = attribution ? attribution->size() : 0
+  };
+  return MLN_STATUS_OK;
+}
+
+auto map_copy_style_source_attribution(
+  mln_map* map, mln_string_view source_id, char* out_attribution,
+  size_t attribution_capacity, size_t* out_attribution_size, bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_attribution == nullptr && attribution_capacity > 0) {
+    set_thread_error(
+      "out_attribution must not be null when capacity is non-zero"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_attribution_size == nullptr || out_found == nullptr) {
+    set_thread_error("out_attribution_size and out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto* source =
+    map->map->getStyle().getSource(string_from_view(source_id));
+  *out_found = source != nullptr;
+  *out_attribution_size = 0;
+  if (source == nullptr) {
+    return MLN_STATUS_OK;
+  }
+
+  const auto attribution = source->getAttribution();
+  if (!attribution) {
+    return MLN_STATUS_OK;
+  }
+  *out_attribution_size = attribution->size();
+  if (attribution_capacity < attribution->size()) {
+    set_thread_error("attribution_capacity is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!attribution->empty()) {
+    std::copy(attribution->begin(), attribution->end(), out_attribution);
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_list_style_source_ids(mln_map* map, mln_style_id_list** out_source_ids)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  auto ids = std::vector<std::string>{};
+  for (const auto* source : map->map->getStyle().getSources()) {
+    ids.push_back(source->getID());
+  }
+  return create_style_id_list(std::move(ids), out_source_ids);
+}
+
+auto map_add_style_layer_json(
+  mln_map* map, const mln_json_value* layer_json,
+  mln_string_view before_layer_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(before_layer_id, "before_layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!validate_style_json_value(layer_json)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  auto before = std::optional<std::string>{};
+  if (before_layer_id.size > 0) {
+    before = string_from_view(before_layer_id);
+    if (style.getLayer(*before) == nullptr) {
+      set_thread_error("before_layer_id does not exist");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+
+  auto error = mbgl::style::conversion::Error{};
+  auto layer =
+    mbgl::style::conversion::convert<std::unique_ptr<mbgl::style::Layer>>(
+      mbgl::style::conversion::Convertible{layer_json}, error
+    );
+  if (!layer) {
+    set_style_conversion_error("style layer", error);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto id = (*layer)->getID();
+  if (style.getLayer(id) != nullptr) {
+    set_thread_error("layer already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (*layer)->getTypeInfo()->source ==
+      mbgl::style::LayerTypeInfo::Source::Required &&
+    style.getSource((*layer)->getSourceID()) == nullptr
+  ) {
+    set_thread_error("layer source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  style.addLayer(std::move(*layer), before);
+  return MLN_STATUS_OK;
+}
+
+auto map_remove_style_layer(
+  mln_map* map, mln_string_view layer_id, bool* out_removed
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_removed == nullptr) {
+    set_thread_error("out_removed must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto removed = map->map->getStyle().removeLayer(string_from_view(layer_id));
+  *out_removed = removed != nullptr;
+  return MLN_STATUS_OK;
+}
+
+auto map_style_layer_exists(
+  mln_map* map, mln_string_view layer_id, bool* out_exists
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_exists == nullptr) {
+    set_thread_error("out_exists must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_exists =
+    map->map->getStyle().getLayer(string_from_view(layer_id)) != nullptr;
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_layer_type(
+  mln_map* map, mln_string_view layer_id, mln_string_view* out_layer_type,
+  bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_layer_type == nullptr || out_found == nullptr) {
+    set_thread_error("out_layer_type and out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  *out_found = layer != nullptr;
+  *out_layer_type = {};
+  if (layer != nullptr) {
+    *out_layer_type = string_view_from_literal(layer->getTypeInfo()->type);
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_list_style_layer_ids(mln_map* map, mln_style_id_list** out_layer_ids)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+
+  auto ids = std::vector<std::string>{};
+  for (const auto* layer : map->map->getStyle().getLayers()) {
+    ids.push_back(layer->getID());
+  }
+  return create_style_id_list(std::move(ids), out_layer_ids);
+}
+
+auto map_move_style_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(before_layer_id, "before_layer_id")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(layer_id);
+  if (style.getLayer(id) == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto before = std::optional<std::string>{};
+  if (before_layer_id.size > 0) {
+    before = string_from_view(before_layer_id);
+    if (*before == id) {
+      return MLN_STATUS_OK;
+    }
+    if (style.getLayer(*before) == nullptr) {
+      set_thread_error("before_layer_id does not exist");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+
+  auto layer = style.removeLayer(id);
+  if (!layer) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  style.addLayer(std::move(layer), before);
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_layer_json(
+  mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_layer,
+  bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_layer == nullptr || *out_layer != nullptr || out_found == nullptr) {
+    set_thread_error(
+      "out_layer must not be null, *out_layer must be null, and out_found must "
+      "not be null"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  *out_found = layer != nullptr;
+  if (layer == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  return json_snapshot_create(layer->serialize(), out_layer);
 }
 
 auto map_set_layer_property(
