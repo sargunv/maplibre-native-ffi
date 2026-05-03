@@ -4,6 +4,7 @@ comptime {
     _ = @import("style.zig");
     _ = @import("resources.zig");
     _ = @import("geojson.zig");
+    _ = @import("feature_state.zig");
     _ = @import("camera.zig");
     _ = @import("projection.zig");
     _ = @import("map_tuning.zig");

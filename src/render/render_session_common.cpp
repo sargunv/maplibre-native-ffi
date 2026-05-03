@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -15,6 +17,7 @@
 #include "render/render_session_common.hpp"
 
 #include "diagnostics/diagnostics.hpp"
+#include "geojson/geojson.hpp"
 #include "map/map.hpp"
 #include "maplibre_native_c.h"
 
@@ -74,6 +77,108 @@ auto validate_renderer_backend(mln_render_session* session)
     return nullptr;
   }
   return backend;
+}
+
+constexpr uint32_t feature_state_selector_known_fields =
+  MLN_FEATURE_STATE_SELECTOR_SOURCE_LAYER_ID |
+  MLN_FEATURE_STATE_SELECTOR_FEATURE_ID | MLN_FEATURE_STATE_SELECTOR_STATE_KEY;
+
+auto validate_string_view(mln_string_view string) -> bool {
+  if (string.size > 0 && string.data == nullptr) {
+    mln::core::set_thread_error("string data must not be null");
+    return false;
+  }
+  return true;
+}
+
+auto string_from_view(mln_string_view string) -> std::string {
+  if (string.size == 0) {
+    return {};
+  }
+  return std::string{string.data, string.size};
+}
+
+auto selector_has_field(
+  const mln_feature_state_selector& selector, uint32_t field
+) -> bool {
+  return (selector.fields & field) != 0;
+}
+
+auto validate_feature_state_selector(
+  const mln_feature_state_selector* selector, bool require_feature_id
+) -> mln_status {
+  if (selector == nullptr) {
+    mln::core::set_thread_error("feature state selector must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (selector->size < sizeof(mln_feature_state_selector)) {
+    mln::core::set_thread_error("mln_feature_state_selector.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((selector->fields & ~feature_state_selector_known_fields) != 0) {
+    mln::core::set_thread_error("feature state selector has unknown fields");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!validate_string_view(selector->source_id)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (selector->source_id.size == 0) {
+    mln::core::set_thread_error("feature state source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    selector_has_field(*selector, MLN_FEATURE_STATE_SELECTOR_SOURCE_LAYER_ID) &&
+    !validate_string_view(selector->source_layer_id)
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    selector_has_field(*selector, MLN_FEATURE_STATE_SELECTOR_FEATURE_ID) &&
+    !validate_string_view(selector->feature_id)
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    selector_has_field(*selector, MLN_FEATURE_STATE_SELECTOR_STATE_KEY) &&
+    !validate_string_view(selector->state_key)
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto has_feature_id =
+    selector_has_field(*selector, MLN_FEATURE_STATE_SELECTOR_FEATURE_ID);
+  if (require_feature_id && !has_feature_id) {
+    mln::core::set_thread_error("feature state selector requires feature_id");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    selector_has_field(*selector, MLN_FEATURE_STATE_SELECTOR_STATE_KEY) &&
+    !has_feature_id
+  ) {
+    mln::core::set_thread_error(
+      "feature state selector state_key requires feature_id"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto optional_selector_string(
+  const mln_feature_state_selector& selector, uint32_t field,
+  mln_string_view value
+) -> std::optional<std::string> {
+  if (!selector_has_field(selector, field)) {
+    return std::nullopt;
+  }
+  return string_from_view(value);
+}
+
+auto feature_state_source_layer(const mln_feature_state_selector& selector)
+  -> std::optional<std::string> {
+  return optional_selector_string(
+    selector, MLN_FEATURE_STATE_SELECTOR_SOURCE_LAYER_ID,
+    selector.source_layer_id
+  );
 }
 
 }  // namespace
@@ -386,6 +491,111 @@ auto render_session_dump_debug_logs(mln_render_session* session) -> mln_status {
     *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
   };
   session->renderer->dumpDebugLogs();
+  return MLN_STATUS_OK;
+}
+
+auto render_session_set_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  const mln_json_value* state
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto selector_status = validate_feature_state_selector(selector, true);
+  if (selector_status != MLN_STATUS_OK) {
+    return selector_status;
+  }
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto native_state = to_native_json_value(state);
+  if (!native_state) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto* state_object = native_state->getObject();
+  if (state_object == nullptr) {
+    set_thread_error("feature state value must be a JSON object");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  session->renderer->setFeatureState(
+    string_from_view(selector->source_id),
+    feature_state_source_layer(*selector),
+    string_from_view(selector->feature_id), *state_object
+  );
+  if (auto* native_map = map_native(session->map); native_map != nullptr) {
+    native_map->triggerRepaint();
+  }
+  return MLN_STATUS_OK;
+}
+
+auto render_session_get_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  mln_json_snapshot** out_state
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto selector_status = validate_feature_state_selector(selector, true);
+  if (selector_status != MLN_STATUS_OK) {
+    return selector_status;
+  }
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto state = mbgl::FeatureState{};
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  session->renderer->getFeatureState(
+    state, string_from_view(selector->source_id),
+    feature_state_source_layer(*selector),
+    string_from_view(selector->feature_id)
+  );
+  return json_snapshot_create(mbgl::Value{std::move(state)}, out_state);
+}
+
+auto render_session_remove_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto selector_status = validate_feature_state_selector(selector, false);
+  if (selector_status != MLN_STATUS_OK) {
+    return selector_status;
+  }
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  session->renderer->removeFeatureState(
+    string_from_view(selector->source_id),
+    feature_state_source_layer(*selector),
+    optional_selector_string(
+      *selector, MLN_FEATURE_STATE_SELECTOR_FEATURE_ID, selector->feature_id
+    ),
+    optional_selector_string(
+      *selector, MLN_FEATURE_STATE_SELECTOR_STATE_KEY, selector->state_key
+    )
+  );
+  if (auto* native_map = map_native(session->map); native_map != nullptr) {
+    native_map->triggerRepaint();
+  }
   return MLN_STATUS_OK;
 }
 

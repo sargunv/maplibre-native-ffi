@@ -77,6 +77,7 @@ typedef struct mln_map mln_map;
 typedef struct mln_map_projection mln_map_projection;
 typedef struct mln_offline_region_snapshot mln_offline_region_snapshot;
 typedef struct mln_offline_region_list mln_offline_region_list;
+typedef struct mln_json_snapshot mln_json_snapshot;
 typedef struct mln_resource_request_handle mln_resource_request_handle;
 typedef struct mln_render_session mln_render_session;
 
@@ -1200,6 +1201,28 @@ typedef struct mln_json_value {
     mln_json_object object_value;
   } data;
 } mln_json_value;
+
+/** Optional fields for mln_feature_state_selector. */
+typedef enum mln_feature_state_selector_field : uint32_t {
+  MLN_FEATURE_STATE_SELECTOR_SOURCE_LAYER_ID = 1U << 0U,
+  MLN_FEATURE_STATE_SELECTOR_FEATURE_ID = 1U << 1U,
+  MLN_FEATURE_STATE_SELECTOR_STATE_KEY = 1U << 2U,
+} mln_feature_state_selector_field;
+
+/** Feature-state source, feature, and key selector. */
+typedef struct mln_feature_state_selector {
+  uint32_t size;
+  uint32_t fields;
+  /** Source ID. Required and borrowed for the duration of the call. */
+  mln_string_view source_id;
+  /** Optional source layer ID. Required for vector-source disambiguation. */
+  mln_string_view source_layer_id;
+  /** Optional feature ID string. Required by set/get and optional for remove.
+   */
+  mln_string_view feature_id;
+  /** Optional state key. Used only by remove and requires feature_id. */
+  mln_string_view state_key;
+} mln_feature_state_selector;
 
 /** Feature identifier variant tags used by mln_feature. */
 typedef enum mln_feature_identifier_type : uint32_t {
@@ -2873,6 +2896,103 @@ mln_render_session_clear_data(mln_render_session* session) MLN_NOEXCEPT;
  */
 MLN_API mln_status
 mln_render_session_dump_debug_logs(mln_render_session* session) MLN_NOEXCEPT;
+
+/**
+ * Sets per-feature state on a render source for this render session.
+ *
+ * The session renderer must already exist; call
+ * mln_render_session_render_update() once after loading style data before using
+ * feature state. selector->source_id and selector->feature_id are borrowed for
+ * the duration of the call. state must be a JSON object descriptor and is
+ * copied before return. The accepted command requests a map repaint.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when session is null or not live, selector is
+ *   null or invalid, selector lacks MLN_FEATURE_STATE_SELECTOR_FEATURE_ID,
+ *   state is null or not an object, state contains invalid descriptor data, or
+ *   state contains non-finite numbers.
+ * - MLN_STATUS_INVALID_STATE when the session is detached or no renderer has
+ *   been created for the session yet.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_render_session_set_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  const mln_json_value* state
+) MLN_NOEXCEPT;
+
+/**
+ * Copies per-feature state from a render source in this render session.
+ *
+ * The session renderer must already exist. selector->source_id and
+ * selector->feature_id are borrowed for the duration of the call. On success,
+ * *out_state receives an owned snapshot handle. Use
+ * mln_json_snapshot_get() to borrow its root JSON object value, and destroy it
+ * with mln_json_snapshot_destroy(). Missing native source or feature state is
+ * reported as an empty object snapshot.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when session is null or not live, selector is
+ *   null or invalid, selector lacks MLN_FEATURE_STATE_SELECTOR_FEATURE_ID,
+ *   out_state is null, or *out_state is not null.
+ * - MLN_STATUS_INVALID_STATE when the session is detached or no renderer has
+ *   been created for the session yet.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_render_session_get_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector,
+  mln_json_snapshot** out_state
+) MLN_NOEXCEPT;
+
+/**
+ * Removes per-feature state from a render source in this render session.
+ *
+ * The session renderer must already exist. selector->source_id is required.
+ * selector->feature_id and selector->state_key are optional. Passing both
+ * removes one state key from one feature. Passing only feature_id removes all
+ * state for that feature. Passing neither removes all feature state for the
+ * source/source-layer. The accepted command requests a map repaint.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when session is null or not live, selector is
+ *   null or invalid, or selector has MLN_FEATURE_STATE_SELECTOR_STATE_KEY
+ *   without MLN_FEATURE_STATE_SELECTOR_FEATURE_ID.
+ * - MLN_STATUS_INVALID_STATE when the session is detached or no renderer has
+ *   been created for the session yet.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_render_session_remove_feature_state(
+  mln_render_session* session, const mln_feature_state_selector* selector
+) MLN_NOEXCEPT;
+
+/**
+ * Borrows the root JSON value from a snapshot handle.
+ *
+ * The returned pointer and all nested pointers remain valid until the snapshot
+ * is destroyed.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when snapshot is null or not live, or out_value
+ *   is null.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_json_snapshot_get(
+  const mln_json_snapshot* snapshot, const mln_json_value** out_value
+) MLN_NOEXCEPT;
+
+/** Destroys a JSON snapshot handle. Null is accepted as a no-op. */
+MLN_API void mln_json_snapshot_destroy(
+  mln_json_snapshot* snapshot
+) MLN_NOEXCEPT;
 
 #pragma endregion
 
