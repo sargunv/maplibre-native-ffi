@@ -32,6 +32,58 @@ auto map_request_repaint(mln_map* map) -> mln_status;
 auto map_request_still_image(mln_map* map) -> mln_status;
 auto map_set_style_url(mln_map* map, const char* url) -> mln_status;
 auto map_set_style_json(mln_map* map, const char* json) -> mln_status;
+auto style_id_list_count(const mln_style_id_list* list, size_t* out_count)
+  -> mln_status;
+auto style_id_list_get(
+  const mln_style_id_list* list, size_t index, mln_string_view* out_id
+) -> mln_status;
+auto style_id_list_destroy(mln_style_id_list* list) -> void;
+auto map_add_style_source_json(
+  mln_map* map, mln_string_view source_id, const mln_json_value* source_json
+) -> mln_status;
+auto map_remove_style_source(
+  mln_map* map, mln_string_view source_id, bool* out_removed
+) -> mln_status;
+auto map_style_source_exists(
+  mln_map* map, mln_string_view source_id, bool* out_exists
+) -> mln_status;
+auto map_get_style_source_type(
+  mln_map* map, mln_string_view source_id, uint32_t* out_source_type,
+  bool* out_found
+) -> mln_status;
+auto map_get_style_source_info(
+  mln_map* map, mln_string_view source_id, mln_style_source_info* out_info,
+  bool* out_found
+) -> mln_status;
+auto map_copy_style_source_attribution(
+  mln_map* map, mln_string_view source_id, char* out_attribution,
+  size_t attribution_capacity, size_t* out_attribution_size, bool* out_found
+) -> mln_status;
+auto map_list_style_source_ids(mln_map* map, mln_style_id_list** out_source_ids)
+  -> mln_status;
+auto map_add_style_layer_json(
+  mln_map* map, const mln_json_value* layer_json,
+  mln_string_view before_layer_id
+) -> mln_status;
+auto map_remove_style_layer(
+  mln_map* map, mln_string_view layer_id, bool* out_removed
+) -> mln_status;
+auto map_style_layer_exists(
+  mln_map* map, mln_string_view layer_id, bool* out_exists
+) -> mln_status;
+auto map_get_style_layer_type(
+  mln_map* map, mln_string_view layer_id, mln_string_view* out_layer_type,
+  bool* out_found
+) -> mln_status;
+auto map_list_style_layer_ids(mln_map* map, mln_style_id_list** out_layer_ids)
+  -> mln_status;
+auto map_move_style_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) -> mln_status;
+auto map_get_style_layer_json(
+  mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_layer,
+  bool* out_found
+) -> mln_status;
 auto map_set_layer_property(
   mln_map* map, mln_string_view layer_id, mln_string_view property_name,
   const mln_json_value* value
