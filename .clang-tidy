@@ -9,6 +9,7 @@ Checks:
   - cert-*
   - cppcoreguidelines-*
   - -cppcoreguidelines-avoid-magic-numbers
+  - -cppcoreguidelines-pro-type-union-access
   - -readability-magic-numbers
 CheckOptions:
   - key: readability-braces-around-statements.ShortStatementLines

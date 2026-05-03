@@ -31,6 +31,7 @@
 #include "runtime/runtime.hpp"
 
 #include "diagnostics/diagnostics.hpp"
+#include "geojson/geojson.hpp"
 #include "maplibre_native_c.h"
 
 struct OfflineRegionData {
@@ -42,6 +43,7 @@ struct OfflineRegionData {
   double max_zoom = 0.0;
   float pixel_ratio = 0.0F;
   bool include_ideographs = false;
+  std::unique_ptr<mln::core::OwnedGeometryDescriptor> geometry;
   std::vector<uint8_t> metadata;
 };
 
@@ -177,6 +179,48 @@ auto validate_tile_pyramid_definition(
   return MLN_STATUS_OK;
 }
 
+auto validate_geometry_definition(
+  const mln_offline_geometry_region_definition& definition
+) -> mln_status {
+  if (definition.size < sizeof(mln_offline_geometry_region_definition)) {
+    mln::core::set_thread_error(
+      "mln_offline_geometry_region_definition.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (definition.style_url == nullptr) {
+    mln::core::set_thread_error("offline region style_url must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (definition.geometry == nullptr) {
+    mln::core::set_thread_error("offline region geometry must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    !std::isfinite(definition.min_zoom) || definition.min_zoom < 0.0 ||
+    std::isnan(definition.max_zoom) || definition.max_zoom < definition.min_zoom
+  ) {
+    mln::core::set_thread_error("offline region zoom range is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!std::isfinite(definition.pixel_ratio) || definition.pixel_ratio < 0.0F) {
+    mln::core::set_thread_error("offline region pixel_ratio is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto geometry = mln::core::to_native_geometry(definition.geometry);
+  if (!geometry) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (mln::core::geometry_lat_lngs(*geometry).empty()) {
+    mln::core::set_thread_error(
+      "offline region geometry must contain at least one coordinate"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
 auto validate_offline_region_definition(
   const mln_offline_region_definition* definition
 ) -> mln_status {
@@ -193,16 +237,9 @@ auto validate_offline_region_definition(
 
   switch (definition->type) {
     case MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID:
-      // Tagged C ABI selects the active member.
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
       return validate_tile_pyramid_definition(definition->data.tile_pyramid);
     case MLN_OFFLINE_REGION_DEFINITION_GEOMETRY:
-      // TODO: Support geometry regions after the shared geometry ABI lands:
-      // https://github.com/sargunv/maplibre-native-ffi/issues/19
-      mln::core::set_thread_error(
-        "offline geometry region definitions are not supported"
-      );
-      return MLN_STATUS_UNSUPPORTED;
+      return validate_geometry_definition(definition->data.geometry);
     default:
       mln::core::set_thread_error("offline region definition type is invalid");
       return MLN_STATUS_INVALID_ARGUMENT;
@@ -212,21 +249,40 @@ auto validate_offline_region_definition(
 auto to_native_offline_region_definition(
   const mln_offline_region_definition& definition
 ) -> mbgl::OfflineRegionDefinition {
-  // Tagged C ABI selects the active member.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-  const auto& tile = definition.data.tile_pyramid;
-  auto bounds = mbgl::LatLngBounds::hull(
-    {tile.bounds.southwest.latitude, tile.bounds.southwest.longitude},
-    {tile.bounds.northeast.latitude, tile.bounds.northeast.longitude}
-  );
-  return mbgl::OfflineTilePyramidRegionDefinition{
-    std::string{tile.style_url},
-    bounds,
-    tile.min_zoom,
-    tile.max_zoom,
-    tile.pixel_ratio,
-    tile.include_ideographs
-  };
+  switch (definition.type) {
+    case MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID: {
+      const auto& tile = definition.data.tile_pyramid;
+      auto bounds = mbgl::LatLngBounds::hull(
+        {tile.bounds.southwest.latitude, tile.bounds.southwest.longitude},
+        {tile.bounds.northeast.latitude, tile.bounds.northeast.longitude}
+      );
+      return mbgl::OfflineTilePyramidRegionDefinition{
+        std::string{tile.style_url},
+        bounds,
+        tile.min_zoom,
+        tile.max_zoom,
+        tile.pixel_ratio,
+        tile.include_ideographs
+      };
+    }
+    case MLN_OFFLINE_REGION_DEFINITION_GEOMETRY: {
+      const auto& geometry = definition.data.geometry;
+      auto native_geometry = mln::core::to_native_geometry(geometry.geometry);
+      if (!native_geometry) {
+        std::terminate();
+      }
+      return mbgl::OfflineGeometryRegionDefinition{
+        std::string{geometry.style_url},
+        std::move(native_geometry.value()),
+        geometry.min_zoom,
+        geometry.max_zoom,
+        geometry.pixel_ratio,
+        geometry.include_ideographs
+      };
+    }
+    default:
+      std::terminate();
+  }
 }
 
 auto to_c_download_state(mbgl::OfflineRegionDownloadState state) -> uint32_t {
@@ -297,6 +353,7 @@ auto to_c_region_data(const mbgl::OfflineRegion& region)
     .max_zoom = 0.0,
     .pixel_ratio = 0.0F,
     .include_ideographs = false,
+    .geometry = nullptr,
     .metadata = region.getMetadata()
   };
 
@@ -322,9 +379,22 @@ auto to_c_region_data(const mbgl::OfflineRegion& region)
     return data;
   }
 
-  mln::core::set_thread_error(
-    "offline geometry region definitions are not supported"
-  );
+  if (
+    const auto* geometry = std::get_if<mbgl::OfflineGeometryRegionDefinition>(
+      &region.getDefinition()
+    )
+  ) {
+    data.definition_type = MLN_OFFLINE_REGION_DEFINITION_GEOMETRY;
+    data.style_url = geometry->styleURL;
+    data.min_zoom = geometry->minZoom;
+    data.max_zoom = geometry->maxZoom;
+    data.pixel_ratio = geometry->pixelRatio;
+    data.include_ideographs = geometry->includeIdeographs;
+    data.geometry = mln::core::to_c_geometry(geometry->geometry);
+    return data;
+  }
+
+  mln::core::set_thread_error("offline region definition type is unsupported");
   return std::nullopt;
 }
 
@@ -338,27 +408,47 @@ auto fill_region_info(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
+  auto definition = mln_offline_region_definition{
+    .size = sizeof(mln_offline_region_definition),
+    .type = data.definition_type,
+    .data = {}
+  };
+  switch (data.definition_type) {
+    case MLN_OFFLINE_REGION_DEFINITION_TILE_PYRAMID:
+      definition.data.tile_pyramid = mln_offline_tile_pyramid_region_definition{
+        .size = sizeof(mln_offline_tile_pyramid_region_definition),
+        .style_url = data.style_url.c_str(),
+        .bounds = data.bounds,
+        .min_zoom = data.min_zoom,
+        .max_zoom = data.max_zoom,
+        .pixel_ratio = data.pixel_ratio,
+        .include_ideographs = data.include_ideographs
+      };
+      break;
+    case MLN_OFFLINE_REGION_DEFINITION_GEOMETRY:
+      if (!data.geometry) {
+        mln::core::set_thread_error("offline region geometry is missing");
+        return MLN_STATUS_NATIVE_ERROR;
+      }
+      definition.data.geometry = mln_offline_geometry_region_definition{
+        .size = sizeof(mln_offline_geometry_region_definition),
+        .style_url = data.style_url.c_str(),
+        .geometry = &data.geometry->root,
+        .min_zoom = data.min_zoom,
+        .max_zoom = data.max_zoom,
+        .pixel_ratio = data.pixel_ratio,
+        .include_ideographs = data.include_ideographs
+      };
+      break;
+    default:
+      mln::core::set_thread_error("offline region definition type is invalid");
+      return MLN_STATUS_NATIVE_ERROR;
+  }
+
   *out_info = mln_offline_region_info{
     .size = sizeof(mln_offline_region_info),
     .id = data.id,
-    .definition =
-      mln_offline_region_definition{
-        .size = sizeof(mln_offline_region_definition),
-        .type = data.definition_type,
-        .data =
-          // Tagged C ABI selects the active member.
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-        {.tile_pyramid =
-           mln_offline_tile_pyramid_region_definition{
-             .size = sizeof(mln_offline_tile_pyramid_region_definition),
-             .style_url = data.style_url.c_str(),
-             .bounds = data.bounds,
-             .min_zoom = data.min_zoom,
-             .max_zoom = data.max_zoom,
-             .pixel_ratio = data.pixel_ratio,
-             .include_ideographs = data.include_ideographs
-           }}
-      },
+    .definition = definition,
     .metadata = data.metadata.empty() ? nullptr : data.metadata.data(),
     .metadata_size = data.metadata.size()
   };

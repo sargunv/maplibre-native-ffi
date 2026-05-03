@@ -21,8 +21,6 @@
 // NOLINTBEGIN(cppcoreguidelines-use-enum-class)
 // Public C ABI structs.
 // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
-// Public C ABI tagged union.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
 // Public C ABI includes C headers.
 // NOLINTBEGIN(modernize-deprecated-headers)
 // Public C ABI return syntax.
@@ -1173,9 +1171,21 @@ typedef struct mln_offline_tile_pyramid_region_definition {
   bool include_ideographs;
 } mln_offline_tile_pyramid_region_definition;
 
-/** Placeholder for future offline geometry region definitions. */
+/** Geometry offline region definition. */
 typedef struct mln_offline_geometry_region_definition {
   uint32_t size;
+  /** Style URL. Copied during region creation. */
+  const char* style_url;
+  /** Geometry descriptor. Borrowed for the duration of region creation. */
+  const mln_geometry* geometry;
+  double min_zoom;
+  /**
+   * Maximum zoom. Positive infinity follows MapLibre Native behavior and lets
+   * each tile source use its own maximum zoom.
+   */
+  double max_zoom;
+  float pixel_ratio;
+  bool include_ideographs;
 } mln_offline_geometry_region_definition;
 
 /** Tagged offline region definition. */
@@ -1204,15 +1214,14 @@ typedef struct mln_offline_region_info {
  * Creates a tile-pyramid offline region.
  *
  * The returned snapshot owns copied region data. Destroy it with
- * mln_offline_region_snapshot_destroy(). Geometry definitions are not wired to
- * native offline storage yet and return MLN_STATUS_UNSUPPORTED.
+ * mln_offline_region_snapshot_destroy(). Input strings, geometry descriptors,
+ * and metadata are borrowed for the duration of this call and are not retained.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, definition is
  *   null or invalid, metadata is null with a non-zero size, out_region is null,
  *   or *out_region is not null.
- * - MLN_STATUS_UNSUPPORTED when definition is a geometry region.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
@@ -1234,7 +1243,6 @@ MLN_API mln_status mln_runtime_offline_region_create(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, out_region is
  *   null, *out_region is not null, or out_found is null.
- * - MLN_STATUS_UNSUPPORTED when the stored region uses a geometry definition.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
@@ -1252,7 +1260,6 @@ MLN_API mln_status mln_runtime_offline_region_get(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live,
  *   out_regions is null, or *out_regions is not null.
- * - MLN_STATUS_UNSUPPORTED when any stored region uses a geometry definition.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
@@ -1274,7 +1281,6 @@ MLN_API mln_status mln_runtime_offline_regions_list(
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live,
  *   side_database_path is null, out_regions is null, or *out_regions is not
  *   null.
- * - MLN_STATUS_UNSUPPORTED when any returned region uses a geometry definition.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
@@ -1295,7 +1301,6 @@ MLN_API mln_status mln_runtime_offline_regions_merge_database(
  * - MLN_STATUS_INVALID_ARGUMENT when runtime is null or not live, metadata is
  *   null with a non-zero size, out_region is null, *out_region is not null, or
  *   no region exists for id.
- * - MLN_STATUS_UNSUPPORTED when the stored region uses a geometry definition.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the runtime
  *   owner thread.
  * - MLN_STATUS_NATIVE_ERROR when a native database error or internal exception
@@ -2934,7 +2939,6 @@ MLN_API mln_status mln_vulkan_owned_texture_release_frame(
 // NOLINTEND(modernize-use-using)
 // NOLINTEND(modernize-use-trailing-return-type)
 // NOLINTEND(modernize-deprecated-headers)
-// NOLINTEND(cppcoreguidelines-pro-type-union-access)
 // NOLINTEND(cppcoreguidelines-pro-type-member-init)
 // NOLINTEND(cppcoreguidelines-use-enum-class)
 
