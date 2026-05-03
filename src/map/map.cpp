@@ -40,6 +40,7 @@
 #include <mbgl/style/layer.hpp>
 #include <mbgl/style/layers/color_relief_layer.hpp>
 #include <mbgl/style/layers/hillshade_layer.hpp>
+#include <mbgl/style/layers/location_indicator_layer.hpp>
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
 #include <mbgl/style/sources/geojson_source.hpp>
@@ -3837,6 +3838,227 @@ auto map_add_color_relief_layer(
     std::make_unique<mbgl::style::ColorReliefLayer>(layer, source), before
   );
   return MLN_STATUS_OK;
+}
+
+auto map_add_location_indicator_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(before_layer_id, "before_layer_id")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto layer = string_from_view(layer_id);
+  if (style.getLayer(layer) != nullptr) {
+    set_thread_error("layer already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto before = std::optional<std::string>{};
+  if (before_layer_id.size > 0) {
+    before = string_from_view(before_layer_id);
+    if (style.getLayer(*before) == nullptr) {
+      set_thread_error("before_layer_id does not exist");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  style.addLayer(
+    std::make_unique<mbgl::style::LocationIndicatorLayer>(layer), before
+  );
+  return MLN_STATUS_OK;
+}
+
+auto validate_location_indicator_layer(mln_map* map, mln_string_view layer_id)
+  -> mln_status {
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  if (layer == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (std::strcmp(layer->getTypeInfo()->type, "location-indicator") != 0) {
+    set_thread_error("layer is not a location indicator layer");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_float64_to_float32(double value, const char* name) -> mln_status {
+  if (
+    !std::isfinite(value) || value < -std::numeric_limits<float>::max() ||
+    value > std::numeric_limits<float>::max()
+  ) {
+    const auto message = std::string{name} + " must fit in finite float32";
+    set_thread_error(message.c_str());
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_set_location_indicator_location(
+  mln_map* map, mln_string_view layer_id, mln_lat_lng coordinate,
+  double altitude
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto layer_status = validate_location_indicator_layer(map, layer_id);
+  if (layer_status != MLN_STATUS_OK) {
+    return layer_status;
+  }
+  const auto coordinate_status = validate_lat_lng(coordinate);
+  if (coordinate_status != MLN_STATUS_OK) {
+    return coordinate_status;
+  }
+  if (!std::isfinite(altitude)) {
+    set_thread_error("altitude must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto values = std::array<mln_json_value, 3>{
+    mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+      .data = {.double_value = coordinate.longitude}
+    },
+    mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+      .data = {.double_value = coordinate.latitude}
+    },
+    mln_json_value{
+      .size = sizeof(mln_json_value),
+      .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+      .data = {.double_value = altitude}
+    },
+  };
+  auto location = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_ARRAY,
+    .data = {
+      .array_value = {.values = values.data(), .value_count = values.size()}
+    }
+  };
+  return map_set_layer_property(
+    map, layer_id, string_view_from_literal("location"), &location
+  );
+}
+
+auto map_set_location_indicator_bearing(
+  mln_map* map, mln_string_view layer_id, double bearing
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto layer_status = validate_location_indicator_layer(map, layer_id);
+  if (layer_status != MLN_STATUS_OK) {
+    return layer_status;
+  }
+  const auto bearing_status = validate_float64_to_float32(bearing, "bearing");
+  if (bearing_status != MLN_STATUS_OK) {
+    return bearing_status;
+  }
+  auto value = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+    .data = {.double_value = bearing}
+  };
+  return map_set_layer_property(
+    map, layer_id, string_view_from_literal("bearing"), &value
+  );
+}
+
+auto map_set_location_indicator_accuracy_radius(
+  mln_map* map, mln_string_view layer_id, double radius
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto layer_status = validate_location_indicator_layer(map, layer_id);
+  if (layer_status != MLN_STATUS_OK) {
+    return layer_status;
+  }
+  const auto radius_status = validate_float64_to_float32(radius, "radius");
+  if (radius_status != MLN_STATUS_OK) {
+    return radius_status;
+  }
+  if (radius < 0.0) {
+    set_thread_error("radius must be non-negative");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto value = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_DOUBLE,
+    .data = {.double_value = radius}
+  };
+  return map_set_layer_property(
+    map, layer_id, string_view_from_literal("accuracy-radius"), &value
+  );
+}
+
+auto location_indicator_image_property(uint32_t image_kind)
+  -> std::optional<mln_string_view> {
+  switch (image_kind) {
+    case MLN_LOCATION_INDICATOR_IMAGE_KIND_TOP:
+      return string_view_from_literal("top-image");
+    case MLN_LOCATION_INDICATOR_IMAGE_KIND_BEARING:
+      return string_view_from_literal("bearing-image");
+    case MLN_LOCATION_INDICATOR_IMAGE_KIND_SHADOW:
+      return string_view_from_literal("shadow-image");
+    default:
+      return std::nullopt;
+  }
+}
+
+auto map_set_location_indicator_image_name(
+  mln_map* map, mln_string_view layer_id, uint32_t image_kind,
+  mln_string_view image_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto layer_status = validate_location_indicator_layer(map, layer_id);
+  if (layer_status != MLN_STATUS_OK) {
+    return layer_status;
+  }
+  if (!validate_string_view(image_id, "image_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (image_id.size == 0) {
+    set_thread_error("image_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto property = location_indicator_image_property(image_kind);
+  if (!property) {
+    set_thread_error("image_kind is invalid");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto value = mln_json_value{
+    .size = sizeof(mln_json_value),
+    .type = MLN_JSON_VALUE_TYPE_STRING,
+    .data = {.string_value = image_id}
+  };
+  return map_set_layer_property(map, layer_id, *property, &value);
 }
 
 auto map_add_style_layer_json(

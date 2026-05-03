@@ -153,6 +153,23 @@ auto map_add_color_relief_layer(
   mln_map* map, mln_string_view layer_id, mln_string_view source_id,
   mln_string_view before_layer_id
 ) -> mln_status;
+auto map_add_location_indicator_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) -> mln_status;
+auto map_set_location_indicator_location(
+  mln_map* map, mln_string_view layer_id, mln_lat_lng coordinate,
+  double altitude
+) -> mln_status;
+auto map_set_location_indicator_bearing(
+  mln_map* map, mln_string_view layer_id, double bearing
+) -> mln_status;
+auto map_set_location_indicator_accuracy_radius(
+  mln_map* map, mln_string_view layer_id, double radius
+) -> mln_status;
+auto map_set_location_indicator_image_name(
+  mln_map* map, mln_string_view layer_id, uint32_t image_kind,
+  mln_string_view image_id
+) -> mln_status;
 auto map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
   mln_string_view before_layer_id

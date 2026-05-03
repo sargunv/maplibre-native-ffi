@@ -415,6 +415,58 @@ auto mln_map_add_color_relief_layer(
   });
 }
 
+auto mln_map_add_location_indicator_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view before_layer_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_location_indicator_layer(
+      map, layer_id, before_layer_id
+    );
+  });
+}
+
+auto mln_map_set_location_indicator_location(
+  mln_map* map, mln_string_view layer_id, mln_lat_lng coordinate,
+  double altitude
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_location_indicator_location(
+      map, layer_id, coordinate, altitude
+    );
+  });
+}
+
+auto mln_map_set_location_indicator_bearing(
+  mln_map* map, mln_string_view layer_id, double bearing
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_location_indicator_bearing(
+      map, layer_id, bearing
+    );
+  });
+}
+
+auto mln_map_set_location_indicator_accuracy_radius(
+  mln_map* map, mln_string_view layer_id, double radius
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_location_indicator_accuracy_radius(
+      map, layer_id, radius
+    );
+  });
+}
+
+auto mln_map_set_location_indicator_image_name(
+  mln_map* map, mln_string_view layer_id, uint32_t image_kind,
+  mln_string_view image_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_location_indicator_image_name(
+      map, layer_id, image_kind, image_id
+    );
+  });
+}
+
 auto mln_map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
   mln_string_view before_layer_id

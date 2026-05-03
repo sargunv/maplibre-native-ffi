@@ -807,3 +807,68 @@ test "raster DEM sources support hillshade and color relief layers" {
         c.mln_map_add_raster_source_tiles(map, stringView("bad-raster"), &dem_tiles, dem_tiles.len, &options),
     );
 }
+
+test "location indicator helpers set focused properties" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_location_indicator_layer(map, stringView("location"), stringView("point-circle")));
+
+    var found = false;
+    var layer_type: c.mln_string_view = .{ .data = null, .size = 0 };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_layer_type(map, stringView("location"), &layer_type, &found));
+    try testing.expect(found);
+    try testing.expect(std.mem.eql(u8, viewBytes(layer_type), "location-indicator"));
+
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_set_location_indicator_location(map, stringView("location"), .{ .latitude = 37.7749, .longitude = -122.4194 }, 12.0),
+    );
+    var snapshot: ?*c.mln_json_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_layer_property(map, stringView("location"), stringView("location"), &snapshot));
+    var root = try snapshotRoot(snapshot.?);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_ARRAY, root.type);
+    try testing.expectEqual(@as(usize, 3), root.data.array_value.value_count);
+    try testing.expectApproxEqAbs(@as(f64, -122.4194), root.data.array_value.values[0].data.double_value, 0.000001);
+    try testing.expectApproxEqAbs(@as(f64, 37.7749), root.data.array_value.values[1].data.double_value, 0.000001);
+    try testing.expectApproxEqAbs(@as(f64, 12.0), root.data.array_value.values[2].data.double_value, 0.000001);
+    c.mln_json_snapshot_destroy(snapshot.?);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_location_indicator_bearing(map, stringView("location"), 45.0));
+    snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_layer_property(map, stringView("location"), stringView("bearing"), &snapshot));
+    root = try snapshotRoot(snapshot.?);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_DOUBLE, root.type);
+    try testing.expectApproxEqAbs(@as(f64, 45.0), root.data.double_value, 0.000001);
+    c.mln_json_snapshot_destroy(snapshot.?);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_location_indicator_accuracy_radius(map, stringView("location"), 33.0));
+    snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_layer_property(map, stringView("location"), stringView("accuracy-radius"), &snapshot));
+    root = try snapshotRoot(snapshot.?);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_DOUBLE, root.type);
+    try testing.expectApproxEqAbs(@as(f64, 33.0), root.data.double_value, 0.000001);
+    c.mln_json_snapshot_destroy(snapshot.?);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_location_indicator_image_name(map, stringView("location"), c.MLN_LOCATION_INDICATOR_IMAGE_KIND_TOP, stringView("top-icon")));
+    snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_layer_property(map, stringView("location"), stringView("top-image"), &snapshot));
+    root = try snapshotRoot(snapshot.?);
+    try testing.expect(root.type != c.MLN_JSON_VALUE_TYPE_NULL);
+    c.mln_json_snapshot_destroy(snapshot.?);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_location_indicator_image_name(map, stringView("location"), c.MLN_LOCATION_INDICATOR_IMAGE_KIND_BEARING, stringView("bearing-icon")));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_location_indicator_image_name(map, stringView("location"), c.MLN_LOCATION_INDICATOR_IMAGE_KIND_SHADOW, stringView("shadow-icon")));
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_location_indicator_accuracy_radius(map, stringView("location"), -1.0));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_location_indicator_image_name(map, stringView("location"), 99, stringView("bad")));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_location_indicator_bearing(map, stringView("point-circle"), 1.0));
+}
