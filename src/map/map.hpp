@@ -26,6 +26,10 @@ auto map_viewport_options_default() noexcept -> mln_map_viewport_options;
 auto map_tile_options_default() noexcept -> mln_map_tile_options;
 auto style_tile_source_options_default() noexcept
   -> mln_style_tile_source_options;
+auto premultiplied_rgba8_image_default() noexcept
+  -> mln_premultiplied_rgba8_image;
+auto style_image_options_default() noexcept -> mln_style_image_options;
+auto style_image_info_default() noexcept -> mln_style_image_info;
 auto create_map(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) -> mln_status;
@@ -90,6 +94,25 @@ auto map_add_raster_source_url(
 auto map_add_raster_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
   size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_set_style_image(
+  mln_map* map, mln_string_view image_id,
+  const mln_premultiplied_rgba8_image* image,
+  const mln_style_image_options* options
+) -> mln_status;
+auto map_remove_style_image(
+  mln_map* map, mln_string_view image_id, bool* out_removed
+) -> mln_status;
+auto map_style_image_exists(
+  mln_map* map, mln_string_view image_id, bool* out_exists
+) -> mln_status;
+auto map_get_style_image_info(
+  mln_map* map, mln_string_view image_id, mln_style_image_info* out_info,
+  bool* out_found
+) -> mln_status;
+auto map_copy_style_image_premultiplied_rgba8(
+  mln_map* map, mln_string_view image_id, uint8_t* out_pixels,
+  size_t pixel_capacity, size_t* out_byte_length, bool* out_found
 ) -> mln_status;
 auto map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
