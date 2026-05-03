@@ -9,7 +9,12 @@ Checks:
   - cert-*
   - cppcoreguidelines-*
   - -cppcoreguidelines-avoid-magic-numbers
+  - -cppcoreguidelines-pro-type-member-init
   - -cppcoreguidelines-pro-type-union-access
+  - -cppcoreguidelines-use-enum-class
+  - -modernize-deprecated-headers
+  - -modernize-use-trailing-return-type
+  - -modernize-use-using
   - -readability-magic-numbers
 CheckOptions:
   - key: readability-braces-around-statements.ShortStatementLines
@@ -21,5 +26,5 @@ CheckOptions:
 WarningsAsErrors: "*"
 FormatStyle: file
 SystemHeaders: false
-HeaderFilterRegex: "^(src)/|^.*/maplibre-native-ffi/(src)/"
-ExcludeHeaderFilterRegex: "^.*/maplibre-native-ffi/third_party/"
+HeaderFilterRegex: "^(include)/|^.*/maplibre-native-ffi/(include)/"
+ExcludeHeaderFilterRegex: "^$"

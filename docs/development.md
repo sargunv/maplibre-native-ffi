@@ -20,10 +20,14 @@ the C API's concepts.
 ## Code Layout
 
 `include/` is the public C API boundary. Keep implementation-only helpers out of
-public headers.
+public headers. Consumers should include `maplibre_native_c.h`; domain headers
+under `include/maplibre_native_c/` keep declarations maintainable and may be
+included directly when useful.
 
 ```text
 include/                 # public C API headers
+  maplibre_native_c.h    # public umbrella header
+  maplibre_native_c/     # public domain headers
 src/
   c_api/                 # exported C definitions and C boundary validation
   <subsystem>/           # implementation semantics

@@ -21,9 +21,7 @@ The API keeps MapLibre Native concepts direct. Framework concerns such as
 gestures, widgets, declarative UI, and application lifecycle integration belong
 in downstream adapters.
 
-The C ABI is unstable while the project is pre-1.0. Use
-[`include/maplibre_native_c.h`](include/maplibre_native_c.h) as the current API
-source of truth.
+The C ABI is unstable while the project is pre-1.0.
 
 ## Try It
 
@@ -47,8 +45,6 @@ mise run //examples/swift-map:run
 
 ## Project Docs
 
-- [`include/maplibre_native_c.h`](include/maplibre_native_c.h) defines the
-  public C API.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to prepare changes for
   review.
 - [`docs/development.md`](docs/development.md) explains project scope and
