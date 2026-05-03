@@ -723,3 +723,87 @@ test "image source helpers add and update URL and inline images" {
         c.mln_map_set_image_source_coordinates(map, stringView("image-url-source"), &coordinates, 3),
     );
 }
+
+test "raster DEM sources support hillshade and color relief layers" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    var options = c.mln_style_tile_source_options_default();
+    options.fields = c.MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE |
+        c.MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING;
+    options.min_zoom = 0.0;
+    options.max_zoom = 14.0;
+    options.tile_size = 256;
+    options.raster_encoding = c.MLN_STYLE_RASTER_DEM_ENCODING_TERRARIUM;
+    const dem_tiles = [_]c.mln_string_view{stringView("https://example.com/dem/{z}/{x}/{y}.png")};
+
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_raster_dem_source_tiles(map, stringView("dem"), &dem_tiles, dem_tiles.len, &options),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_raster_dem_source_url(map, stringView("dem-url"), stringView("https://example.com/dem.json"), &options),
+    );
+
+    var found = false;
+    var source_type: u32 = c.MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_source_type(map, stringView("dem"), &source_type, &found));
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_RASTER_DEM, source_type);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_hillshade_layer(map, stringView("dem-hillshade"), stringView("dem"), stringView("point-circle")));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_add_color_relief_layer(map, stringView("dem-relief"), stringView("dem"), stringView("")));
+
+    var layer_type: c.mln_string_view = .{ .data = null, .size = 0 };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_layer_type(map, stringView("dem-hillshade"), &layer_type, &found));
+    try testing.expect(found);
+    try testing.expect(std.mem.eql(u8, viewBytes(layer_type), "hillshade"));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_layer_type(map, stringView("dem-relief"), &layer_type, &found));
+    try testing.expect(found);
+    try testing.expect(std.mem.eql(u8, viewBytes(layer_type), "color-relief"));
+
+    const interpolation = [_]c.mln_json_value{jsonString("linear")};
+    const linear = jsonArray(&interpolation);
+    const elevation = [_]c.mln_json_value{jsonString("elevation")};
+    const elevation_expr = jsonArray(&elevation);
+    const color_values = [_]c.mln_json_value{
+        jsonString("interpolate"), linear,              elevation_expr,
+        jsonDouble(0.0),           jsonString("black"), jsonDouble(1000.0),
+        jsonString("white"),
+    };
+    const color_ramp = jsonArray(&color_values);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_layer_property(map, stringView("dem-relief"), stringView("color-relief-color"), &color_ramp));
+
+    const zoom = [_]c.mln_json_value{jsonString("zoom")};
+    const zoom_expr = jsonArray(&zoom);
+    const invalid_color_values = [_]c.mln_json_value{
+        jsonString("interpolate"), linear,              zoom_expr,
+        jsonDouble(0.0),           jsonString("black"), jsonDouble(1.0),
+        jsonString("white"),
+    };
+    const invalid_color_ramp = jsonArray(&invalid_color_values);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_set_layer_property(map, stringView("dem-relief"), stringView("color-relief-color"), &invalid_color_ramp));
+
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_add_hillshade_layer(map, stringView("bad-hillshade"), stringView("point"), stringView("")));
+    options.raster_encoding = 99;
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_add_raster_dem_source_url(map, stringView("bad-dem"), stringView("https://example.com/bad.json"), &options),
+    );
+    options.raster_encoding = c.MLN_STYLE_RASTER_DEM_ENCODING_MAPBOX;
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_add_raster_source_tiles(map, stringView("bad-raster"), &dem_tiles, dem_tiles.len, &options),
+    );
+}

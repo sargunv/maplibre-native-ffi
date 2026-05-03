@@ -46,6 +46,7 @@ typedef enum mln_style_tile_source_option_field : uint32_t {
   MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS = 1U << 4U,
   MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE = 1U << 5U,
   MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING = 1U << 6U,
+  MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING = 1U << 7U,
 } mln_style_tile_source_option_field;
 
 /** Tile URL coordinate scheme values used by mln_style_tile_source_options. */
@@ -59,6 +60,12 @@ typedef enum mln_style_vector_tile_encoding : uint32_t {
   MLN_STYLE_VECTOR_TILE_ENCODING_MVT = 0,
   MLN_STYLE_VECTOR_TILE_ENCODING_MLT = 1,
 } mln_style_vector_tile_encoding;
+
+/** DEM raster encoding values used by mln_style_tile_source_options. */
+typedef enum mln_style_raster_dem_encoding : uint32_t {
+  MLN_STYLE_RASTER_DEM_ENCODING_MAPBOX = 0,
+  MLN_STYLE_RASTER_DEM_ENCODING_TERRARIUM = 1,
+} mln_style_raster_dem_encoding;
 
 /** Field mask values for mln_style_image_options. */
 typedef enum mln_style_image_option_field : uint32_t {
@@ -93,6 +100,8 @@ typedef struct mln_style_tile_source_options {
   uint32_t tile_size;
   /** One of mln_style_vector_tile_encoding. Defaults to MVT. */
   uint32_t vector_encoding;
+  /** One of mln_style_raster_dem_encoding. Defaults to Mapbox. */
+  uint32_t raster_encoding;
 } mln_style_tile_source_options;
 
 /** Caller-owned premultiplied RGBA8 image pixels. */
@@ -469,6 +478,47 @@ MLN_API mln_status mln_map_add_raster_source_tiles(
 ) MLN_NOEXCEPT;
 
 /**
+ * Adds a raster DEM source with a TileJSON URL.
+ *
+ * source_id and url are borrowed for the call. options may be null for
+ * defaults. For URL sources, tile_size and raster_encoding are used when their
+ * field bits are set.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, options is invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_raster_dem_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a raster DEM source with inline tile URLs.
+ *
+ * source_id and tile URL views are borrowed for the call. The function copies
+ * accepted strings into MapLibre Native before return. options may be null for
+ * defaults.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, tile URLs are null, empty, or invalid, options is
+ * invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_raster_dem_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
  * Sets one runtime style image.
  *
  * image_id, image, and image pixels are borrowed for the call. The function
@@ -705,6 +755,51 @@ MLN_API mln_status mln_map_set_image_source_coordinates(
 MLN_API mln_status mln_map_get_image_source_coordinates(
   mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
   size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a hillshade layer for a raster DEM source.
+ *
+ * layer_id, source_id, and before_layer_id are borrowed for the call. Passing
+ * an empty before_layer_id appends the layer; otherwise the layer is inserted
+ * before that existing layer.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id or
+ *   source_id is invalid or empty, before_layer_id is invalid or does not
+ * exist, layer_id already exists, source_id does not exist, or source_id is not
+ * a raster DEM source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_hillshade_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a color-relief layer for a raster DEM source.
+ *
+ * layer_id, source_id, and before_layer_id are borrowed for the call. Passing
+ * an empty before_layer_id appends the layer; otherwise the layer is inserted
+ * before that existing layer. Use mln_map_set_layer_property() with
+ * color-relief-color to set the color ramp expression.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id or
+ *   source_id is invalid or empty, before_layer_id is invalid or does not
+ * exist, layer_id already exists, source_id does not exist, or source_id is not
+ * a raster DEM source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_color_relief_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
 ) MLN_NOEXCEPT;
 
 /**

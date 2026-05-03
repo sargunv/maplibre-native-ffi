@@ -95,6 +95,14 @@ auto map_add_raster_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
   size_t tile_count, const mln_style_tile_source_options* options
 ) -> mln_status;
+auto map_add_raster_dem_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_add_raster_dem_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status;
 auto map_set_style_image(
   mln_map* map, mln_string_view image_id,
   const mln_premultiplied_rgba8_image* image,
@@ -136,6 +144,14 @@ auto map_set_image_source_coordinates(
 auto map_get_image_source_coordinates(
   mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
   size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) -> mln_status;
+auto map_add_hillshade_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) -> mln_status;
+auto map_add_color_relief_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
 ) -> mln_status;
 auto map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
