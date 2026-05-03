@@ -1,8 +1,10 @@
 #include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,12 +21,17 @@
 #include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_c.h"
 
-// Public C ABI uses tagged unions.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
-
 namespace {
 
 constexpr std::size_t max_recursive_depth = 64;
+
+template <class... Ts>
+struct Overloaded : Ts... {
+  using Ts::operator()...;
+};
+
+using GeometryDescriptorPtr =
+  std::unique_ptr<mln::core::OwnedGeometryDescriptor>;
 
 auto validate_depth(std::size_t depth) -> bool {
   if (depth > max_recursive_depth) {
@@ -32,6 +39,12 @@ auto validate_depth(std::size_t depth) -> bool {
     return false;
   }
   return true;
+}
+
+auto validate_export_depth(std::size_t depth) -> void {
+  if (depth > max_recursive_depth) {
+    throw std::runtime_error("GeoJSON value nesting is too deep");
+  }
 }
 
 auto validate_string(mln_string_view string) -> bool {
@@ -65,6 +78,10 @@ auto validate_coordinate(mln_lat_lng coordinate) -> bool {
 
 auto to_native_point(mln_lat_lng coordinate) -> mbgl::Point<double> {
   return mbgl::Point<double>{coordinate.longitude, coordinate.latitude};
+}
+
+auto from_native_point(const mbgl::Point<double>& point) -> mln_lat_lng {
+  return mln_lat_lng{.latitude = point.y, .longitude = point.x};
 }
 
 auto convert_coordinate_span(mln_coordinate_span span)
@@ -398,6 +415,217 @@ auto convert_feature(const mln_feature* feature, std::size_t depth)
   };
 }
 
+template <typename PointList>
+auto to_coordinate_list(const PointList& points) -> std::vector<mln_lat_lng> {
+  auto result = std::vector<mln_lat_lng>{};
+  result.reserve(points.size());
+  for (const auto& point : points) {
+    result.emplace_back(from_native_point(point));
+  }
+  return result;
+}
+
+auto coordinate_span(const std::vector<mln_lat_lng>& coordinates)
+  -> mln_coordinate_span {
+  return mln_coordinate_span{
+    .coordinates = coordinates.empty() ? nullptr : coordinates.data(),
+    .coordinate_count = coordinates.size()
+  };
+}
+
+auto make_geometry_descriptor(
+  const mbgl::Geometry<double>& geometry, std::size_t depth
+) -> GeometryDescriptorPtr;
+
+auto make_geometry_descriptor(
+  const mapbox::geometry::geometry_collection<double>& collection,
+  std::size_t depth
+) -> GeometryDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+  result->root = mln_geometry{
+    .size = sizeof(mln_geometry),
+    .type = MLN_GEOMETRY_TYPE_GEOMETRY_COLLECTION,
+    .data = {.geometry_collection = {}}
+  };
+  result->children.reserve(collection.size());
+  result->child_geometries.reserve(collection.size());
+  for (const auto& child : collection) {
+    result->children.emplace_back(make_geometry_descriptor(child, depth + 1));
+  }
+  for (const auto& child : result->children) {
+    result->child_geometries.emplace_back(child->root);
+  }
+  result->root.data.geometry_collection = mln_geometry_collection{
+    .geometries = result->child_geometries.empty()
+                    ? nullptr
+                    : result->child_geometries.data(),
+    .geometry_count = result->child_geometries.size()
+  };
+  return result;
+}
+
+auto make_polygon_descriptor(const mbgl::Polygon<double>& polygon)
+  -> GeometryDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+  result->coordinate_lists.reserve(polygon.size());
+  result->coordinate_spans.reserve(polygon.size());
+  for (const auto& ring : polygon) {
+    result->coordinate_lists.emplace_back(to_coordinate_list(ring));
+  }
+  for (const auto& coordinates : result->coordinate_lists) {
+    result->coordinate_spans.emplace_back(coordinate_span(coordinates));
+  }
+  result->root = mln_geometry{
+    .size = sizeof(mln_geometry),
+    .type = MLN_GEOMETRY_TYPE_POLYGON,
+    .data = {
+      .polygon = {
+        .rings = result->coordinate_spans.empty()
+                   ? nullptr
+                   : result->coordinate_spans.data(),
+        .ring_count = result->coordinate_spans.size()
+      }
+    }
+  };
+  return result;
+}
+
+auto make_multi_line_descriptor(const mbgl::MultiLineString<double>& multi_line)
+  -> GeometryDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+  result->coordinate_lists.reserve(multi_line.size());
+  result->coordinate_spans.reserve(multi_line.size());
+  for (const auto& line : multi_line) {
+    result->coordinate_lists.emplace_back(to_coordinate_list(line));
+  }
+  for (const auto& coordinates : result->coordinate_lists) {
+    result->coordinate_spans.emplace_back(coordinate_span(coordinates));
+  }
+  result->root = mln_geometry{
+    .size = sizeof(mln_geometry),
+    .type = MLN_GEOMETRY_TYPE_MULTI_LINE_STRING,
+    .data = {
+      .multi_line_string = {
+        .lines = result->coordinate_spans.empty()
+                   ? nullptr
+                   : result->coordinate_spans.data(),
+        .line_count = result->coordinate_spans.size()
+      }
+    }
+  };
+  return result;
+}
+
+auto make_multi_polygon_descriptor(
+  const mbgl::MultiPolygon<double>& multi_polygon
+) -> GeometryDescriptorPtr {
+  auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+  auto ring_count = std::size_t{0};
+  for (const auto& polygon : multi_polygon) {
+    ring_count += polygon.size();
+  }
+  result->coordinate_lists.reserve(ring_count);
+  result->coordinate_spans.reserve(ring_count);
+  result->polygons.reserve(multi_polygon.size());
+
+  for (const auto& polygon : multi_polygon) {
+    const auto first_ring = result->coordinate_spans.size();
+    for (const auto& ring : polygon) {
+      result->coordinate_lists.emplace_back(to_coordinate_list(ring));
+      result->coordinate_spans.emplace_back(
+        coordinate_span(result->coordinate_lists.back())
+      );
+    }
+    result->polygons.emplace_back(
+      mln_polygon_geometry{
+        .rings =
+          polygon.empty() ? nullptr : &result->coordinate_spans.at(first_ring),
+        .ring_count = polygon.size()
+      }
+    );
+  }
+
+  result->root = mln_geometry{
+    .size = sizeof(mln_geometry),
+    .type = MLN_GEOMETRY_TYPE_MULTI_POLYGON,
+    .data = {
+      .multi_polygon = {
+        .polygons =
+          result->polygons.empty() ? nullptr : result->polygons.data(),
+        .polygon_count = result->polygons.size()
+      }
+    }
+  };
+  return result;
+}
+
+auto make_geometry_descriptor(
+  const mbgl::Geometry<double>& geometry, std::size_t depth
+) -> GeometryDescriptorPtr {
+  validate_export_depth(depth);
+  return geometry.match(
+    Overloaded{
+      [](const mbgl::EmptyGeometry&) -> GeometryDescriptorPtr {
+        auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+        result->root = mln_geometry{
+          .size = sizeof(mln_geometry),
+          .type = MLN_GEOMETRY_TYPE_EMPTY,
+          .data = {.point = {}}
+        };
+        return result;
+      },
+      [](const mbgl::Point<double>& point) -> GeometryDescriptorPtr {
+        auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+        result->root = mln_geometry{
+          .size = sizeof(mln_geometry),
+          .type = MLN_GEOMETRY_TYPE_POINT,
+          .data = {.point = from_native_point(point)}
+        };
+        return result;
+      },
+      [](const mbgl::LineString<double>& line) -> GeometryDescriptorPtr {
+        auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+        result->coordinate_lists.emplace_back(to_coordinate_list(line));
+        result->root = mln_geometry{
+          .size = sizeof(mln_geometry),
+          .type = MLN_GEOMETRY_TYPE_LINE_STRING,
+          .data = {
+            .line_string = coordinate_span(result->coordinate_lists.front())
+          }
+        };
+        return result;
+      },
+      [](const mbgl::Polygon<double>& polygon) -> GeometryDescriptorPtr {
+        return make_polygon_descriptor(polygon);
+      },
+      [](const mbgl::MultiPoint<double>& points) -> GeometryDescriptorPtr {
+        auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
+        result->coordinate_lists.emplace_back(to_coordinate_list(points));
+        result->root = mln_geometry{
+          .size = sizeof(mln_geometry),
+          .type = MLN_GEOMETRY_TYPE_MULTI_POINT,
+          .data = {
+            .multi_point = coordinate_span(result->coordinate_lists.front())
+          }
+        };
+        return result;
+      },
+      [](const mbgl::MultiLineString<double>& multi_line)
+        -> GeometryDescriptorPtr {
+        return make_multi_line_descriptor(multi_line);
+      },
+      [](const mbgl::MultiPolygon<double>& multi_polygon)
+        -> GeometryDescriptorPtr {
+        return make_multi_polygon_descriptor(multi_polygon);
+      },
+      [depth](const mapbox::geometry::geometry_collection<double>& collection)
+        -> GeometryDescriptorPtr {
+        return make_geometry_descriptor(collection, depth);
+      }
+    }
+  );
+}
+
 }  // namespace
 
 namespace mln::core {
@@ -405,6 +633,11 @@ namespace mln::core {
 auto to_native_geometry(const mln_geometry* geometry)
   -> std::optional<mbgl::Geometry<double>> {
   return convert_geometry(geometry, 0);
+}
+
+auto to_c_geometry(const mbgl::Geometry<double>& geometry)
+  -> std::unique_ptr<OwnedGeometryDescriptor> {
+  return make_geometry_descriptor(geometry, 0);
 }
 
 auto to_native_json_value(const mln_json_value* value)
@@ -479,5 +712,3 @@ auto geometry_lat_lngs(const mbgl::Geometry<double>& geometry)
 }
 
 }  // namespace mln::core
-
-// NOLINTEND(cppcoreguidelines-pro-type-union-access)

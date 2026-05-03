@@ -66,6 +66,22 @@ fn offlineTileDefinition() c.mln_offline_region_definition {
     return definition;
 }
 
+fn offlineGeometryDefinition(geometry: *const c.mln_geometry) c.mln_offline_region_definition {
+    var definition: c.mln_offline_region_definition = undefined;
+    definition.size = @sizeOf(c.mln_offline_region_definition);
+    definition.type = c.MLN_OFFLINE_REGION_DEFINITION_GEOMETRY;
+    definition.data.geometry = .{
+        .size = @sizeOf(c.mln_offline_geometry_region_definition),
+        .style_url = offline_style_url,
+        .geometry = geometry,
+        .min_zoom = 5.0,
+        .max_zoom = 6.0,
+        .pixel_ratio = 2.0,
+        .include_ideographs = true,
+    };
+    return definition;
+}
+
 fn offlineRegionInfo() c.mln_offline_region_info {
     var info: c.mln_offline_region_info = undefined;
     info.size = @sizeOf(c.mln_offline_region_info);
@@ -84,6 +100,28 @@ fn checkOfflineRegionInfo(info: *const c.mln_offline_region_info, expected_id: c
     try testing.expectEqual(@as(f64, 6.0), info.definition.data.tile_pyramid.max_zoom);
     try testing.expectEqual(@as(f32, 2.0), info.definition.data.tile_pyramid.pixel_ratio);
     try testing.expect(info.definition.data.tile_pyramid.include_ideographs);
+    try testing.expectEqual(expected_metadata.len, info.metadata_size);
+    try testing.expectEqualSlices(u8, expected_metadata, info.metadata[0..info.metadata_size]);
+}
+
+fn checkOfflineGeometryRegionInfo(info: *const c.mln_offline_region_info, expected_id: c.mln_offline_region_id, expected_metadata: []const u8) !void {
+    try testing.expectEqual(expected_id, info.id);
+    try testing.expectEqual(@as(u32, c.MLN_OFFLINE_REGION_DEFINITION_GEOMETRY), info.definition.type);
+    const definition = info.definition.data.geometry;
+    try testing.expectEqualStrings(offline_style_url, std.mem.span(definition.style_url));
+    try testing.expectEqual(@as(f64, 5.0), definition.min_zoom);
+    try testing.expectEqual(@as(f64, 6.0), definition.max_zoom);
+    try testing.expectEqual(@as(f32, 2.0), definition.pixel_ratio);
+    try testing.expect(definition.include_ideographs);
+    const geometry = definition.geometry orelse return error.MissingGeometry;
+    try testing.expectEqual(@as(u32, c.MLN_GEOMETRY_TYPE_LINE_STRING), geometry[0].type);
+    const line = geometry[0].data.line_string;
+    try testing.expectEqual(@as(usize, 2), line.coordinate_count);
+    try testing.expect(line.coordinates != null);
+    try testing.expectEqual(@as(f64, 1.0), line.coordinates[0].latitude);
+    try testing.expectEqual(@as(f64, 2.0), line.coordinates[0].longitude);
+    try testing.expectEqual(@as(f64, 3.0), line.coordinates[1].latitude);
+    try testing.expectEqual(@as(f64, 4.0), line.coordinates[1].longitude);
     try testing.expectEqual(expected_metadata.len, info.metadata_size);
     try testing.expectEqualSlices(u8, expected_metadata, info.metadata[0..info.metadata_size]);
 }
@@ -724,11 +762,49 @@ test "offline tile-pyramid regions validate inputs" {
         snapshot = null;
     }
 
-    definition = offlineTileDefinition();
-    definition.type = c.MLN_OFFLINE_REGION_DEFINITION_GEOMETRY;
-    definition.data.geometry = .{ .size = @sizeOf(c.mln_offline_geometry_region_definition) };
-    try testing.expectEqual(c.MLN_STATUS_UNSUPPORTED, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    var coordinates = [_]c.mln_lat_lng{
+        .{ .latitude = 1.0, .longitude = 2.0 },
+        .{ .latitude = 3.0, .longitude = 4.0 },
+    };
+    var geometry = c.mln_geometry{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_LINE_STRING,
+        .data = .{ .line_string = .{ .coordinates = coordinates[0..].ptr, .coordinate_count = coordinates.len } },
+    };
+    definition = offlineGeometryDefinition(&geometry);
+    definition.data.geometry.style_url = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
     try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    definition = offlineGeometryDefinition(&geometry);
+    definition.data.geometry.geometry = null;
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    geometry.type = c.MLN_GEOMETRY_TYPE_EMPTY;
+    definition = offlineGeometryDefinition(&geometry);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    var nested_geometries: [66]c.mln_geometry = undefined;
+    nested_geometries[nested_geometries.len - 1] = .{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_POINT,
+        .data = .{ .point = .{ .latitude = 1.0, .longitude = 2.0 } },
+    };
+    var nested_index = nested_geometries.len - 1;
+    while (nested_index > 0) {
+        nested_index -= 1;
+        nested_geometries[nested_index] = .{
+            .size = @sizeOf(c.mln_geometry),
+            .type = c.MLN_GEOMETRY_TYPE_GEOMETRY_COLLECTION,
+            .data = .{ .geometry_collection = .{ .geometries = &nested_geometries[nested_index + 1], .geometry_count = 1 } },
+        };
+    }
+    definition = offlineGeometryDefinition(&nested_geometries[0]);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+    try testing.expectEqualStrings("GeoJSON value nesting is too deep", std.mem.span(c.mln_thread_last_error_message()));
 }
 
 test "offline tile-pyramid regions persist and support metadata lifecycle" {
@@ -820,6 +896,81 @@ test "offline tile-pyramid regions persist and support metadata lifecycle" {
         var count: usize = 0;
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(list_handle, &count));
         try testing.expectEqual(@as(usize, 0), count);
+    }
+}
+
+test "offline geometry regions persist and expose geometry views" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const cwd = try std.process.currentPathAlloc(testing.io, testing.allocator);
+    defer testing.allocator.free(cwd);
+    const cache_path = try std.fmt.allocPrintSentinel(testing.allocator, "{s}/.zig-cache/tmp/{s}/cache.db", .{ cwd, tmp.sub_path[0..] }, 0);
+    defer testing.allocator.free(cache_path);
+
+    const metadata = [_]u8{ 7, 8, 9 };
+    var region_id: c.mln_offline_region_id = 0;
+
+    {
+        var runtime: ?*c.mln_runtime = null;
+        var options = c.mln_runtime_options_default();
+        options.cache_path = cache_path.ptr;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&options, &runtime));
+        const runtime_handle = runtime orelse return error.RuntimeCreateFailed;
+        defer support.destroyRuntime(runtime_handle);
+
+        var coordinates = [_]c.mln_lat_lng{
+            .{ .latitude = 1.0, .longitude = 2.0 },
+            .{ .latitude = 3.0, .longitude = 4.0 },
+        };
+        const geometry = c.mln_geometry{
+            .size = @sizeOf(c.mln_geometry),
+            .type = c.MLN_GEOMETRY_TYPE_LINE_STRING,
+            .data = .{ .line_string = .{ .coordinates = coordinates[0..].ptr, .coordinate_count = coordinates.len } },
+        };
+        var definition = offlineGeometryDefinition(&geometry);
+        var created: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_create(runtime_handle, &definition, metadata[0..].ptr, metadata.len, &created));
+        const created_handle = created orelse return error.RegionCreateFailed;
+        defer c.mln_offline_region_snapshot_destroy(created_handle);
+
+        var created_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(created_handle, &created_info));
+        try testing.expect(created_info.id > 0);
+        region_id = created_info.id;
+        try checkOfflineGeometryRegionInfo(&created_info, region_id, metadata[0..]);
+
+        var list: ?*c.mln_offline_region_list = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_regions_list(runtime_handle, &list));
+        const list_handle = list orelse return error.RegionListFailed;
+        defer c.mln_offline_region_list_destroy(list_handle);
+        var count: usize = 0;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_count(list_handle, &count));
+        try testing.expectEqual(@as(usize, 1), count);
+        var list_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_list_get(list_handle, 0, &list_info));
+        try checkOfflineGeometryRegionInfo(&list_info, region_id, metadata[0..]);
+    }
+
+    {
+        var runtime: ?*c.mln_runtime = null;
+        var options = c.mln_runtime_options_default();
+        options.cache_path = cache_path.ptr;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_create(&options, &runtime));
+        const runtime_handle = runtime orelse return error.RuntimeCreateFailed;
+        defer support.destroyRuntime(runtime_handle);
+
+        var found = false;
+        var reloaded: ?*c.mln_offline_region_snapshot = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_get(runtime_handle, region_id, &reloaded, &found));
+        try testing.expect(found);
+        const reloaded_handle = reloaded orelse return error.RegionReloadFailed;
+        defer c.mln_offline_region_snapshot_destroy(reloaded_handle);
+
+        var reloaded_info = offlineRegionInfo();
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_offline_region_snapshot_get(reloaded_handle, &reloaded_info));
+        try checkOfflineGeometryRegionInfo(&reloaded_info, region_id, metadata[0..]);
+
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_offline_region_delete(runtime_handle, region_id));
     }
 }
 
