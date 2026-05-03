@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/style.h
- * Public C API declarations for style source and layer mutation.
+ * Public C API declarations for style mutation.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_STYLE_H
@@ -18,11 +18,10 @@ extern "C" {
 /**
  * Sets one layer property using its MapLibre style-spec property name.
  *
- * layer_id, property_name, and value are borrowed for the duration of the call.
- * The value is a style-spec JSON value descriptor. Expressions use the standard
- * style-spec expression JSON array representation. The accepted property value
- * is parsed and copied into MapLibre Native's typed style property storage
- * before return.
+ * layer_id, property_name, and value are borrowed for the call. value is a
+ * style-spec JSON value descriptor. Expressions use style-spec expression JSON
+ * arrays. The function parses and copies the accepted value into MapLibre
+ * Native's typed style property storage before return.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -43,9 +42,9 @@ MLN_API mln_status mln_map_set_layer_property(
  * Copies one layer property as a style-spec JSON value snapshot.
  *
  * On success, *out_value receives an owned snapshot handle. Use
- * mln_json_snapshot_get() to borrow its root JSON value, and destroy it with
- * mln_json_snapshot_destroy(). Undefined native style properties are reported
- * as null snapshots.
+ * mln_json_snapshot_get() to borrow its root JSON value. Destroy the snapshot
+ * with mln_json_snapshot_destroy(). Undefined native style properties return
+ * null snapshots.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -64,16 +63,16 @@ MLN_API mln_status mln_map_get_layer_property(
 /**
  * Sets or clears one layer filter.
  *
- * layer_id and filter are borrowed for the duration of the call. Passing null
- * for filter clears the layer filter. Non-null filters use the MapLibre
- * style-spec filter JSON representation and are parsed into MapLibre Native's
- * typed filter expression storage before return.
+ * layer_id and filter are borrowed for the call. Passing null for filter clears
+ * the layer filter. Non-null filters use the MapLibre style-spec filter JSON
+ * representation. The function parses and copies the accepted filter into
+ * MapLibre Native's typed filter expression storage before return.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, layer_id is
  *   invalid or empty, filter is invalid, the layer does not exist, or the
- * filter cannot be converted.
+ *   filter cannot be converted.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -86,8 +85,8 @@ MLN_API mln_status mln_map_set_layer_filter(
  * Copies one layer filter as a style-spec JSON value snapshot.
  *
  * On success, *out_filter receives an owned snapshot handle. Use
- * mln_json_snapshot_get() to borrow its root JSON value, and destroy it with
- * mln_json_snapshot_destroy(). Missing filters are reported as null snapshots.
+ * mln_json_snapshot_get() to borrow its root JSON value. Destroy the snapshot
+ * with mln_json_snapshot_destroy(). Missing filters return null snapshots.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
