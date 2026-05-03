@@ -2621,7 +2621,6 @@ auto map_list_style_source_ids(mln_map* map, mln_style_id_list** out_source_ids)
   return create_style_id_list(std::move(ids), out_source_ids);
 }
 
-// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 auto map_add_geojson_source_url(
   mln_map* map, mln_string_view source_id, mln_string_view url
 ) -> mln_status {
@@ -2885,7 +2884,6 @@ auto map_add_raster_source_url(
   );
   return MLN_STATUS_OK;
 }
-// NOLINTEND(bugprone-easily-swappable-parameters)
 
 auto map_add_raster_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,

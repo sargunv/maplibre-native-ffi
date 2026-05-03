@@ -8,6 +8,7 @@ Checks:
   - bugprone-*
   - cert-*
   - cppcoreguidelines-*
+  - -bugprone-easily-swappable-parameters
   - -cppcoreguidelines-avoid-magic-numbers
   - -cppcoreguidelines-pro-type-union-access
   - -readability-magic-numbers
