@@ -2818,6 +2818,8 @@ auto map_set_bounds(mln_map* map, const mln_bound_options* options)
     return options_status;
   }
 
+  // Native setBounds only applies optionals that are set, so this preserves
+  // constraints omitted from options->fields.
   map->map->setBounds(to_native_bound_options(*options));
   return MLN_STATUS_OK;
 }
