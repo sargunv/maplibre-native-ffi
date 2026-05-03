@@ -37,6 +37,29 @@ typedef enum mln_style_source_type : uint32_t {
   MLN_STYLE_SOURCE_TYPE_CUSTOM_VECTOR = 8,
 } mln_style_source_type;
 
+/** Field mask values for mln_style_tile_source_options. */
+typedef enum mln_style_tile_source_option_field : uint32_t {
+  MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM = 1U << 0U,
+  MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM = 1U << 1U,
+  MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION = 1U << 2U,
+  MLN_STYLE_TILE_SOURCE_OPTION_SCHEME = 1U << 3U,
+  MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS = 1U << 4U,
+  MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE = 1U << 5U,
+  MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING = 1U << 6U,
+} mln_style_tile_source_option_field;
+
+/** Tile URL coordinate scheme values used by mln_style_tile_source_options. */
+typedef enum mln_style_tile_scheme : uint32_t {
+  MLN_STYLE_TILE_SCHEME_XYZ = 0,
+  MLN_STYLE_TILE_SCHEME_TMS = 1,
+} mln_style_tile_scheme;
+
+/** Vector tile encoding values used by mln_style_tile_source_options. */
+typedef enum mln_style_vector_tile_encoding : uint32_t {
+  MLN_STYLE_VECTOR_TILE_ENCODING_MVT = 0,
+  MLN_STYLE_VECTOR_TILE_ENCODING_MLT = 1,
+} mln_style_vector_tile_encoding;
+
 /** Fixed source metadata returned by mln_map_get_style_source_info(). */
 typedef struct mln_style_source_info {
   uint32_t size;
@@ -49,6 +72,26 @@ typedef struct mln_style_source_info {
   /** Attribution byte length, excluding any null terminator. */
   size_t attribution_size;
 } mln_style_source_info;
+
+/** Options for vector and raster tile sources. */
+typedef struct mln_style_tile_source_options {
+  uint32_t size;
+  uint32_t fields;
+  double min_zoom;
+  double max_zoom;
+  mln_string_view attribution;
+  /** One of mln_style_tile_scheme. Defaults to MLN_STYLE_TILE_SCHEME_XYZ. */
+  uint32_t scheme;
+  mln_lat_lng_bounds bounds;
+  /** Raster tile size in pixels. Defaults to 512. */
+  uint32_t tile_size;
+  /** One of mln_style_vector_tile_encoding. Defaults to MVT. */
+  uint32_t vector_encoding;
+} mln_style_tile_source_options;
+
+/** Returns default tile source options. */
+MLN_API mln_style_tile_source_options
+mln_style_tile_source_options_default(void) MLN_NOEXCEPT;
 
 /**
  * Gets the number of IDs in a style ID list handle.
@@ -217,6 +260,160 @@ MLN_API mln_status mln_map_copy_style_source_attribution(
  */
 MLN_API mln_status mln_map_list_style_source_ids(
   mln_map* map, mln_style_id_list** out_source_ids
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a GeoJSON source with URL data.
+ *
+ * source_id and url are borrowed for the call. The source loads GeoJSON from
+ * url through MapLibre Native's resource system.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a GeoJSON source with inline data.
+ *
+ * source_id and data are borrowed for the call. The accepted GeoJSON descriptor
+ * is copied into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, data is null or invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) MLN_NOEXCEPT;
+
+/**
+ * Updates one GeoJSON source to load data from a URL.
+ *
+ * source_id and url are borrowed for the call.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, the source does not exist, or the source is not a
+ *   GeoJSON source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) MLN_NOEXCEPT;
+
+/**
+ * Updates one GeoJSON source with inline data.
+ *
+ * source_id and data are borrowed for the call. The accepted GeoJSON descriptor
+ * is copied into MapLibre Native before return.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, data is null or invalid, the source does not exist, or
+ *   the source is not a GeoJSON source.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a vector source with a TileJSON URL.
+ *
+ * source_id and url are borrowed for the call. options may be null for
+ * defaults. For URL sources, min_zoom, max_zoom, and vector_encoding override
+ * values from the loaded TileJSON when their field bits are set.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, options is invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_vector_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a vector source with inline tile URLs.
+ *
+ * source_id and tile URL views are borrowed for the call. The function copies
+ * accepted strings into MapLibre Native before return. options may be null for
+ * defaults.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, tile URLs are null, empty, or invalid, options is
+ *   invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_vector_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a raster source with a TileJSON URL.
+ *
+ * source_id and url are borrowed for the call. options may be null for
+ * defaults. For URL sources, only tile_size is used when its field bit is set.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id or url
+ *   is invalid or empty, options is invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_raster_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Adds a raster source with inline tile URLs.
+ *
+ * source_id and tile URL views are borrowed for the call. The function copies
+ * accepted strings into MapLibre Native before return. options may be null for
+ * defaults.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, source_id is
+ *   invalid or empty, tile URLs are null, empty, or invalid, options is
+ *   invalid, or the source ID already exists.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_add_raster_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
 ) MLN_NOEXCEPT;
 
 /**

@@ -38,16 +38,22 @@
 #include <mbgl/style/layer.hpp>
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
+#include <mbgl/style/sources/geojson_source.hpp>
+#include <mbgl/style/sources/raster_source.hpp>
+#include <mbgl/style/sources/vector_source.hpp>
 #include <mbgl/style/style.hpp>
 #include <mbgl/style/style_property.hpp>
 #include <mbgl/style/types.hpp>
 #include <mbgl/tile/tile_id.hpp>
 #include <mbgl/tile/tile_operation.hpp>
 #include <mbgl/util/chrono.hpp>
+#include <mbgl/util/constants.hpp>
 #include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/projection.hpp>
+#include <mbgl/util/range.hpp>
 #include <mbgl/util/size.hpp>
+#include <mbgl/util/tileset.hpp>
 #include <mbgl/util/vectors.hpp>
 
 #include "map/map.hpp"
@@ -127,6 +133,9 @@ auto string_view_from_literal(const char* string) -> mln_string_view {
   return mln_string_view{.data = string, .size = std::strlen(string)};
 }
 
+auto validate_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mln_status;
+auto to_native_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mbgl::LatLngBounds;
+
 auto to_c_source_type(mbgl::style::SourceType type) -> uint32_t {
   switch (type) {
     case mbgl::style::SourceType::Vector:
@@ -147,6 +156,305 @@ auto to_c_source_type(mbgl::style::SourceType type) -> uint32_t {
       return MLN_STYLE_SOURCE_TYPE_CUSTOM_VECTOR;
   }
   return MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+}
+
+auto has_tile_source_option(
+  const mln_style_tile_source_options& options, uint32_t field
+) -> bool {
+  return (options.fields & field) != 0U;
+}
+
+auto validate_zoom_option(double zoom, const char* name) -> mln_status {
+  if (!std::isfinite(zoom) || zoom < 0.0 || zoom > 255.0) {
+    auto message = std::string{name} + " must be finite and within [0, 255]";
+    mln::core::set_thread_error(message.c_str());
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_source_option_header(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (options.size < sizeof(mln_style_tile_source_options)) {
+    mln::core::set_thread_error(
+      "mln_style_tile_source_options.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM) |
+    MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM |
+    MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION |
+    MLN_STYLE_TILE_SOURCE_OPTION_SCHEME | MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS |
+    MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE |
+    MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING;
+  if ((options.fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_style_tile_source_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_source_zoom_options(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM)) {
+    const auto status = validate_zoom_option(options.min_zoom, "min_zoom");
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM)) {
+    const auto status = validate_zoom_option(options.max_zoom, "max_zoom");
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (
+    has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM) &&
+    has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM) &&
+    options.min_zoom > options.max_zoom
+  ) {
+    mln::core::set_thread_error(
+      "min_zoom must be less than or equal to max_zoom"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_source_attribution_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(
+        options, MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION
+      )) {
+    return MLN_STATUS_OK;
+  }
+  return validate_string_view(options.attribution, "attribution")
+           ? MLN_STATUS_OK
+           : MLN_STATUS_INVALID_ARGUMENT;
+}
+
+auto validate_tile_source_scheme_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_SCHEME)) {
+    return MLN_STATUS_OK;
+  }
+  switch (options.scheme) {
+    case MLN_STYLE_TILE_SCHEME_XYZ:
+    case MLN_STYLE_TILE_SCHEME_TMS:
+      return MLN_STATUS_OK;
+    default:
+      mln::core::set_thread_error("scheme is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+}
+
+auto validate_tile_source_bounds_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS)) {
+    return MLN_STATUS_OK;
+  }
+  return validate_lat_lng_bounds(options.bounds);
+}
+
+auto validate_tile_source_tile_size_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(
+        options, MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE
+      )) {
+    return MLN_STATUS_OK;
+  }
+  if (options.tile_size == 0 || options.tile_size > 65535U) {
+    mln::core::set_thread_error("tile_size must be within [1, 65535]");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_source_vector_encoding_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(
+        options, MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING
+      )) {
+    return MLN_STATUS_OK;
+  }
+  switch (options.vector_encoding) {
+    case MLN_STYLE_VECTOR_TILE_ENCODING_MVT:
+    case MLN_STYLE_VECTOR_TILE_ENCODING_MLT:
+      return MLN_STATUS_OK;
+    default:
+      mln::core::set_thread_error("vector_encoding is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+}
+
+auto validate_tile_source_options(const mln_style_tile_source_options* options)
+  -> mln_status {
+  if (options == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  for (const auto validator : {
+         validate_tile_source_option_header,
+         validate_tile_source_zoom_options,
+         validate_tile_source_attribution_option,
+         validate_tile_source_scheme_option,
+         validate_tile_source_bounds_option,
+         validate_tile_source_tile_size_option,
+         validate_tile_source_vector_encoding_option,
+       }) {
+    const auto status = validator(*options);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
+auto effective_tile_source_options(const mln_style_tile_source_options* options)
+  -> mln_style_tile_source_options {
+  auto result = mln::core::style_tile_source_options_default();
+  if (options == nullptr) {
+    return result;
+  }
+
+  result.fields = options->fields;
+  if (has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM)) {
+    result.min_zoom = options->min_zoom;
+  }
+  if (has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM)) {
+    result.max_zoom = options->max_zoom;
+  }
+  if (
+    has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION)
+  ) {
+    result.attribution = options->attribution;
+  }
+  if (has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_SCHEME)) {
+    result.scheme = options->scheme;
+  }
+  if (has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS)) {
+    result.bounds = options->bounds;
+  }
+  if (
+    has_tile_source_option(*options, MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE)
+  ) {
+    result.tile_size = options->tile_size;
+  }
+  if (
+    has_tile_source_option(
+      *options, MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING
+    )
+  ) {
+    result.vector_encoding = options->vector_encoding;
+  }
+  return result;
+}
+
+auto to_native_tile_scheme(uint32_t scheme) -> mbgl::Tileset::Scheme {
+  return scheme == MLN_STYLE_TILE_SCHEME_TMS ? mbgl::Tileset::Scheme::TMS
+                                             : mbgl::Tileset::Scheme::XYZ;
+}
+
+auto to_native_vector_encoding(uint32_t encoding)
+  -> mbgl::Tileset::VectorEncoding {
+  return encoding == MLN_STYLE_VECTOR_TILE_ENCODING_MLT
+           ? mbgl::Tileset::VectorEncoding::MLT
+           : mbgl::Tileset::VectorEncoding::Mapbox;
+}
+
+auto validate_tile_urls(const mln_string_view* tiles, size_t tile_count)
+  -> mln_status {
+  if (tile_count == 0) {
+    mln::core::set_thread_error("tile_count must be greater than 0");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (tiles == nullptr) {
+    mln::core::set_thread_error("tiles must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  for (const auto tile : std::span<const mln_string_view>{tiles, tile_count}) {
+    if (!validate_string_view(tile, "tile URL")) {
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+    if (tile.size == 0) {
+      mln::core::set_thread_error("tile URLs must not be empty");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
+auto to_native_tile_urls(const mln_string_view* tiles, size_t tile_count)
+  -> std::vector<std::string> {
+  auto result = std::vector<std::string>{};
+  result.reserve(tile_count);
+  for (const auto tile : std::span<const mln_string_view>{tiles, tile_count}) {
+    result.push_back(string_from_view(tile));
+  }
+  return result;
+}
+
+auto to_native_tileset(
+  const mln_string_view* tiles, size_t tile_count,
+  const mln_style_tile_source_options& options, bool vector_source
+) -> std::optional<mbgl::Tileset> {
+  if (options.min_zoom > options.max_zoom) {
+    mln::core::set_thread_error(
+      "effective min_zoom must be less than or equal to max_zoom"
+    );
+    return std::nullopt;
+  }
+
+  auto tileset = mbgl::Tileset{
+    to_native_tile_urls(tiles, tile_count),
+    mbgl::Range<uint8_t>{
+      static_cast<uint8_t>(options.min_zoom),
+      static_cast<uint8_t>(options.max_zoom)
+    },
+    string_from_view(options.attribution),
+    to_native_tile_scheme(options.scheme),
+    std::nullopt,
+    vector_source
+      ? std::optional<mbgl::Tileset::VectorEncoding>{to_native_vector_encoding(
+          options.vector_encoding
+        )}
+      : std::nullopt
+  };
+  if (has_tile_source_option(options, MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS)) {
+    tileset.bounds = to_native_lat_lng_bounds(options.bounds);
+  }
+  return tileset;
+}
+
+auto validate_source_id(mln_string_view source_id) -> mln_status {
+  if (!validate_string_view(source_id, "source_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    mln::core::set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_source_can_be_added(
+  mbgl::style::Style& style, const std::string& source_id
+) -> mln_status {
+  if (style.getSource(source_id) != nullptr) {
+    mln::core::set_thread_error("source already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
 }
 
 auto create_style_id_list(
@@ -508,7 +816,6 @@ auto exception_message(std::exception_ptr error) -> std::string {
 }
 
 auto validate_lat_lng(mln_lat_lng coordinate) -> mln_status;
-auto validate_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mln_status;
 auto validate_edge_insets(mln_edge_insets padding) -> mln_status;
 auto validate_screen_point(mln_screen_point point) -> mln_status;
 
@@ -1723,6 +2030,23 @@ auto map_tile_options_default() noexcept -> mln_map_tile_options {
   };
 }
 
+auto style_tile_source_options_default() noexcept
+  -> mln_style_tile_source_options {
+  return mln_style_tile_source_options{
+    .size = sizeof(mln_style_tile_source_options),
+    .fields = 0,
+    .min_zoom = 0,
+    .max_zoom = mbgl::util::DEFAULT_MAX_ZOOM,
+    .attribution = {.data = nullptr, .size = 0},
+    .scheme = MLN_STYLE_TILE_SCHEME_XYZ,
+    .bounds =
+      {.southwest = {.latitude = 0, .longitude = 0},
+       .northeast = {.latitude = 0, .longitude = 0}},
+    .tile_size = mbgl::util::tileSize_I,
+    .vector_encoding = MLN_STYLE_VECTOR_TILE_ENCODING_MVT
+  };
+}
+
 auto validate_map(mln_map* map) -> mln_status {
   if (map == nullptr) {
     set_thread_error("map must not be null");
@@ -2295,6 +2619,323 @@ auto map_list_style_source_ids(mln_map* map, mln_style_id_list** out_source_ids)
     ids.push_back(source->getID());
   }
   return create_style_id_list(std::move(ids), out_source_ids);
+}
+
+auto map_add_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  auto source = std::make_unique<mbgl::style::GeoJSONSource>(id);
+  source->setURL(string_from_view(url));
+  style.addSource(std::move(source));
+  return MLN_STATUS_OK;
+}
+
+auto map_add_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+
+  auto geojson = to_native_geojson(data);
+  if (!geojson) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  auto source = std::make_unique<mbgl::style::GeoJSONSource>(id);
+  source->setGeoJSON(*geojson);
+  style.addSource(std::move(source));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_geojson_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* geojson_source = source->as<mbgl::style::GeoJSONSource>();
+  if (geojson_source == nullptr) {
+    set_thread_error("source is not a GeoJSON source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  geojson_source->setURL(string_from_view(url));
+  return MLN_STATUS_OK;
+}
+
+auto map_set_geojson_source_data(
+  mln_map* map, mln_string_view source_id, const mln_geojson* data
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+
+  auto geojson = to_native_geojson(data);
+  if (!geojson) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* geojson_source = source->as<mbgl::style::GeoJSONSource>();
+  if (geojson_source == nullptr) {
+    set_thread_error("source is not a GeoJSON source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  geojson_source->setGeoJSON(*geojson);
+  return MLN_STATUS_OK;
+}
+
+auto map_add_vector_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto options_status = validate_tile_source_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  auto min_zoom = std::optional<float>{};
+  if (
+    has_tile_source_option(effective, MLN_STYLE_TILE_SOURCE_OPTION_MIN_ZOOM)
+  ) {
+    min_zoom = static_cast<float>(effective.min_zoom);
+  }
+  auto max_zoom = std::optional<float>{};
+  if (
+    has_tile_source_option(effective, MLN_STYLE_TILE_SOURCE_OPTION_MAX_ZOOM)
+  ) {
+    max_zoom = static_cast<float>(effective.max_zoom);
+  }
+
+  if (
+    has_tile_source_option(
+      effective, MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING
+    )
+  ) {
+    style.addSource(
+      std::make_unique<mbgl::style::VectorSource>(
+        id, string_from_view(url), max_zoom, min_zoom,
+        to_native_vector_encoding(effective.vector_encoding)
+      )
+    );
+  } else {
+    style.addSource(
+      std::make_unique<mbgl::style::VectorSource>(
+        id, string_from_view(url), max_zoom, min_zoom
+      )
+    );
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_add_vector_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto tiles_status = validate_tile_urls(tiles, tile_count);
+  if (tiles_status != MLN_STATUS_OK) {
+    return tiles_status;
+  }
+  const auto options_status = validate_tile_source_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  auto tileset = to_native_tileset(tiles, tile_count, effective, true);
+  if (!tileset) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  style.addSource(
+    std::make_unique<mbgl::style::VectorSource>(
+      id, *tileset, std::nullopt, std::nullopt,
+      to_native_vector_encoding(effective.vector_encoding)
+    )
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_raster_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto options_status = validate_tile_source_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  style.addSource(
+    std::make_unique<mbgl::style::RasterSource>(
+      id, string_from_view(url), static_cast<uint16_t>(effective.tile_size)
+    )
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_raster_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto tiles_status = validate_tile_urls(tiles, tile_count);
+  if (tiles_status != MLN_STATUS_OK) {
+    return tiles_status;
+  }
+  const auto options_status = validate_tile_source_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  auto tileset = to_native_tileset(tiles, tile_count, effective, false);
+  if (!tileset) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  style.addSource(
+    std::make_unique<mbgl::style::RasterSource>(
+      id, *tileset, static_cast<uint16_t>(effective.tile_size)
+    )
+  );
+  return MLN_STATUS_OK;
 }
 
 auto map_add_style_layer_json(
