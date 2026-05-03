@@ -394,6 +394,10 @@ test "style light accepts full JSON and property updates" {
     try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_DOUBLE, root.type);
     try testing.expectApproxEqAbs(@as(f64, 0.75), root.data.double_value, 0.000001);
 
+    var missing_snapshot: ?*c.mln_json_snapshot = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_light_property(map, stringView("unknown-light-property"), &missing_snapshot));
+    try testing.expectEqual(@as(?*c.mln_json_snapshot, null), missing_snapshot);
+
     const invalid_intensity = jsonBool(false);
     try testing.expectEqual(
         c.MLN_STATUS_INVALID_ARGUMENT,

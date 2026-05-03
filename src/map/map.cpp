@@ -2601,11 +2601,10 @@ auto map_get_style_light_property(
   }
 
   const auto property = light->getProperty(string_from_view(property_name));
-  const auto value =
-    property.getKind() == mbgl::style::StyleProperty::Kind::Undefined
-      ? mbgl::Value{mbgl::NullValue{}}
-      : property.getValue();
-  return json_snapshot_create(value, out_value);
+  if (property.getKind() == mbgl::style::StyleProperty::Kind::Undefined) {
+    return MLN_STATUS_OK;
+  }
+  return json_snapshot_create(property.getValue(), out_value);
 }
 
 auto map_set_layer_property(
