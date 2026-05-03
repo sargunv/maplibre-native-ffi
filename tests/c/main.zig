@@ -2,6 +2,7 @@ comptime {
     _ = @import("runtime.zig");
     _ = @import("map_lifecycle.zig");
     _ = @import("style.zig");
+    _ = @import("style_values.zig");
     _ = @import("resources.zig");
     _ = @import("geojson.zig");
     _ = @import("feature_state.zig");

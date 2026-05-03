@@ -29,10 +29,13 @@
 #include <mbgl/renderer/renderer_frontend.hpp>
 #include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
+#include <mbgl/style/layer.hpp>
 #include <mbgl/style/style.hpp>
+#include <mbgl/style/style_property.hpp>
 #include <mbgl/tile/tile_id.hpp>
 #include <mbgl/tile/tile_operation.hpp>
 #include <mbgl/util/chrono.hpp>
+#include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/projection.hpp>
 #include <mbgl/util/size.hpp>
@@ -44,6 +47,7 @@
 #include "geojson/geojson.hpp"
 #include "maplibre_native_c.h"
 #include "runtime/runtime.hpp"
+#include "style/style_value.hpp"
 
 namespace {
 using MapRegistry = std::unordered_map<mln_map*, std::unique_ptr<mln_map>>;
@@ -72,6 +76,22 @@ auto map_projection_registry_mutex() -> std::mutex& {
 auto map_projection_registry() -> ProjectionRegistry& {
   static ProjectionRegistry value;
   return value;
+}
+
+auto validate_string_view(mln_string_view string, const char* name) -> bool {
+  if (string.size > 0 && string.data == nullptr) {
+    auto message = std::string{name} + " data must not be null";
+    mln::core::set_thread_error(message.c_str());
+    return false;
+  }
+  return true;
+}
+
+auto string_from_view(mln_string_view string) -> std::string {
+  if (string.size == 0) {
+    return {};
+  }
+  return std::string{string.data, string.size};
 }
 
 template <typename Payload>
@@ -1895,6 +1915,148 @@ auto map_set_style_json(mln_map* map, const char* json) -> mln_status {
     return MLN_STATUS_NATIVE_ERROR;
   }
   return MLN_STATUS_OK;
+}
+
+auto map_set_layer_property(
+  mln_map* map, mln_string_view layer_id, mln_string_view property_name,
+  const mln_json_value* value
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(property_name, "property_name")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0 || property_name.size == 0) {
+    set_thread_error("layer_id and property_name must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (!validate_style_json_value(value)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  if (layer == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto error = layer->setProperty(
+    string_from_view(property_name), mbgl::style::conversion::Convertible{value}
+  );
+  if (error) {
+    set_style_conversion_error("layer property", *error);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  return MLN_STATUS_OK;
+}
+
+auto map_get_layer_property(
+  mln_map* map, mln_string_view layer_id, mln_string_view property_name,
+  mln_json_snapshot** out_value
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(property_name, "property_name")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0 || property_name.size == 0) {
+    set_thread_error("layer_id and property_name must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_value == nullptr || *out_value != nullptr) {
+    set_thread_error("out_value must not be null and *out_value must be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  if (layer == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto property = layer->getProperty(string_from_view(property_name));
+  const auto value =
+    property.getKind() == mbgl::style::StyleProperty::Kind::Undefined
+      ? mbgl::Value{mbgl::NullValue{}}
+      : property.getValue();
+  return json_snapshot_create(value, out_value);
+}
+
+auto map_set_layer_filter(
+  mln_map* map, mln_string_view layer_id, const mln_json_value* filter
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  if (layer == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  if (filter == nullptr) {
+    layer->setFilter(mbgl::style::Filter{});
+    return MLN_STATUS_OK;
+  }
+
+  auto native_filter = to_native_style_filter(filter);
+  if (!native_filter) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  layer->setFilter(*native_filter);
+  return MLN_STATUS_OK;
+}
+
+auto map_get_layer_filter(
+  mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_filter
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (!validate_string_view(layer_id, "layer_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0) {
+    set_thread_error("layer_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_filter == nullptr || *out_filter != nullptr) {
+    set_thread_error(
+      "out_filter must not be null and *out_filter must be null"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* layer = map->map->getStyle().getLayer(string_from_view(layer_id));
+  if (layer == nullptr) {
+    set_thread_error("layer does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  return json_snapshot_create(layer->getFilter().serialize(), out_filter);
 }
 
 auto map_get_camera(mln_map* map, mln_camera_options* out_camera)
