@@ -3,6 +3,7 @@ comptime {
     _ = @import("map_lifecycle.zig");
     _ = @import("style.zig");
     _ = @import("resources.zig");
+    _ = @import("geojson.zig");
     _ = @import("camera.zig");
     _ = @import("projection.zig");
     _ = @import("map_tuning.zig");

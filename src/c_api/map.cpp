@@ -254,6 +254,17 @@ auto mln_map_projection_set_visible_coordinates(
   });
 }
 
+auto mln_map_projection_set_visible_geometry(
+  mln_map_projection* projection, const mln_geometry* geometry,
+  mln_edge_insets padding
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_projection_set_visible_geometry(
+      projection, geometry, padding
+    );
+  });
+}
+
 auto mln_map_projection_pixel_for_lat_lng(
   mln_map_projection* projection, mln_lat_lng coordinate,
   mln_screen_point* out_point

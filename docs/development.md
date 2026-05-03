@@ -51,7 +51,8 @@ fixed-size inline text buffers; expose borrowed ABI-owned text with a length or
 provide an explicit copy or drain API.
 
 Keep backend-native handles opaque as `void*`; document the backend type and
-ownership rules on the function or struct field.
+field-level requirements on the struct field. Document ownership and lifetime on
+the function that accepts or returns the struct.
 
 ## Errors And Diagnostics
 
@@ -82,6 +83,10 @@ asynchronous native failures through copied runtime events.
 ## Ownership And Lifetime
 
 Make ownership explicit at every boundary.
+
+Struct definitions describe data shape, required fields, and pointer validity.
+Function comments describe whether input pointers are borrowed, copied,
+retained, or consumed, and when returned views become invalid.
 
 Borrow host-provided strings and buffers for call-duration inputs. Copy
 host-provided strings and buffers that outlive the function or native callback.
