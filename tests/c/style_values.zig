@@ -523,3 +523,95 @@ test "core source helpers add and update ordinary sources" {
         c.mln_map_set_geojson_source_url(map, stringView("vector-helper"), stringView("https://example.com/not-geojson")),
     );
 }
+
+test "runtime style images copy premultiplied RGBA8 pixels" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    var pixels = [_]u8{
+        10,  20,  30,  255, 40, 50, 60, 255,
+        0,   0,   0,   0,   70, 80, 90, 255,
+        100, 110, 120, 255, 0,  0,  0,  0,
+    };
+    var image = c.mln_premultiplied_rgba8_image_default();
+    try testing.expectEqual(@as(u32, 0), image.width);
+    image.width = 2;
+    image.height = 2;
+    image.stride = 12;
+    image.pixels = &pixels;
+    image.byte_length = pixels.len;
+
+    var options = c.mln_style_image_options_default();
+    options.fields = c.MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO | c.MLN_STYLE_IMAGE_OPTION_SDF;
+    options.pixel_ratio = 2.0;
+    options.sdf = true;
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_image(map, stringView("runtime-icon"), &image, &options));
+    pixels[0] = 200;
+
+    var exists = false;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_style_image_exists(map, stringView("runtime-icon"), &exists));
+    try testing.expect(exists);
+
+    var found = false;
+    var info = c.mln_style_image_info_default();
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_image_info(map, stringView("runtime-icon"), &info, &found));
+    try testing.expect(found);
+    try testing.expectEqual(@as(u32, 2), info.width);
+    try testing.expectEqual(@as(u32, 2), info.height);
+    try testing.expectEqual(@as(u32, 8), info.stride);
+    try testing.expectEqual(@as(usize, 16), info.byte_length);
+    try testing.expectApproxEqAbs(@as(f32, 2.0), info.pixel_ratio, 0.000001);
+    try testing.expect(info.sdf);
+
+    var required: usize = 0;
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_copy_style_image_premultiplied_rgba8(map, stringView("runtime-icon"), null, 0, &required, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 16), required);
+
+    var copied: [16]u8 = undefined;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_copy_style_image_premultiplied_rgba8(map, stringView("runtime-icon"), &copied, copied.len, &required, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 16), required);
+    try testing.expect(std.mem.eql(u8, copied[0..], &[_]u8{
+        10, 20, 30, 255, 40,  50,  60,  255,
+        70, 80, 90, 255, 100, 110, 120, 255,
+    }));
+
+    var replacement_pixels = [_]u8{ 1, 2, 3, 4 };
+    image.width = 1;
+    image.height = 1;
+    image.stride = 4;
+    image.pixels = &replacement_pixels;
+    image.byte_length = replacement_pixels.len;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_image(map, stringView("runtime-icon"), &image, null));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_get_style_image_info(map, stringView("runtime-icon"), &info, &found));
+    try testing.expect(found);
+    try testing.expectEqual(@as(u32, 1), info.width);
+    try testing.expectEqual(@as(u32, 1), info.height);
+    try testing.expectEqual(@as(u32, 4), info.stride);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), info.pixel_ratio, 0.000001);
+    try testing.expect(!info.sdf);
+
+    var removed = false;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_remove_style_image(map, stringView("runtime-icon"), &removed));
+    try testing.expect(removed);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_style_image_exists(map, stringView("runtime-icon"), &exists));
+    try testing.expect(!exists);
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_remove_style_image(map, stringView("runtime-icon"), &removed));
+    try testing.expect(!removed);
+}

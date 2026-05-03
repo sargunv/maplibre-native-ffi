@@ -35,6 +35,7 @@
 #include <mbgl/style/conversion/light.hpp>   // IWYU pragma: keep
 #include <mbgl/style/conversion/source.hpp>  // IWYU pragma: keep
 #include <mbgl/style/conversion_impl.hpp>
+#include <mbgl/style/image.hpp>
 #include <mbgl/style/layer.hpp>
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
@@ -50,6 +51,7 @@
 #include <mbgl/util/constants.hpp>
 #include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
+#include <mbgl/util/image.hpp>
 #include <mbgl/util/projection.hpp>
 #include <mbgl/util/range.hpp>
 #include <mbgl/util/size.hpp>
@@ -455,6 +457,163 @@ auto validate_source_can_be_added(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   return MLN_STATUS_OK;
+}
+
+auto has_style_image_option(
+  const mln_style_image_options& options, uint32_t field
+) -> bool {
+  return (options.fields & field) != 0U;
+}
+
+auto validate_style_image_options(const mln_style_image_options* options)
+  -> mln_status {
+  if (options == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  if (options->size < sizeof(mln_style_image_options)) {
+    mln::core::set_thread_error("mln_style_image_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO) |
+    MLN_STYLE_IMAGE_OPTION_SDF;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_style_image_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    has_style_image_option(*options, MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO) &&
+    (!std::isfinite(options->pixel_ratio) || options->pixel_ratio <= 0.0F)
+  ) {
+    mln::core::set_thread_error("pixel_ratio must be finite and positive");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto effective_style_image_options(const mln_style_image_options* options)
+  -> mln_style_image_options {
+  auto result = mln::core::style_image_options_default();
+  if (options == nullptr) {
+    return result;
+  }
+  result.fields = options->fields;
+  if (has_style_image_option(*options, MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO)) {
+    result.pixel_ratio = options->pixel_ratio;
+  }
+  if (has_style_image_option(*options, MLN_STYLE_IMAGE_OPTION_SDF)) {
+    result.sdf = options->sdf;
+  }
+  return result;
+}
+
+auto required_premultiplied_rgba8_bytes(
+  uint32_t width, uint32_t height, uint32_t stride
+) -> std::optional<size_t> {
+  constexpr auto channels = size_t{4};
+  const auto row_bytes = static_cast<size_t>(width) * channels;
+  if (height == 0) {
+    return std::nullopt;
+  }
+  if (height == 1) {
+    return row_bytes;
+  }
+  const auto trailing_rows = static_cast<size_t>(height - 1U);
+  const auto row_stride = static_cast<size_t>(stride);
+  if (
+    trailing_rows >
+    (std::numeric_limits<size_t>::max() - row_bytes) / row_stride
+  ) {
+    return std::nullopt;
+  }
+  return (trailing_rows * row_stride) + row_bytes;
+}
+
+auto validate_premultiplied_rgba8_image(
+  const mln_premultiplied_rgba8_image* image
+) -> mln_status {
+  if (image == nullptr) {
+    mln::core::set_thread_error("image must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (image->size < sizeof(mln_premultiplied_rgba8_image)) {
+    mln::core::set_thread_error(
+      "mln_premultiplied_rgba8_image.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (image->width == 0 || image->height == 0) {
+    mln::core::set_thread_error("image dimensions must be positive");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  constexpr auto channels = uint32_t{4};
+  if (image->width > std::numeric_limits<uint32_t>::max() / channels) {
+    mln::core::set_thread_error("image row byte length overflows");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto row_bytes = image->width * channels;
+  if (image->stride < row_bytes) {
+    mln::core::set_thread_error("image stride must be at least width * 4");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (image->pixels == nullptr) {
+    mln::core::set_thread_error("image pixels must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto required = required_premultiplied_rgba8_bytes(
+    image->width, image->height, image->stride
+  );
+  if (!required || image->byte_length < *required) {
+    mln::core::set_thread_error("image byte_length is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto to_native_premultiplied_rgba8_image(
+  const mln_premultiplied_rgba8_image& image
+) -> mbgl::PremultipliedImage {
+  auto result = mbgl::PremultipliedImage{mbgl::Size{image.width, image.height}};
+  const auto output_stride = result.stride();
+  const auto row_bytes = static_cast<size_t>(image.width) * 4U;
+  const auto input = std::span<const uint8_t>{image.pixels, image.byte_length};
+  const auto output = std::span<uint8_t>{result.data.get(), result.bytes()};
+  for (auto row = uint32_t{0}; row < image.height; ++row) {
+    const auto input_offset = static_cast<size_t>(row) * image.stride;
+    const auto output_offset = static_cast<size_t>(row) * output_stride;
+    std::copy_n(
+      input.subspan(input_offset, row_bytes).begin(), row_bytes,
+      output.subspan(output_offset, row_bytes).begin()
+    );
+  }
+  return result;
+}
+
+auto validate_image_id(mln_string_view image_id) -> mln_status {
+  if (!validate_string_view(image_id, "image_id")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (image_id.size == 0) {
+    mln::core::set_thread_error("image_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto style_image_info_from_native(const mbgl::style::Image& image)
+  -> mln_style_image_info {
+  const auto& pixels = image.getImage();
+  return mln_style_image_info{
+    .size = sizeof(mln_style_image_info),
+    .width = pixels.size.width,
+    .height = pixels.size.height,
+    .stride = static_cast<uint32_t>(pixels.stride()),
+    .byte_length = pixels.bytes(),
+    .pixel_ratio = image.getPixelRatio(),
+    .sdf = image.isSdf()
+  };
 }
 
 auto create_style_id_list(
@@ -2047,6 +2206,39 @@ auto style_tile_source_options_default() noexcept
   };
 }
 
+auto premultiplied_rgba8_image_default() noexcept
+  -> mln_premultiplied_rgba8_image {
+  return mln_premultiplied_rgba8_image{
+    .size = sizeof(mln_premultiplied_rgba8_image),
+    .width = 0,
+    .height = 0,
+    .stride = 0,
+    .pixels = nullptr,
+    .byte_length = 0
+  };
+}
+
+auto style_image_options_default() noexcept -> mln_style_image_options {
+  return mln_style_image_options{
+    .size = sizeof(mln_style_image_options),
+    .fields = 0,
+    .pixel_ratio = 1.0F,
+    .sdf = false
+  };
+}
+
+auto style_image_info_default() noexcept -> mln_style_image_info {
+  return mln_style_image_info{
+    .size = sizeof(mln_style_image_info),
+    .width = 0,
+    .height = 0,
+    .stride = 0,
+    .byte_length = 0,
+    .pixel_ratio = 1.0F,
+    .sdf = false
+  };
+}
+
 auto validate_map(mln_map* map) -> mln_status {
   if (map == nullptr) {
     set_thread_error("map must not be null");
@@ -2935,6 +3127,151 @@ auto map_add_raster_source_tiles(
       id, *tileset, static_cast<uint16_t>(effective.tile_size)
     )
   );
+  return MLN_STATUS_OK;
+}
+
+auto map_set_style_image(
+  mln_map* map, mln_string_view image_id,
+  const mln_premultiplied_rgba8_image* image,
+  const mln_style_image_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto image_id_status = validate_image_id(image_id);
+  if (image_id_status != MLN_STATUS_OK) {
+    return image_id_status;
+  }
+  const auto image_status = validate_premultiplied_rgba8_image(image);
+  if (image_status != MLN_STATUS_OK) {
+    return image_status;
+  }
+  const auto options_status = validate_style_image_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  const auto effective = effective_style_image_options(options);
+  auto style_image = std::make_unique<mbgl::style::Image>(
+    string_from_view(image_id), to_native_premultiplied_rgba8_image(*image),
+    effective.pixel_ratio, effective.sdf
+  );
+  map->map->getStyle().addImage(std::move(style_image));
+  return MLN_STATUS_OK;
+}
+
+auto map_remove_style_image(
+  mln_map* map, mln_string_view image_id, bool* out_removed
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto image_id_status = validate_image_id(image_id);
+  if (image_id_status != MLN_STATUS_OK) {
+    return image_id_status;
+  }
+  if (out_removed == nullptr) {
+    set_thread_error("out_removed must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(image_id);
+  *out_removed = style.getImage(id).has_value();
+  if (*out_removed) {
+    style.removeImage(id);
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_style_image_exists(
+  mln_map* map, mln_string_view image_id, bool* out_exists
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto image_id_status = validate_image_id(image_id);
+  if (image_id_status != MLN_STATUS_OK) {
+    return image_id_status;
+  }
+  if (out_exists == nullptr) {
+    set_thread_error("out_exists must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_exists =
+    map->map->getStyle().getImage(string_from_view(image_id)).has_value();
+  return MLN_STATUS_OK;
+}
+
+auto map_get_style_image_info(
+  mln_map* map, mln_string_view image_id, mln_style_image_info* out_info,
+  bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto image_id_status = validate_image_id(image_id);
+  if (image_id_status != MLN_STATUS_OK) {
+    return image_id_status;
+  }
+  if (out_info == nullptr || out_info->size < sizeof(mln_style_image_info)) {
+    set_thread_error("out_info must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_found == nullptr) {
+    set_thread_error("out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto image = map->map->getStyle().getImage(string_from_view(image_id));
+  *out_found = image.has_value();
+  *out_info =
+    image ? style_image_info_from_native(*image) : style_image_info_default();
+  return MLN_STATUS_OK;
+}
+
+auto map_copy_style_image_premultiplied_rgba8(
+  mln_map* map, mln_string_view image_id, uint8_t* out_pixels,
+  size_t pixel_capacity, size_t* out_byte_length, bool* out_found
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto image_id_status = validate_image_id(image_id);
+  if (image_id_status != MLN_STATUS_OK) {
+    return image_id_status;
+  }
+  if (out_pixels == nullptr && pixel_capacity > 0) {
+    set_thread_error("out_pixels must not be null when capacity is non-zero");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_byte_length == nullptr || out_found == nullptr) {
+    set_thread_error("out_byte_length and out_found must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto image = map->map->getStyle().getImage(string_from_view(image_id));
+  *out_found = image.has_value();
+  *out_byte_length = 0;
+  if (!image) {
+    return MLN_STATUS_OK;
+  }
+
+  const auto& pixels = image->getImage();
+  *out_byte_length = pixels.bytes();
+  if (pixel_capacity < pixels.bytes()) {
+    set_thread_error("pixel_capacity is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (pixels.bytes() > 0) {
+    std::copy_n(pixels.data.get(), pixels.bytes(), out_pixels);
+  }
   return MLN_STATUS_OK;
 }
 

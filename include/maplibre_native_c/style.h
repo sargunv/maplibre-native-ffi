@@ -60,6 +60,12 @@ typedef enum mln_style_vector_tile_encoding : uint32_t {
   MLN_STYLE_VECTOR_TILE_ENCODING_MLT = 1,
 } mln_style_vector_tile_encoding;
 
+/** Field mask values for mln_style_image_options. */
+typedef enum mln_style_image_option_field : uint32_t {
+  MLN_STYLE_IMAGE_OPTION_PIXEL_RATIO = 1U << 0U,
+  MLN_STYLE_IMAGE_OPTION_SDF = 1U << 1U,
+} mln_style_image_option_field;
+
 /** Fixed source metadata returned by mln_map_get_style_source_info(). */
 typedef struct mln_style_source_info {
   uint32_t size;
@@ -89,9 +95,55 @@ typedef struct mln_style_tile_source_options {
   uint32_t vector_encoding;
 } mln_style_tile_source_options;
 
+/** Caller-owned premultiplied RGBA8 image pixels. */
+typedef struct mln_premultiplied_rgba8_image {
+  uint32_t size;
+  uint32_t width;
+  uint32_t height;
+  /** Bytes per image row. Must be at least width * 4. */
+  uint32_t stride;
+  /** Premultiplied RGBA8 pixels. Must not be null for a non-empty image. */
+  const uint8_t* pixels;
+  /** Available bytes at pixels. */
+  size_t byte_length;
+} mln_premultiplied_rgba8_image;
+
+/** Options for runtime style images. */
+typedef struct mln_style_image_options {
+  uint32_t size;
+  uint32_t fields;
+  /** Sprite pixel ratio. Defaults to 1. */
+  float pixel_ratio;
+  /** Whether the image is a signed distance field icon. Defaults to false. */
+  bool sdf;
+} mln_style_image_options;
+
+/** Fixed metadata for one runtime style image. */
+typedef struct mln_style_image_info {
+  uint32_t size;
+  uint32_t width;
+  uint32_t height;
+  /** Native copied images are exposed as tightly packed premultiplied RGBA8. */
+  uint32_t stride;
+  size_t byte_length;
+  float pixel_ratio;
+  bool sdf;
+} mln_style_image_info;
+
 /** Returns default tile source options. */
 MLN_API mln_style_tile_source_options
 mln_style_tile_source_options_default(void) MLN_NOEXCEPT;
+
+/** Returns a default premultiplied RGBA8 image descriptor. */
+MLN_API mln_premultiplied_rgba8_image
+mln_premultiplied_rgba8_image_default(void) MLN_NOEXCEPT;
+
+/** Returns default runtime style image options. */
+MLN_API mln_style_image_options
+mln_style_image_options_default(void) MLN_NOEXCEPT;
+
+/** Returns default runtime style image metadata. */
+MLN_API mln_style_image_info mln_style_image_info_default(void) MLN_NOEXCEPT;
 
 /**
  * Gets the number of IDs in a style ID list handle.
@@ -414,6 +466,109 @@ MLN_API mln_status mln_map_add_raster_source_url(
 MLN_API mln_status mln_map_add_raster_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
   size_t tile_count, const mln_style_tile_source_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Sets one runtime style image.
+ *
+ * image_id, image, and image pixels are borrowed for the call. The function
+ * copies accepted pixel bytes into the current style before return. If image_id
+ * already exists, the native image is replaced.
+ *
+ * Runtime style images belong to the current style. Loading another style URL
+ * or JSON document drops images that were added to the previous style.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, image_id is
+ *   invalid or empty, image or options is invalid, image pixels are null, image
+ *   dimensions or stride are invalid, or image byte_length is too small.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_set_style_image(
+  mln_map* map, mln_string_view image_id,
+  const mln_premultiplied_rgba8_image* image,
+  const mln_style_image_options* options
+) MLN_NOEXCEPT;
+
+/**
+ * Removes one runtime style image by ID.
+ *
+ * image_id is borrowed for the call. On success, out_removed reports whether an
+ * image existed and was removed.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, image_id is
+ *   invalid or empty, or out_removed is null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_remove_style_image(
+  mln_map* map, mln_string_view image_id, bool* out_removed
+) MLN_NOEXCEPT;
+
+/**
+ * Reports whether a runtime style image ID exists.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, image_id is
+ *   invalid or empty, or out_exists is null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_style_image_exists(
+  mln_map* map, mln_string_view image_id, bool* out_exists
+) MLN_NOEXCEPT;
+
+/**
+ * Copies fixed metadata for one runtime style image.
+ *
+ * On success, out_found reports whether image_id exists. When not found,
+ * out_info receives default image metadata.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, image_id is
+ *   invalid or empty, out_info is null, out_info->size is too small, or
+ *   out_found is null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_get_style_image_info(
+  mln_map* map, mln_string_view image_id, mln_style_image_info* out_info,
+  bool* out_found
+) MLN_NOEXCEPT;
+
+/**
+ * Copies one runtime style image as tightly packed premultiplied RGBA8 pixels.
+ *
+ * image_id is borrowed for the call. out_pixels may be null only when
+ * pixel_capacity is 0. On success, out_byte_length receives the required byte
+ * length. When out_found is false, out_byte_length receives 0. If
+ * pixel_capacity is too small for a present image, out_byte_length still
+ * receives the required byte length and the function returns
+ * MLN_STATUS_INVALID_ARGUMENT.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, image_id is
+ *   invalid or empty, out_pixels is null with non-zero capacity, pixel_capacity
+ *   is too small for a present image, out_byte_length is null, or out_found is
+ *   null.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
+ *   thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_copy_style_image_premultiplied_rgba8(
+  mln_map* map, mln_string_view image_id, uint8_t* out_pixels,
+  size_t pixel_capacity, size_t* out_byte_length, bool* out_found
 ) MLN_NOEXCEPT;
 
 /**

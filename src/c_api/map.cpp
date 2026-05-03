@@ -50,6 +50,19 @@ auto mln_style_tile_source_options_default(void) noexcept
   return mln::core::style_tile_source_options_default();
 }
 
+auto mln_premultiplied_rgba8_image_default(void) noexcept
+  -> mln_premultiplied_rgba8_image {
+  return mln::core::premultiplied_rgba8_image_default();
+}
+
+auto mln_style_image_options_default(void) noexcept -> mln_style_image_options {
+  return mln::core::style_image_options_default();
+}
+
+auto mln_style_image_info_default(void) noexcept -> mln_style_image_info {
+  return mln::core::style_image_info_default();
+}
+
 auto mln_map_create(
   mln_runtime* runtime, const mln_map_options* options, mln_map** out_map
 ) noexcept -> mln_status {
@@ -244,6 +257,54 @@ auto mln_map_add_raster_source_tiles(
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_add_raster_source_tiles(
       map, source_id, tiles, tile_count, options
+    );
+  });
+}
+
+auto mln_map_set_style_image(
+  mln_map* map, mln_string_view image_id,
+  const mln_premultiplied_rgba8_image* image,
+  const mln_style_image_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_style_image(map, image_id, image, options);
+  });
+}
+
+auto mln_map_remove_style_image(
+  mln_map* map, mln_string_view image_id, bool* out_removed
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_remove_style_image(map, image_id, out_removed);
+  });
+}
+
+auto mln_map_style_image_exists(
+  mln_map* map, mln_string_view image_id, bool* out_exists
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_style_image_exists(map, image_id, out_exists);
+  });
+}
+
+auto mln_map_get_style_image_info(
+  mln_map* map, mln_string_view image_id, mln_style_image_info* out_info,
+  bool* out_found
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_style_image_info(
+      map, image_id, out_info, out_found
+    );
+  });
+}
+
+auto mln_map_copy_style_image_premultiplied_rgba8(
+  mln_map* map, mln_string_view image_id, uint8_t* out_pixels,
+  size_t pixel_capacity, size_t* out_byte_length, bool* out_found
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_copy_style_image_premultiplied_rgba8(
+      map, image_id, out_pixels, pixel_capacity, out_byte_length, out_found
     );
   });
 }
