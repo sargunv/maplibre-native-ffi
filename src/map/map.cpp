@@ -2794,12 +2794,24 @@ auto map_add_vector_source_url(
     max_zoom = static_cast<float>(effective.max_zoom);
   }
 
-  style.addSource(
-    std::make_unique<mbgl::style::VectorSource>(
-      id, string_from_view(url), max_zoom, min_zoom,
-      to_native_vector_encoding(effective.vector_encoding)
+  if (
+    has_tile_source_option(
+      effective, MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING
     )
-  );
+  ) {
+    style.addSource(
+      std::make_unique<mbgl::style::VectorSource>(
+        id, string_from_view(url), max_zoom, min_zoom,
+        to_native_vector_encoding(effective.vector_encoding)
+      )
+    );
+  } else {
+    style.addSource(
+      std::make_unique<mbgl::style::VectorSource>(
+        id, string_from_view(url), max_zoom, min_zoom
+      )
+    );
+  }
   return MLN_STATUS_OK;
 }
 
