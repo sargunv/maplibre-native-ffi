@@ -6,17 +6,6 @@
 #ifndef MAPLIBRE_NATIVE_C_MAP_H
 #define MAPLIBRE_NATIVE_C_MAP_H
 
-// Public C ABI uses C enums.
-// NOLINTBEGIN(cppcoreguidelines-use-enum-class)
-// Public C ABI structs.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
-// Public C ABI includes C headers.
-// NOLINTBEGIN(modernize-deprecated-headers)
-// Public C ABI return syntax.
-// NOLINTBEGIN(modernize-use-trailing-return-type)
-// Public C ABI typedefs.
-// NOLINTBEGIN(modernize-use-using)
-
 #ifndef __cplusplus
 #include <stdbool.h>
 #endif
@@ -983,11 +972,5 @@ mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
 #ifdef __cplusplus
 }
 #endif
-
-// NOLINTEND(modernize-use-using)
-// NOLINTEND(modernize-use-trailing-return-type)
-// NOLINTEND(modernize-deprecated-headers)
-// NOLINTEND(cppcoreguidelines-pro-type-member-init)
-// NOLINTEND(cppcoreguidelines-use-enum-class)
 
 #endif  // MAPLIBRE_NATIVE_C_MAP_H

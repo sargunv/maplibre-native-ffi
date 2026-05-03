@@ -6,17 +6,6 @@
 #ifndef MAPLIBRE_NATIVE_C_RENDER_SESSION_H
 #define MAPLIBRE_NATIVE_C_RENDER_SESSION_H
 
-// Public C ABI uses C enums.
-// NOLINTBEGIN(cppcoreguidelines-use-enum-class)
-// Public C ABI structs.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
-// Public C ABI includes C headers.
-// NOLINTBEGIN(modernize-deprecated-headers)
-// Public C ABI return syntax.
-// NOLINTBEGIN(modernize-use-trailing-return-type)
-// Public C ABI typedefs.
-// NOLINTBEGIN(modernize-use-using)
-
 #include <stdint.h>
 
 #include "base.h"
@@ -252,11 +241,5 @@ MLN_API void mln_json_snapshot_destroy(
 #ifdef __cplusplus
 }
 #endif
-
-// NOLINTEND(modernize-use-using)
-// NOLINTEND(modernize-use-trailing-return-type)
-// NOLINTEND(modernize-deprecated-headers)
-// NOLINTEND(cppcoreguidelines-pro-type-member-init)
-// NOLINTEND(cppcoreguidelines-use-enum-class)
 
 #endif  // MAPLIBRE_NATIVE_C_RENDER_SESSION_H
