@@ -38,10 +38,13 @@
 #include <mbgl/style/conversion_impl.hpp>
 #include <mbgl/style/image.hpp>
 #include <mbgl/style/layer.hpp>
+#include <mbgl/style/layers/color_relief_layer.hpp>
+#include <mbgl/style/layers/hillshade_layer.hpp>
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
 #include <mbgl/style/sources/geojson_source.hpp>
 #include <mbgl/style/sources/image_source.hpp>
+#include <mbgl/style/sources/raster_dem_source.hpp>
 #include <mbgl/style/sources/raster_source.hpp>
 #include <mbgl/style/sources/vector_source.hpp>
 #include <mbgl/style/style.hpp>
@@ -78,6 +81,8 @@ using ProjectionRegistry =
   std::unordered_map<mln_map_projection*, std::unique_ptr<mln_map_projection>>;
 using StyleIdListRegistry = std::unordered_map<
   const mln_style_id_list*, std::unique_ptr<mln_style_id_list>>;
+
+enum class TileSourceOptionKind : uint8_t { Vector, Raster, RasterDEM };
 
 constexpr auto default_map_width = uint32_t{256};
 constexpr auto default_map_height = uint32_t{256};
@@ -198,7 +203,8 @@ auto validate_tile_source_option_header(
     MLN_STYLE_TILE_SOURCE_OPTION_ATTRIBUTION |
     MLN_STYLE_TILE_SOURCE_OPTION_SCHEME | MLN_STYLE_TILE_SOURCE_OPTION_BOUNDS |
     MLN_STYLE_TILE_SOURCE_OPTION_TILE_SIZE |
-    MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING;
+    MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING |
+    MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING;
   if ((options.fields & ~known_fields) != 0U) {
     mln::core::set_thread_error(
       "mln_style_tile_source_options.fields contains unknown bits"
@@ -307,8 +313,55 @@ auto validate_tile_source_vector_encoding_option(
   }
 }
 
-auto validate_tile_source_options(const mln_style_tile_source_options* options)
-  -> mln_status {
+auto validate_tile_source_raster_encoding_option(
+  const mln_style_tile_source_options& options
+) -> mln_status {
+  if (!has_tile_source_option(
+        options, MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING
+      )) {
+    return MLN_STATUS_OK;
+  }
+  switch (options.raster_encoding) {
+    case MLN_STYLE_RASTER_DEM_ENCODING_MAPBOX:
+    case MLN_STYLE_RASTER_DEM_ENCODING_TERRARIUM:
+      return MLN_STATUS_OK;
+    default:
+      mln::core::set_thread_error("raster_encoding is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+}
+
+auto validate_tile_source_option_kind(
+  const mln_style_tile_source_options& options, TileSourceOptionKind kind
+) -> mln_status {
+  if (
+    kind != TileSourceOptionKind::Vector &&
+    has_tile_source_option(
+      options, MLN_STYLE_TILE_SOURCE_OPTION_VECTOR_ENCODING
+    )
+  ) {
+    mln::core::set_thread_error(
+      "vector_encoding is only valid for vector sources"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    kind != TileSourceOptionKind::RasterDEM &&
+    has_tile_source_option(
+      options, MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING
+    )
+  ) {
+    mln::core::set_thread_error(
+      "raster_encoding is only valid for raster DEM sources"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_tile_source_options(
+  const mln_style_tile_source_options* options, TileSourceOptionKind kind
+) -> mln_status {
   if (options == nullptr) {
     return MLN_STATUS_OK;
   }
@@ -320,13 +373,14 @@ auto validate_tile_source_options(const mln_style_tile_source_options* options)
          validate_tile_source_bounds_option,
          validate_tile_source_tile_size_option,
          validate_tile_source_vector_encoding_option,
+         validate_tile_source_raster_encoding_option,
        }) {
     const auto status = validator(*options);
     if (status != MLN_STATUS_OK) {
       return status;
     }
   }
-  return MLN_STATUS_OK;
+  return validate_tile_source_option_kind(*options, kind);
 }
 
 auto effective_tile_source_options(const mln_style_tile_source_options* options)
@@ -366,6 +420,13 @@ auto effective_tile_source_options(const mln_style_tile_source_options* options)
   ) {
     result.vector_encoding = options->vector_encoding;
   }
+  if (
+    has_tile_source_option(
+      *options, MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING
+    )
+  ) {
+    result.raster_encoding = options->raster_encoding;
+  }
   return result;
 }
 
@@ -379,6 +440,13 @@ auto to_native_vector_encoding(uint32_t encoding)
   return encoding == MLN_STYLE_VECTOR_TILE_ENCODING_MLT
            ? mbgl::Tileset::VectorEncoding::MLT
            : mbgl::Tileset::VectorEncoding::Mapbox;
+}
+
+auto to_native_raster_encoding(uint32_t encoding)
+  -> mbgl::Tileset::RasterEncoding {
+  return encoding == MLN_STYLE_RASTER_DEM_ENCODING_TERRARIUM
+           ? mbgl::Tileset::RasterEncoding::Terrarium
+           : mbgl::Tileset::RasterEncoding::Mapbox;
 }
 
 auto validate_tile_urls(const mln_string_view* tiles, size_t tile_count)
@@ -2258,7 +2326,8 @@ auto style_tile_source_options_default() noexcept
       {.southwest = {.latitude = 0, .longitude = 0},
        .northeast = {.latitude = 0, .longitude = 0}},
     .tile_size = mbgl::util::tileSize_I,
-    .vector_encoding = MLN_STYLE_VECTOR_TILE_ENCODING_MVT
+    .vector_encoding = MLN_STYLE_VECTOR_TILE_ENCODING_MVT,
+    .raster_encoding = MLN_STYLE_RASTER_DEM_ENCODING_MAPBOX
   };
 }
 
@@ -3016,7 +3085,8 @@ auto map_add_vector_source_url(
     set_thread_error("url must not be empty");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  const auto options_status = validate_tile_source_options(options);
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::Vector);
   if (options_status != MLN_STATUS_OK) {
     return options_status;
   }
@@ -3079,7 +3149,8 @@ auto map_add_vector_source_tiles(
   if (tiles_status != MLN_STATUS_OK) {
     return tiles_status;
   }
-  const auto options_status = validate_tile_source_options(options);
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::Vector);
   if (options_status != MLN_STATUS_OK) {
     return options_status;
   }
@@ -3124,7 +3195,8 @@ auto map_add_raster_source_url(
     set_thread_error("url must not be empty");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
-  const auto options_status = validate_tile_source_options(options);
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::Raster);
   if (options_status != MLN_STATUS_OK) {
     return options_status;
   }
@@ -3161,7 +3233,8 @@ auto map_add_raster_source_tiles(
   if (tiles_status != MLN_STATUS_OK) {
     return tiles_status;
   }
-  const auto options_status = validate_tile_source_options(options);
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::Raster);
   if (options_status != MLN_STATUS_OK) {
     return options_status;
   }
@@ -3180,6 +3253,108 @@ auto map_add_raster_source_tiles(
   }
   style.addSource(
     std::make_unique<mbgl::style::RasterSource>(
+      id, *tileset, static_cast<uint16_t>(effective.tile_size)
+    )
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_raster_dem_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  if (!validate_string_view(url, "url")) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (url.size == 0) {
+    set_thread_error("url must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::RasterDEM);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  auto source_options = std::optional<mbgl::style::SourceOptions>{};
+  if (
+    has_tile_source_option(
+      effective, MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING
+    )
+  ) {
+    source_options = mbgl::style::SourceOptions{
+      .rasterEncoding = to_native_raster_encoding(effective.raster_encoding)
+    };
+  }
+  style.addSource(
+    std::make_unique<mbgl::style::RasterDEMSource>(
+      id, string_from_view(url), static_cast<uint16_t>(effective.tile_size),
+      source_options
+    )
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_raster_dem_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto tiles_status = validate_tile_urls(tiles, tile_count);
+  if (tiles_status != MLN_STATUS_OK) {
+    return tiles_status;
+  }
+  const auto options_status =
+    validate_tile_source_options(options, TileSourceOptionKind::RasterDEM);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_tile_source_options(options);
+  auto tileset = to_native_tileset(tiles, tile_count, effective, false);
+  if (!tileset) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    has_tile_source_option(
+      effective, MLN_STYLE_TILE_SOURCE_OPTION_RASTER_ENCODING
+    )
+  ) {
+    tileset->rasterEncoding =
+      to_native_raster_encoding(effective.raster_encoding);
+  }
+  style.addSource(
+    std::make_unique<mbgl::style::RasterDEMSource>(
       id, *tileset, static_cast<uint16_t>(effective.tile_size)
     )
   );
@@ -3559,6 +3734,108 @@ auto map_get_image_source_coordinates(
     from_native_image_source_coordinates(image_source->getCoordinates());
   auto output = std::span<mln_lat_lng>{out_coordinates, coordinate_capacity};
   std::ranges::copy(coordinates, output.begin());
+  return MLN_STATUS_OK;
+}
+
+auto map_add_hillshade_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(source_id, "source_id") ||
+    !validate_string_view(before_layer_id, "before_layer_id")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0 || source_id.size == 0) {
+    set_thread_error("layer_id and source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto layer = string_from_view(layer_id);
+  const auto source = string_from_view(source_id);
+  if (style.getLayer(layer) != nullptr) {
+    set_thread_error("layer already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* source_ptr = style.getSource(source);
+  if (source_ptr == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!source_ptr->is<mbgl::style::RasterDEMSource>()) {
+    set_thread_error("source is not a raster DEM source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto before = std::optional<std::string>{};
+  if (before_layer_id.size > 0) {
+    before = string_from_view(before_layer_id);
+    if (style.getLayer(*before) == nullptr) {
+      set_thread_error("before_layer_id does not exist");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  style.addLayer(
+    std::make_unique<mbgl::style::HillshadeLayer>(layer, source), before
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_color_relief_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    !validate_string_view(layer_id, "layer_id") ||
+    !validate_string_view(source_id, "source_id") ||
+    !validate_string_view(before_layer_id, "before_layer_id")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (layer_id.size == 0 || source_id.size == 0) {
+    set_thread_error("layer_id and source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto layer = string_from_view(layer_id);
+  const auto source = string_from_view(source_id);
+  if (style.getLayer(layer) != nullptr) {
+    set_thread_error("layer already exists");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* source_ptr = style.getSource(source);
+  if (source_ptr == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!source_ptr->is<mbgl::style::RasterDEMSource>()) {
+    set_thread_error("source is not a raster DEM source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto before = std::optional<std::string>{};
+  if (before_layer_id.size > 0) {
+    before = string_from_view(before_layer_id);
+    if (style.getLayer(*before) == nullptr) {
+      set_thread_error("before_layer_id does not exist");
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  style.addLayer(
+    std::make_unique<mbgl::style::ColorReliefLayer>(layer, source), before
+  );
   return MLN_STATUS_OK;
 }
 

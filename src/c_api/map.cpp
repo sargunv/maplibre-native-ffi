@@ -261,6 +261,28 @@ auto mln_map_add_raster_source_tiles(
   });
 }
 
+auto mln_map_add_raster_dem_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url,
+  const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_raster_dem_source_url(
+      map, source_id, url, options
+    );
+  });
+}
+
+auto mln_map_add_raster_dem_source_tiles(
+  mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
+  size_t tile_count, const mln_style_tile_source_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_raster_dem_source_tiles(
+      map, source_id, tiles, tile_count, options
+    );
+  });
+}
+
 auto mln_map_set_style_image(
   mln_map* map, mln_string_view image_id,
   const mln_premultiplied_rgba8_image* image,
@@ -367,6 +389,28 @@ auto mln_map_get_image_source_coordinates(
     return mln::core::map_get_image_source_coordinates(
       map, source_id, out_coordinates, coordinate_capacity,
       out_coordinate_count, out_found
+    );
+  });
+}
+
+auto mln_map_add_hillshade_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_hillshade_layer(
+      map, layer_id, source_id, before_layer_id
+    );
+  });
+}
+
+auto mln_map_add_color_relief_layer(
+  mln_map* map, mln_string_view layer_id, mln_string_view source_id,
+  mln_string_view before_layer_id
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_color_relief_layer(
+      map, layer_id, source_id, before_layer_id
     );
   });
 }
