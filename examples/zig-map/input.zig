@@ -11,6 +11,9 @@ const DragMode = enum {
     pitch,
 };
 
+const keyboard_animation_ms = 160.0;
+const reset_animation_ms = 220.0;
+
 pub const Result = struct {
     handled: bool = false,
     camera_changed: bool = false,
@@ -136,6 +139,7 @@ fn handleKeyDown(
     const zoom_step = 1.25;
     const bearing_step = 10.0;
     const pitch_step = 5.0;
+    var animation = cameraAnimation(keyboard_animation_ms);
     const center = point(
         @as(f64, @floatFromInt(current_viewport.logical_width)) / 2.0,
         @as(f64, @floatFromInt(current_viewport.logical_height)) / 2.0,
@@ -143,32 +147,35 @@ fn handleKeyDown(
 
     switch (key.scancode) {
         scancode(c.SDL_SCANCODE_LEFT), scancode(c.SDL_SCANCODE_A) => {
-            try expectCameraStatus(c.mln_map_move_by(map, pan_step, 0), "keyboard pan failed");
+            try expectCameraStatus(c.mln_map_move_by_animated(map, pan_step, 0, &animation), "keyboard pan failed");
         },
         scancode(c.SDL_SCANCODE_RIGHT), scancode(c.SDL_SCANCODE_D) => {
-            try expectCameraStatus(c.mln_map_move_by(map, -pan_step, 0), "keyboard pan failed");
+            try expectCameraStatus(c.mln_map_move_by_animated(map, -pan_step, 0, &animation), "keyboard pan failed");
         },
         scancode(c.SDL_SCANCODE_UP), scancode(c.SDL_SCANCODE_W) => {
-            try expectCameraStatus(c.mln_map_move_by(map, 0, pan_step), "keyboard pan failed");
+            try expectCameraStatus(c.mln_map_move_by_animated(map, 0, pan_step, &animation), "keyboard pan failed");
         },
         scancode(c.SDL_SCANCODE_DOWN), scancode(c.SDL_SCANCODE_S) => {
-            try expectCameraStatus(c.mln_map_move_by(map, 0, -pan_step), "keyboard pan failed");
+            try expectCameraStatus(c.mln_map_move_by_animated(map, 0, -pan_step, &animation), "keyboard pan failed");
         },
         scancode(c.SDL_SCANCODE_EQUALS), scancode(c.SDL_SCANCODE_KP_PLUS) => {
-            try expectCameraStatus(c.mln_map_scale_by(map, zoom_step, &center), "keyboard zoom failed");
+            try expectCameraStatus(c.mln_map_scale_by_animated(map, zoom_step, &center, &animation), "keyboard zoom failed");
         },
         scancode(c.SDL_SCANCODE_MINUS), scancode(c.SDL_SCANCODE_KP_MINUS) => {
-            try expectCameraStatus(c.mln_map_scale_by(map, 1.0 / zoom_step, &center), "keyboard zoom failed");
+            try expectCameraStatus(c.mln_map_scale_by_animated(map, 1.0 / zoom_step, &center, &animation), "keyboard zoom failed");
         },
-        scancode(c.SDL_SCANCODE_Q) => try adjustBearing(map, -bearing_step),
-        scancode(c.SDL_SCANCODE_E) => try adjustBearing(map, bearing_step),
+        scancode(c.SDL_SCANCODE_Q) => try adjustBearingAnimated(map, -bearing_step, &animation),
+        scancode(c.SDL_SCANCODE_E) => try adjustBearingAnimated(map, bearing_step, &animation),
         scancode(c.SDL_SCANCODE_PAGEUP), scancode(c.SDL_SCANCODE_RIGHTBRACKET) => {
-            try adjustPitch(map, pitch_step);
+            try adjustPitchAnimated(map, pitch_step, &animation);
         },
         scancode(c.SDL_SCANCODE_PAGEDOWN), scancode(c.SDL_SCANCODE_LEFTBRACKET) => {
-            try adjustPitch(map, -pitch_step);
+            try adjustPitchAnimated(map, -pitch_step, &animation);
         },
-        scancode(c.SDL_SCANCODE_0) => try resetPitchAndBearing(map),
+        scancode(c.SDL_SCANCODE_0) => {
+            var reset_animation = cameraAnimation(reset_animation_ms);
+            try resetPitchAndBearingAnimated(map, &reset_animation);
+        },
         else => return .{},
     }
 
@@ -191,6 +198,13 @@ fn adjustBearing(map: *c.mln_map, delta: f64) !void {
     try expectCameraStatus(c.mln_map_jump_to(map, &camera), "keyboard rotate failed");
 }
 
+fn adjustBearingAnimated(map: *c.mln_map, delta: f64, animation: *const c.mln_animation_options) !void {
+    var camera = try currentCamera(map);
+    camera.fields = c.MLN_CAMERA_OPTION_BEARING;
+    camera.bearing += delta;
+    try expectCameraStatus(c.mln_map_ease_to(map, &camera, animation), "keyboard rotate failed");
+}
+
 fn adjustPitch(map: *c.mln_map, delta: f64) !void {
     var camera = try currentCamera(map);
     camera.fields = c.MLN_CAMERA_OPTION_PITCH;
@@ -198,12 +212,19 @@ fn adjustPitch(map: *c.mln_map, delta: f64) !void {
     try expectCameraStatus(c.mln_map_jump_to(map, &camera), "keyboard pitch failed");
 }
 
-fn resetPitchAndBearing(map: *c.mln_map) !void {
+fn adjustPitchAnimated(map: *c.mln_map, delta: f64, animation: *const c.mln_animation_options) !void {
+    var camera = try currentCamera(map);
+    camera.fields = c.MLN_CAMERA_OPTION_PITCH;
+    camera.pitch = clamp(camera.pitch + delta, 0.0, 60.0);
+    try expectCameraStatus(c.mln_map_ease_to(map, &camera, animation), "keyboard pitch failed");
+}
+
+fn resetPitchAndBearingAnimated(map: *c.mln_map, animation: *const c.mln_animation_options) !void {
     var camera = c.mln_camera_options_default();
     camera.fields = c.MLN_CAMERA_OPTION_BEARING | c.MLN_CAMERA_OPTION_PITCH;
     camera.bearing = 0;
     camera.pitch = 0;
-    try expectCameraStatus(c.mln_map_jump_to(map, &camera), "camera reset failed");
+    try expectCameraStatus(c.mln_map_ease_to(map, &camera, animation), "camera reset failed");
 }
 
 fn currentCamera(map: *c.mln_map) !c.mln_camera_options {
@@ -220,6 +241,13 @@ fn expectCameraStatus(status: c.mln_status, message: []const u8) !void {
 
 fn point(x: f64, y: f64) c.mln_screen_point {
     return .{ .x = x, .y = y };
+}
+
+fn cameraAnimation(duration_ms: f64) c.mln_animation_options {
+    var animation = c.mln_animation_options_default();
+    animation.fields = c.MLN_ANIMATION_OPTION_DURATION;
+    animation.duration_ms = duration_ms;
+    return animation;
 }
 
 fn scancode(value: c_int) c.SDL_Scancode {

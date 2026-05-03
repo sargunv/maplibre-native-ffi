@@ -16,6 +16,22 @@ auto mln_camera_options_default(void) noexcept -> mln_camera_options {
   return mln::core::camera_options_default();
 }
 
+auto mln_animation_options_default(void) noexcept -> mln_animation_options {
+  return mln::core::animation_options_default();
+}
+
+auto mln_camera_fit_options_default(void) noexcept -> mln_camera_fit_options {
+  return mln::core::camera_fit_options_default();
+}
+
+auto mln_bound_options_default(void) noexcept -> mln_bound_options {
+  return mln::core::bound_options_default();
+}
+
+auto mln_free_camera_options_default(void) noexcept -> mln_free_camera_options {
+  return mln::core::free_camera_options_default();
+}
+
 auto mln_projection_mode_default(void) noexcept -> mln_projection_mode {
   return mln::core::projection_mode_default();
 }
@@ -80,6 +96,24 @@ auto mln_map_jump_to(mln_map* map, const mln_camera_options* camera) noexcept
   -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_jump_to(map, camera);
+  });
+}
+
+auto mln_map_ease_to(
+  mln_map* map, const mln_camera_options* camera,
+  const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_ease_to(map, camera, animation);
+  });
+}
+
+auto mln_map_fly_to(
+  mln_map* map, const mln_camera_options* camera,
+  const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_fly_to(map, camera, animation);
   });
 }
 
@@ -310,11 +344,29 @@ auto mln_map_move_by(mln_map* map, double delta_x, double delta_y) noexcept
   });
 }
 
+auto mln_map_move_by_animated(
+  mln_map* map, double delta_x, double delta_y,
+  const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_move_by_animated(map, delta_x, delta_y, animation);
+  });
+}
+
 auto mln_map_scale_by(
   mln_map* map, double scale, const mln_screen_point* anchor
 ) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_scale_by(map, scale, anchor);
+  });
+}
+
+auto mln_map_scale_by_animated(
+  mln_map* map, double scale, const mln_screen_point* anchor,
+  const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_scale_by_animated(map, scale, anchor, animation);
   });
 }
 
@@ -326,14 +378,112 @@ auto mln_map_rotate_by(
   });
 }
 
+auto mln_map_rotate_by_animated(
+  mln_map* map, mln_screen_point first, mln_screen_point second,
+  const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_rotate_by_animated(map, first, second, animation);
+  });
+}
+
 auto mln_map_pitch_by(mln_map* map, double pitch) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_pitch_by(map, pitch);
   });
 }
 
+auto mln_map_pitch_by_animated(
+  mln_map* map, double pitch, const mln_animation_options* animation
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_pitch_by_animated(map, pitch, animation);
+  });
+}
+
 auto mln_map_cancel_transitions(mln_map* map) noexcept -> mln_status {
   return mln::c_api::status_boundary([&]() -> mln_status {
     return mln::core::map_cancel_transitions(map);
+  });
+}
+
+auto mln_map_camera_for_lat_lng_bounds(
+  mln_map* map, mln_lat_lng_bounds bounds,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_camera_for_lat_lng_bounds(
+      map, bounds, fit_options, out_camera
+    );
+  });
+}
+
+auto mln_map_camera_for_lat_lngs(
+  mln_map* map, const mln_lat_lng* coordinates, size_t coordinate_count,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_camera_for_lat_lngs(
+      map, coordinates, coordinate_count, fit_options, out_camera
+    );
+  });
+}
+
+auto mln_map_camera_for_geometry(
+  mln_map* map, const mln_geometry* geometry,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_camera_for_geometry(
+      map, geometry, fit_options, out_camera
+    );
+  });
+}
+
+auto mln_map_lat_lng_bounds_for_camera(
+  mln_map* map, const mln_camera_options* camera, mln_lat_lng_bounds* out_bounds
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_lat_lng_bounds_for_camera(map, camera, out_bounds);
+  });
+}
+
+auto mln_map_lat_lng_bounds_for_camera_unwrapped(
+  mln_map* map, const mln_camera_options* camera, mln_lat_lng_bounds* out_bounds
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_lat_lng_bounds_for_camera_unwrapped(
+      map, camera, out_bounds
+    );
+  });
+}
+
+auto mln_map_get_bounds(mln_map* map, mln_bound_options* out_options) noexcept
+  -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_bounds(map, out_options);
+  });
+}
+
+auto mln_map_set_bounds(mln_map* map, const mln_bound_options* options) noexcept
+  -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_bounds(map, options);
+  });
+}
+
+auto mln_map_get_free_camera_options(
+  mln_map* map, mln_free_camera_options* out_options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_free_camera_options(map, out_options);
+  });
+}
+
+auto mln_map_set_free_camera_options(
+  mln_map* map, const mln_free_camera_options* options
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_free_camera_options(map, options);
   });
 }

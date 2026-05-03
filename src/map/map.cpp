@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -7,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <ratio>
 #include <span>
 #include <string>
 #include <thread>
@@ -16,6 +18,7 @@
 
 #include <mbgl/actor/scheduler.hpp>
 #include <mbgl/gfx/rendering_stats.hpp>
+#include <mbgl/map/bound_options.hpp>
 #include <mbgl/map/camera.hpp>
 #include <mbgl/map/map.hpp>
 #include <mbgl/map/map_observer.hpp>
@@ -29,9 +32,11 @@
 #include <mbgl/style/style.hpp>
 #include <mbgl/tile/tile_id.hpp>
 #include <mbgl/tile/tile_operation.hpp>
+#include <mbgl/util/chrono.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/projection.hpp>
 #include <mbgl/util/size.hpp>
+#include <mbgl/util/vectors.hpp>
 
 #include "map/map.hpp"
 
@@ -399,6 +404,11 @@ auto exception_message(std::exception_ptr error) -> std::string {
   }
 }
 
+auto validate_lat_lng(mln_lat_lng coordinate) -> mln_status;
+auto validate_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mln_status;
+auto validate_edge_insets(mln_edge_insets padding) -> mln_status;
+auto validate_screen_point(mln_screen_point point) -> mln_status;
+
 auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
   if (camera == nullptr) {
     mln::core::set_thread_error("camera must not be null");
@@ -412,7 +422,9 @@ auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
 
   constexpr auto known_fields =
     static_cast<uint32_t>(MLN_CAMERA_OPTION_CENTER) | MLN_CAMERA_OPTION_ZOOM |
-    MLN_CAMERA_OPTION_BEARING | MLN_CAMERA_OPTION_PITCH;
+    MLN_CAMERA_OPTION_BEARING | MLN_CAMERA_OPTION_PITCH |
+    MLN_CAMERA_OPTION_CENTER_ALTITUDE | MLN_CAMERA_OPTION_PADDING |
+    MLN_CAMERA_OPTION_ANCHOR | MLN_CAMERA_OPTION_ROLL | MLN_CAMERA_OPTION_FOV;
   if ((camera->fields & ~known_fields) != 0U) {
     mln::core::set_thread_error(
       "mln_camera_options.fields contains unknown bits"
@@ -420,6 +432,272 @@ auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
+  if ((camera->fields & MLN_CAMERA_OPTION_CENTER) != 0U) {
+    const auto status = validate_lat_lng(
+      mln_lat_lng{.latitude = camera->latitude, .longitude = camera->longitude}
+    );
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (
+    ((camera->fields & MLN_CAMERA_OPTION_CENTER_ALTITUDE) != 0U &&
+     !std::isfinite(camera->center_altitude)) ||
+    ((camera->fields & MLN_CAMERA_OPTION_ZOOM) != 0U &&
+     !std::isfinite(camera->zoom)) ||
+    ((camera->fields & MLN_CAMERA_OPTION_BEARING) != 0U &&
+     !std::isfinite(camera->bearing)) ||
+    ((camera->fields & MLN_CAMERA_OPTION_PITCH) != 0U &&
+     !std::isfinite(camera->pitch)) ||
+    ((camera->fields & MLN_CAMERA_OPTION_ROLL) != 0U &&
+     !std::isfinite(camera->roll)) ||
+    ((camera->fields & MLN_CAMERA_OPTION_FOV) != 0U &&
+     !std::isfinite(camera->field_of_view))
+  ) {
+    mln::core::set_thread_error("enabled camera numeric fields must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((camera->fields & MLN_CAMERA_OPTION_PADDING) != 0U) {
+    const auto status = validate_edge_insets(camera->padding);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if ((camera->fields & MLN_CAMERA_OPTION_ANCHOR) != 0U) {
+    const auto status = validate_screen_point(camera->anchor);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+
+  return MLN_STATUS_OK;
+}
+
+auto validate_animation_options(const mln_animation_options* animation)
+  -> mln_status {
+  if (animation == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  if (animation->size < sizeof(mln_animation_options)) {
+    mln::core::set_thread_error("mln_animation_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_ANIMATION_OPTION_DURATION) |
+    MLN_ANIMATION_OPTION_VELOCITY | MLN_ANIMATION_OPTION_MIN_ZOOM |
+    MLN_ANIMATION_OPTION_EASING;
+  if ((animation->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_animation_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (animation->fields & MLN_ANIMATION_OPTION_DURATION) != 0U &&
+    (!std::isfinite(animation->duration_ms) || animation->duration_ms < 0.0)
+  ) {
+    mln::core::set_thread_error(
+      "animation duration_ms must be finite and greater than or equal to 0"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (animation->fields & MLN_ANIMATION_OPTION_VELOCITY) != 0U &&
+    (!std::isfinite(animation->velocity) || animation->velocity <= 0.0)
+  ) {
+    mln::core::set_thread_error(
+      "animation velocity must be positive and finite"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (animation->fields & MLN_ANIMATION_OPTION_MIN_ZOOM) != 0U &&
+    !std::isfinite(animation->min_zoom)
+  ) {
+    mln::core::set_thread_error("animation min_zoom must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((animation->fields & MLN_ANIMATION_OPTION_EASING) != 0U) {
+    const auto easing = animation->easing;
+    if (
+      !std::isfinite(easing.x1) || !std::isfinite(easing.y1) ||
+      !std::isfinite(easing.x2) || !std::isfinite(easing.y2) ||
+      easing.x1 < 0.0 || easing.x1 > 1.0 || easing.x2 < 0.0 || easing.x2 > 1.0
+    ) {
+      mln::core::set_thread_error(
+        "animation easing x values must be within [0, 1] and all easing values "
+        "must be finite"
+      );
+      return MLN_STATUS_INVALID_ARGUMENT;
+    }
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_camera_fit_options(const mln_camera_fit_options* options)
+  -> mln_status {
+  if (options == nullptr) {
+    return MLN_STATUS_OK;
+  }
+  if (options->size < sizeof(mln_camera_fit_options)) {
+    mln::core::set_thread_error("mln_camera_fit_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_CAMERA_FIT_OPTION_PADDING) |
+    MLN_CAMERA_FIT_OPTION_BEARING | MLN_CAMERA_FIT_OPTION_PITCH;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_camera_fit_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((options->fields & MLN_CAMERA_FIT_OPTION_PADDING) != 0U) {
+    const auto status = validate_edge_insets(options->padding);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (
+    ((options->fields & MLN_CAMERA_FIT_OPTION_BEARING) != 0U &&
+     !std::isfinite(options->bearing)) ||
+    ((options->fields & MLN_CAMERA_FIT_OPTION_PITCH) != 0U &&
+     !std::isfinite(options->pitch))
+  ) {
+    mln::core::set_thread_error("camera fit bearing and pitch must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_bound_options(const mln_bound_options* options) -> mln_status {
+  if (options == nullptr) {
+    mln::core::set_thread_error("bound options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->size < sizeof(mln_bound_options)) {
+    mln::core::set_thread_error("mln_bound_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_BOUND_OPTION_BOUNDS) | MLN_BOUND_OPTION_MIN_ZOOM |
+    MLN_BOUND_OPTION_MAX_ZOOM | MLN_BOUND_OPTION_MIN_PITCH |
+    MLN_BOUND_OPTION_MAX_PITCH;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_bound_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((options->fields & MLN_BOUND_OPTION_BOUNDS) != 0U) {
+    const auto status = validate_lat_lng_bounds(options->bounds);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (
+    ((options->fields & MLN_BOUND_OPTION_MIN_ZOOM) != 0U &&
+     !std::isfinite(options->min_zoom)) ||
+    ((options->fields & MLN_BOUND_OPTION_MAX_ZOOM) != 0U &&
+     !std::isfinite(options->max_zoom)) ||
+    ((options->fields & MLN_BOUND_OPTION_MIN_PITCH) != 0U &&
+     !std::isfinite(options->min_pitch)) ||
+    ((options->fields & MLN_BOUND_OPTION_MAX_PITCH) != 0U &&
+     !std::isfinite(options->max_pitch))
+  ) {
+    mln::core::set_thread_error("bound numeric fields must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (options->fields & MLN_BOUND_OPTION_MIN_ZOOM) != 0U &&
+    (options->fields & MLN_BOUND_OPTION_MAX_ZOOM) != 0U &&
+    options->min_zoom > options->max_zoom
+  ) {
+    mln::core::set_thread_error(
+      "min_zoom must be less than or equal to max_zoom"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    (options->fields & MLN_BOUND_OPTION_MIN_PITCH) != 0U &&
+    (options->fields & MLN_BOUND_OPTION_MAX_PITCH) != 0U &&
+    options->min_pitch > options->max_pitch
+  ) {
+    mln::core::set_thread_error(
+      "min_pitch must be less than or equal to max_pitch"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_vec3(mln_vec3 value, const char* name) -> mln_status {
+  if (
+    !std::isfinite(value.x) || !std::isfinite(value.y) ||
+    !std::isfinite(value.z)
+  ) {
+    mln::core::set_thread_error(name);
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_quaternion(mln_quaternion value) -> mln_status {
+  if (
+    !std::isfinite(value.x) || !std::isfinite(value.y) ||
+    !std::isfinite(value.z) || !std::isfinite(value.w)
+  ) {
+    mln::core::set_thread_error(
+      "free camera orientation values must be finite"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (value.x == 0.0 && value.y == 0.0 && value.z == 0.0 && value.w == 0.0) {
+    mln::core::set_thread_error(
+      "free camera orientation must not be zero length"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_free_camera_options(const mln_free_camera_options* options)
+  -> mln_status {
+  if (options == nullptr) {
+    mln::core::set_thread_error("free camera options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->size < sizeof(mln_free_camera_options)) {
+    mln::core::set_thread_error("mln_free_camera_options.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_FREE_CAMERA_OPTION_POSITION) |
+    MLN_FREE_CAMERA_OPTION_ORIENTATION;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_free_camera_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if ((options->fields & MLN_FREE_CAMERA_OPTION_POSITION) != 0U) {
+    const auto status = validate_vec3(
+      options->position, "free camera position values must be finite"
+    );
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if ((options->fields & MLN_FREE_CAMERA_OPTION_ORIENTATION) != 0U) {
+    const auto status = validate_quaternion(options->orientation);
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
   return MLN_STATUS_OK;
 }
 
@@ -621,6 +899,27 @@ auto validate_lat_lng(mln_lat_lng coordinate) -> mln_status {
   return MLN_STATUS_OK;
 }
 
+auto validate_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mln_status {
+  const auto southwest_status = validate_lat_lng(bounds.southwest);
+  if (southwest_status != MLN_STATUS_OK) {
+    return southwest_status;
+  }
+  const auto northeast_status = validate_lat_lng(bounds.northeast);
+  if (northeast_status != MLN_STATUS_OK) {
+    return northeast_status;
+  }
+  if (
+    bounds.southwest.latitude > bounds.northeast.latitude ||
+    bounds.southwest.longitude > bounds.northeast.longitude
+  ) {
+    mln::core::set_thread_error(
+      "bounds southwest must be less than or equal to northeast"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
 auto validate_lat_lng_array(
   const mln_lat_lng* coordinates, size_t coordinate_count, bool allow_empty
 ) -> mln_status {
@@ -702,10 +1001,25 @@ auto validate_projected_meters(mln_projected_meters meters) -> mln_status {
   return MLN_STATUS_OK;
 }
 
+auto to_native_screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate;
+auto from_native_screen_point(const mbgl::ScreenCoordinate& point)
+  -> mln_screen_point;
+auto to_native_edge_insets(mln_edge_insets padding) -> mbgl::EdgeInsets;
+auto from_native_edge_insets(const mbgl::EdgeInsets& insets) -> mln_edge_insets;
+
 auto to_native_camera(const mln_camera_options& camera) -> mbgl::CameraOptions {
   auto result = mbgl::CameraOptions{};
   if ((camera.fields & MLN_CAMERA_OPTION_CENTER) != 0U) {
     result.withCenter(mbgl::LatLng{camera.latitude, camera.longitude});
+  }
+  if ((camera.fields & MLN_CAMERA_OPTION_CENTER_ALTITUDE) != 0U) {
+    result.withCenterAltitude(camera.center_altitude);
+  }
+  if ((camera.fields & MLN_CAMERA_OPTION_PADDING) != 0U) {
+    result.withPadding(to_native_edge_insets(camera.padding));
+  }
+  if ((camera.fields & MLN_CAMERA_OPTION_ANCHOR) != 0U) {
+    result.withAnchor(to_native_screen_point(camera.anchor));
   }
   if ((camera.fields & MLN_CAMERA_OPTION_ZOOM) != 0U) {
     result.withZoom(camera.zoom);
@@ -715,6 +1029,12 @@ auto to_native_camera(const mln_camera_options& camera) -> mbgl::CameraOptions {
   }
   if ((camera.fields & MLN_CAMERA_OPTION_PITCH) != 0U) {
     result.withPitch(camera.pitch);
+  }
+  if ((camera.fields & MLN_CAMERA_OPTION_ROLL) != 0U) {
+    result.withRoll(camera.roll);
+  }
+  if ((camera.fields & MLN_CAMERA_OPTION_FOV) != 0U) {
+    result.withFov(camera.field_of_view);
   }
   return result;
 }
@@ -726,6 +1046,18 @@ auto from_native_camera(const mbgl::CameraOptions& camera)
     result.fields |= MLN_CAMERA_OPTION_CENTER;
     result.latitude = camera.center->latitude();
     result.longitude = camera.center->longitude();
+  }
+  if (camera.centerAltitude) {
+    result.fields |= MLN_CAMERA_OPTION_CENTER_ALTITUDE;
+    result.center_altitude = *camera.centerAltitude;
+  }
+  if (camera.padding) {
+    result.fields |= MLN_CAMERA_OPTION_PADDING;
+    result.padding = from_native_edge_insets(*camera.padding);
+  }
+  if (camera.anchor) {
+    result.fields |= MLN_CAMERA_OPTION_ANCHOR;
+    result.anchor = from_native_screen_point(*camera.anchor);
   }
   if (camera.zoom) {
     result.fields |= MLN_CAMERA_OPTION_ZOOM;
@@ -739,7 +1071,71 @@ auto from_native_camera(const mbgl::CameraOptions& camera)
     result.fields |= MLN_CAMERA_OPTION_PITCH;
     result.pitch = *camera.pitch;
   }
+  if (camera.roll) {
+    result.fields |= MLN_CAMERA_OPTION_ROLL;
+    result.roll = *camera.roll;
+  }
+  if (camera.fov) {
+    result.fields |= MLN_CAMERA_OPTION_FOV;
+    result.field_of_view = *camera.fov;
+  }
   return result;
+}
+
+auto to_native_animation(const mln_animation_options* animation)
+  -> mbgl::AnimationOptions {
+  auto result = mbgl::AnimationOptions{};
+  if (animation == nullptr) {
+    return result;
+  }
+  if ((animation->fields & MLN_ANIMATION_OPTION_DURATION) != 0U) {
+    result.duration = std::chrono::duration_cast<mbgl::Duration>(
+      std::chrono::duration<double, std::milli>{animation->duration_ms}
+    );
+  }
+  if ((animation->fields & MLN_ANIMATION_OPTION_VELOCITY) != 0U) {
+    result.velocity = animation->velocity;
+  }
+  if ((animation->fields & MLN_ANIMATION_OPTION_MIN_ZOOM) != 0U) {
+    result.minZoom = animation->min_zoom;
+  }
+  if ((animation->fields & MLN_ANIMATION_OPTION_EASING) != 0U) {
+    const auto easing = animation->easing;
+    result.easing.emplace(easing.x1, easing.y1, easing.x2, easing.y2);
+  }
+  return result;
+}
+
+auto camera_fit_padding(const mln_camera_fit_options* options)
+  -> mbgl::EdgeInsets {
+  if (
+    options == nullptr ||
+    (options->fields & MLN_CAMERA_FIT_OPTION_PADDING) == 0U
+  ) {
+    return mbgl::EdgeInsets{};
+  }
+  return to_native_edge_insets(options->padding);
+}
+
+auto camera_fit_bearing(const mln_camera_fit_options* options)
+  -> std::optional<double> {
+  if (
+    options == nullptr ||
+    (options->fields & MLN_CAMERA_FIT_OPTION_BEARING) == 0U
+  ) {
+    return std::nullopt;
+  }
+  return options->bearing;
+}
+
+auto camera_fit_pitch(const mln_camera_fit_options* options)
+  -> std::optional<double> {
+  if (
+    options == nullptr || (options->fields & MLN_CAMERA_FIT_OPTION_PITCH) == 0U
+  ) {
+    return std::nullopt;
+  }
+  return options->pitch;
 }
 
 auto to_native_projection_mode(const mln_projection_mode& mode)
@@ -901,6 +1297,22 @@ auto from_native_lat_lng(const mbgl::LatLng& coordinate) -> mln_lat_lng {
   };
 }
 
+auto to_native_lat_lng_bounds(mln_lat_lng_bounds bounds) -> mbgl::LatLngBounds {
+  return mbgl::LatLngBounds::hull(
+    to_native_lat_lng(bounds.southwest), to_native_lat_lng(bounds.northeast)
+  );
+}
+
+auto from_native_lat_lng_bounds(const mbgl::LatLngBounds& bounds)
+  -> mln_lat_lng_bounds {
+  return mln_lat_lng_bounds{
+    .southwest =
+      mln_lat_lng{.latitude = bounds.south(), .longitude = bounds.west()},
+    .northeast =
+      mln_lat_lng{.latitude = bounds.north(), .longitude = bounds.east()}
+  };
+}
+
 auto to_native_lat_lngs(const mln_lat_lng* coordinates, size_t coordinate_count)
   -> std::vector<mbgl::LatLng> {
   auto result = std::vector<mbgl::LatLng>{};
@@ -938,6 +1350,99 @@ auto to_native_edge_insets(mln_edge_insets padding) -> mbgl::EdgeInsets {
   return mbgl::EdgeInsets{
     padding.top, padding.left, padding.bottom, padding.right
   };
+}
+
+auto to_native_bound_options(const mln_bound_options& options)
+  -> mbgl::BoundOptions {
+  auto result = mbgl::BoundOptions{};
+  if ((options.fields & MLN_BOUND_OPTION_BOUNDS) != 0U) {
+    result.withLatLngBounds(to_native_lat_lng_bounds(options.bounds));
+  }
+  if ((options.fields & MLN_BOUND_OPTION_MIN_ZOOM) != 0U) {
+    result.withMinZoom(options.min_zoom);
+  }
+  if ((options.fields & MLN_BOUND_OPTION_MAX_ZOOM) != 0U) {
+    result.withMaxZoom(options.max_zoom);
+  }
+  if ((options.fields & MLN_BOUND_OPTION_MIN_PITCH) != 0U) {
+    result.withMinPitch(options.min_pitch);
+  }
+  if ((options.fields & MLN_BOUND_OPTION_MAX_PITCH) != 0U) {
+    result.withMaxPitch(options.max_pitch);
+  }
+  return result;
+}
+
+auto from_native_bound_options(const mbgl::BoundOptions& options)
+  -> mln_bound_options {
+  auto result = mln::core::bound_options_default();
+  if (options.bounds) {
+    result.fields |= MLN_BOUND_OPTION_BOUNDS;
+    result.bounds = from_native_lat_lng_bounds(*options.bounds);
+  }
+  if (options.minZoom) {
+    result.fields |= MLN_BOUND_OPTION_MIN_ZOOM;
+    result.min_zoom = *options.minZoom;
+  }
+  if (options.maxZoom) {
+    result.fields |= MLN_BOUND_OPTION_MAX_ZOOM;
+    result.max_zoom = *options.maxZoom;
+  }
+  if (options.minPitch) {
+    result.fields |= MLN_BOUND_OPTION_MIN_PITCH;
+    result.min_pitch = *options.minPitch;
+  }
+  if (options.maxPitch) {
+    result.fields |= MLN_BOUND_OPTION_MAX_PITCH;
+    result.max_pitch = *options.maxPitch;
+  }
+  return result;
+}
+
+auto to_native_vec3(mln_vec3 value) -> mbgl::vec3 {
+  return mbgl::vec3{{value.x, value.y, value.z}};
+}
+
+auto from_native_vec3(const mbgl::vec3& value) -> mln_vec3 {
+  const auto [x_component, y_component, z_component] = value;
+  return mln_vec3{.x = x_component, .y = y_component, .z = z_component};
+}
+
+auto to_native_vec4(mln_quaternion value) -> mbgl::vec4 {
+  return mbgl::vec4{{value.x, value.y, value.z, value.w}};
+}
+
+auto from_native_vec4(const mbgl::vec4& value) -> mln_quaternion {
+  const auto [x_component, y_component, z_component, w_component] = value;
+  return mln_quaternion{
+    .x = x_component, .y = y_component, .z = z_component, .w = w_component
+  };
+}
+
+auto to_native_free_camera(const mln_free_camera_options& options)
+  -> mbgl::FreeCameraOptions {
+  auto result = mbgl::FreeCameraOptions{};
+  if ((options.fields & MLN_FREE_CAMERA_OPTION_POSITION) != 0U) {
+    result.position = to_native_vec3(options.position);
+  }
+  if ((options.fields & MLN_FREE_CAMERA_OPTION_ORIENTATION) != 0U) {
+    result.orientation = to_native_vec4(options.orientation);
+  }
+  return result;
+}
+
+auto from_native_free_camera(const mbgl::FreeCameraOptions& options)
+  -> mln_free_camera_options {
+  auto result = mln::core::free_camera_options_default();
+  if (options.position) {
+    result.fields |= MLN_FREE_CAMERA_OPTION_POSITION;
+    result.position = from_native_vec3(*options.position);
+  }
+  if (options.orientation) {
+    result.fields |= MLN_FREE_CAMERA_OPTION_ORIENTATION;
+    result.orientation = from_native_vec4(*options.orientation);
+  }
+  return result;
 }
 
 auto screen_point(mln_screen_point point) -> mbgl::ScreenCoordinate {
@@ -1019,9 +1524,58 @@ auto camera_options_default() noexcept -> mln_camera_options {
     .fields = 0,
     .latitude = 0,
     .longitude = 0,
+    .center_altitude = 0,
+    .padding = {.top = 0, .left = 0, .bottom = 0, .right = 0},
+    .anchor = {.x = 0, .y = 0},
     .zoom = 0,
     .bearing = 0,
+    .pitch = 0,
+    .roll = 0,
+    .field_of_view = 0
+  };
+}
+
+auto animation_options_default() noexcept -> mln_animation_options {
+  return mln_animation_options{
+    .size = sizeof(mln_animation_options),
+    .fields = 0,
+    .duration_ms = 0,
+    .velocity = 0,
+    .min_zoom = 0,
+    .easing = {.x1 = 0, .y1 = 0, .x2 = 0.25, .y2 = 1}
+  };
+}
+
+auto camera_fit_options_default() noexcept -> mln_camera_fit_options {
+  return mln_camera_fit_options{
+    .size = sizeof(mln_camera_fit_options),
+    .fields = 0,
+    .padding = {.top = 0, .left = 0, .bottom = 0, .right = 0},
+    .bearing = 0,
     .pitch = 0
+  };
+}
+
+auto bound_options_default() noexcept -> mln_bound_options {
+  return mln_bound_options{
+    .size = sizeof(mln_bound_options),
+    .fields = 0,
+    .bounds =
+      {.southwest = {.latitude = 0, .longitude = 0},
+       .northeast = {.latitude = 0, .longitude = 0}},
+    .min_zoom = 0,
+    .max_zoom = 0,
+    .min_pitch = 0,
+    .max_pitch = 0
+  };
+}
+
+auto free_camera_options_default() noexcept -> mln_free_camera_options {
+  return mln_free_camera_options{
+    .size = sizeof(mln_free_camera_options),
+    .fields = 0,
+    .position = {.x = 0, .y = 0, .z = 0},
+    .orientation = {.x = 0, .y = 0, .z = 0, .w = 1}
   };
 }
 
@@ -1360,6 +1914,48 @@ auto map_jump_to(mln_map* map, const mln_camera_options* camera) -> mln_status {
     return camera_status;
   }
   map->map->jumpTo(to_native_camera(*camera));
+  return MLN_STATUS_OK;
+}
+
+auto map_ease_to(
+  mln_map* map, const mln_camera_options* camera,
+  const mln_animation_options* animation
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto camera_status = validate_camera_options(camera);
+  if (camera_status != MLN_STATUS_OK) {
+    return camera_status;
+  }
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->easeTo(to_native_camera(*camera), to_native_animation(animation));
+  return MLN_STATUS_OK;
+}
+
+auto map_fly_to(
+  mln_map* map, const mln_camera_options* camera,
+  const mln_animation_options* animation
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto camera_status = validate_camera_options(camera);
+  if (camera_status != MLN_STATUS_OK) {
+    return camera_status;
+  }
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->flyTo(to_native_camera(*camera), to_native_animation(animation));
   return MLN_STATUS_OK;
 }
 
@@ -1921,45 +2517,120 @@ auto lat_lng_for_projected_meters(
 }
 
 auto map_move_by(mln_map* map, double delta_x, double delta_y) -> mln_status {
+  return map_move_by_animated(map, delta_x, delta_y, nullptr);
+}
+
+auto map_move_by_animated(
+  mln_map* map, double delta_x, double delta_y,
+  const mln_animation_options* animation
+) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  map->map->moveBy(mbgl::ScreenCoordinate{delta_x, delta_y});
+  if (!std::isfinite(delta_x) || !std::isfinite(delta_y)) {
+    set_thread_error("move deltas must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->moveBy(
+    mbgl::ScreenCoordinate{delta_x, delta_y}, to_native_animation(animation)
+  );
   return MLN_STATUS_OK;
 }
 
 auto map_scale_by(mln_map* map, double scale, const mln_screen_point* anchor)
   -> mln_status {
+  return map_scale_by_animated(map, scale, anchor, nullptr);
+}
+
+auto map_scale_by_animated(
+  mln_map* map, double scale, const mln_screen_point* anchor,
+  const mln_animation_options* animation
+) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
+  if (!std::isfinite(scale) || scale <= 0.0) {
+    set_thread_error("scale must be positive and finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
   auto native_anchor = std::optional<mbgl::ScreenCoordinate>{};
   if (anchor != nullptr) {
+    const auto anchor_status = validate_screen_point(*anchor);
+    if (anchor_status != MLN_STATUS_OK) {
+      return anchor_status;
+    }
     native_anchor = screen_point(*anchor);
   }
-  map->map->scaleBy(scale, native_anchor);
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->scaleBy(scale, native_anchor, to_native_animation(animation));
   return MLN_STATUS_OK;
 }
 
 auto map_rotate_by(
   mln_map* map, mln_screen_point first, mln_screen_point second
 ) -> mln_status {
+  return map_rotate_by_animated(map, first, second, nullptr);
+}
+
+auto map_rotate_by_animated(
+  mln_map* map, mln_screen_point first, mln_screen_point second,
+  const mln_animation_options* animation
+) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  map->map->rotateBy(screen_point(first), screen_point(second));
+  const auto first_status = validate_screen_point(first);
+  if (first_status != MLN_STATUS_OK) {
+    return first_status;
+  }
+  const auto second_status = validate_screen_point(second);
+  if (second_status != MLN_STATUS_OK) {
+    return second_status;
+  }
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->rotateBy(
+    screen_point(first), screen_point(second), to_native_animation(animation)
+  );
   return MLN_STATUS_OK;
 }
 
 auto map_pitch_by(mln_map* map, double pitch) -> mln_status {
+  return map_pitch_by_animated(map, pitch, nullptr);
+}
+
+auto map_pitch_by_animated(
+  mln_map* map, double pitch, const mln_animation_options* animation
+) -> mln_status {
   const auto status = validate_map(map);
   if (status != MLN_STATUS_OK) {
     return status;
   }
-  map->map->pitchBy(pitch);
+  if (!std::isfinite(pitch)) {
+    set_thread_error("pitch must be finite");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto animation_status = validate_animation_options(animation);
+  if (animation_status != MLN_STATUS_OK) {
+    return animation_status;
+  }
+
+  map->map->pitchBy(pitch, to_native_animation(animation));
   return MLN_STATUS_OK;
 }
 
@@ -1969,6 +2640,213 @@ auto map_cancel_transitions(mln_map* map) -> mln_status {
     return status;
   }
   map->map->cancelTransitions();
+  return MLN_STATUS_OK;
+}
+
+auto validate_camera_output(mln_camera_options* out_camera) -> mln_status {
+  if (out_camera == nullptr || out_camera->size < sizeof(mln_camera_options)) {
+    set_thread_error("out_camera must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto map_camera_for_lat_lng_bounds(
+  mln_map* map, mln_lat_lng_bounds bounds,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto bounds_status = validate_lat_lng_bounds(bounds);
+  if (bounds_status != MLN_STATUS_OK) {
+    return bounds_status;
+  }
+  const auto fit_status = validate_camera_fit_options(fit_options);
+  if (fit_status != MLN_STATUS_OK) {
+    return fit_status;
+  }
+  const auto output_status = validate_camera_output(out_camera);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  *out_camera = from_native_camera(map->map->cameraForLatLngBounds(
+    to_native_lat_lng_bounds(bounds), camera_fit_padding(fit_options),
+    camera_fit_bearing(fit_options), camera_fit_pitch(fit_options)
+  ));
+  return MLN_STATUS_OK;
+}
+
+auto map_camera_for_lat_lngs(
+  mln_map* map, const mln_lat_lng* coordinates, size_t coordinate_count,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto coordinates_status =
+    validate_lat_lng_array(coordinates, coordinate_count, false);
+  if (coordinates_status != MLN_STATUS_OK) {
+    return coordinates_status;
+  }
+  const auto fit_status = validate_camera_fit_options(fit_options);
+  if (fit_status != MLN_STATUS_OK) {
+    return fit_status;
+  }
+  const auto output_status = validate_camera_output(out_camera);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  *out_camera = from_native_camera(map->map->cameraForLatLngs(
+    to_native_lat_lngs(coordinates, coordinate_count),
+    camera_fit_padding(fit_options), camera_fit_bearing(fit_options),
+    camera_fit_pitch(fit_options)
+  ));
+  return MLN_STATUS_OK;
+}
+
+auto map_camera_for_geometry(
+  mln_map* map, const mln_geometry* geometry,
+  const mln_camera_fit_options* fit_options, mln_camera_options* out_camera
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  auto native_geometry = to_native_geometry(geometry);
+  if (!native_geometry) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (geometry_lat_lngs(*native_geometry).empty()) {
+    set_thread_error("geometry must contain at least one coordinate");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto fit_status = validate_camera_fit_options(fit_options);
+  if (fit_status != MLN_STATUS_OK) {
+    return fit_status;
+  }
+  const auto output_status = validate_camera_output(out_camera);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  *out_camera = from_native_camera(map->map->cameraForGeometry(
+    *native_geometry, camera_fit_padding(fit_options),
+    camera_fit_bearing(fit_options), camera_fit_pitch(fit_options)
+  ));
+  return MLN_STATUS_OK;
+}
+
+auto map_lat_lng_bounds_for_camera(
+  mln_map* map, const mln_camera_options* camera, mln_lat_lng_bounds* out_bounds
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto camera_status = validate_camera_options(camera);
+  if (camera_status != MLN_STATUS_OK) {
+    return camera_status;
+  }
+  if (out_bounds == nullptr) {
+    set_thread_error("out_bounds must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_bounds = from_native_lat_lng_bounds(
+    map->map->latLngBoundsForCamera(to_native_camera(*camera))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_lat_lng_bounds_for_camera_unwrapped(
+  mln_map* map, const mln_camera_options* camera, mln_lat_lng_bounds* out_bounds
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto camera_status = validate_camera_options(camera);
+  if (camera_status != MLN_STATUS_OK) {
+    return camera_status;
+  }
+  if (out_bounds == nullptr) {
+    set_thread_error("out_bounds must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_bounds = from_native_lat_lng_bounds(
+    map->map->latLngBoundsForCameraUnwrapped(to_native_camera(*camera))
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_get_bounds(mln_map* map, mln_bound_options* out_options)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (out_options == nullptr || out_options->size < sizeof(mln_bound_options)) {
+    set_thread_error("out_options must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_options = from_native_bound_options(map->map->getBounds());
+  return MLN_STATUS_OK;
+}
+
+auto map_set_bounds(mln_map* map, const mln_bound_options* options)
+  -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto options_status = validate_bound_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  map->map->setBounds(to_native_bound_options(*options));
+  return MLN_STATUS_OK;
+}
+
+auto map_get_free_camera_options(
+  mln_map* map, mln_free_camera_options* out_options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  if (
+    out_options == nullptr ||
+    out_options->size < sizeof(mln_free_camera_options)
+  ) {
+    set_thread_error("out_options must not be null and must have a valid size");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  *out_options = from_native_free_camera(map->map->getFreeCameraOptions());
+  return MLN_STATUS_OK;
+}
+
+auto map_set_free_camera_options(
+  mln_map* map, const mln_free_camera_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto options_status = validate_free_camera_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  map->map->setFreeCameraOptions(to_native_free_camera(*options));
   return MLN_STATUS_OK;
 }
 
