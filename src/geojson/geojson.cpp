@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +39,12 @@ auto validate_depth(std::size_t depth) -> bool {
     return false;
   }
   return true;
+}
+
+auto validate_export_depth(std::size_t depth) -> void {
+  if (depth > max_recursive_depth) {
+    throw std::runtime_error("GeoJSON value nesting is too deep");
+  }
 }
 
 auto validate_string(mln_string_view string) -> bool {
@@ -426,11 +433,13 @@ auto coordinate_span(const std::vector<mln_lat_lng>& coordinates)
   };
 }
 
-auto make_geometry_descriptor(const mbgl::Geometry<double>& geometry)
-  -> GeometryDescriptorPtr;
+auto make_geometry_descriptor(
+  const mbgl::Geometry<double>& geometry, std::size_t depth
+) -> GeometryDescriptorPtr;
 
 auto make_geometry_descriptor(
-  const mapbox::geometry::geometry_collection<double>& collection
+  const mapbox::geometry::geometry_collection<double>& collection,
+  std::size_t depth
 ) -> GeometryDescriptorPtr {
   auto result = std::make_unique<mln::core::OwnedGeometryDescriptor>();
   result->root = mln_geometry{
@@ -441,7 +450,7 @@ auto make_geometry_descriptor(
   result->children.reserve(collection.size());
   result->child_geometries.reserve(collection.size());
   for (const auto& child : collection) {
-    result->children.emplace_back(make_geometry_descriptor(child));
+    result->children.emplace_back(make_geometry_descriptor(child, depth + 1));
   }
   for (const auto& child : result->children) {
     result->child_geometries.emplace_back(child->root);
@@ -550,8 +559,10 @@ auto make_multi_polygon_descriptor(
   return result;
 }
 
-auto make_geometry_descriptor(const mbgl::Geometry<double>& geometry)
-  -> GeometryDescriptorPtr {
+auto make_geometry_descriptor(
+  const mbgl::Geometry<double>& geometry, std::size_t depth
+) -> GeometryDescriptorPtr {
+  validate_export_depth(depth);
   return geometry.match(
     Overloaded{
       [](const mbgl::EmptyGeometry&) -> GeometryDescriptorPtr {
@@ -607,9 +618,9 @@ auto make_geometry_descriptor(const mbgl::Geometry<double>& geometry)
         -> GeometryDescriptorPtr {
         return make_multi_polygon_descriptor(multi_polygon);
       },
-      [](const mapbox::geometry::geometry_collection<double>& collection)
+      [depth](const mapbox::geometry::geometry_collection<double>& collection)
         -> GeometryDescriptorPtr {
-        return make_geometry_descriptor(collection);
+        return make_geometry_descriptor(collection, depth);
       }
     }
   );
@@ -626,7 +637,7 @@ auto to_native_geometry(const mln_geometry* geometry)
 
 auto to_c_geometry(const mbgl::Geometry<double>& geometry)
   -> std::unique_ptr<OwnedGeometryDescriptor> {
-  return make_geometry_descriptor(geometry);
+  return make_geometry_descriptor(geometry, 0);
 }
 
 auto to_native_json_value(const mln_json_value* value)
