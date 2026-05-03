@@ -1015,6 +1015,9 @@ typedef struct mln_geometry_collection {
  *
  * Geometry coordinates use mln_lat_lng for consistency with the rest of the C
  * API. They are converted to native geometry points as longitude/latitude.
+ * A root geometry descriptor starts at nesting depth 0. Status-returning
+ * functions reject geometry collection children past depth 64 with
+ * MLN_STATUS_INVALID_ARGUMENT.
  */
 typedef struct mln_geometry {
   uint32_t size;
@@ -1069,6 +1072,9 @@ typedef struct mln_json_object {
  *
  * Input functions reject NaN and infinities for double values because JSON and
  * GeoJSON numbers are finite.
+ * A root JSON value descriptor starts at nesting depth 0. Status-returning
+ * functions reject array/object children past depth 64 with
+ * MLN_STATUS_INVALID_ARGUMENT.
  */
 typedef struct mln_json_value {
   uint32_t size;
@@ -1129,7 +1135,11 @@ typedef struct mln_feature_collection {
   size_t feature_count;
 } mln_feature_collection;
 
-/** GeoJSON geometry, feature, or feature collection input descriptor graph. */
+/**
+ * GeoJSON geometry, feature, or feature collection input descriptor graph.
+ * Nested geometry and property descriptors share the 64-depth descriptor limit
+ * documented on mln_geometry and mln_json_value.
+ */
 typedef struct mln_geojson {
   uint32_t size;
   /** One of mln_geojson_type. */

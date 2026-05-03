@@ -785,6 +785,26 @@ test "offline tile-pyramid regions validate inputs" {
     definition = offlineGeometryDefinition(&geometry);
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
     try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+
+    var nested_geometries: [66]c.mln_geometry = undefined;
+    nested_geometries[nested_geometries.len - 1] = .{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_POINT,
+        .data = .{ .point = .{ .latitude = 1.0, .longitude = 2.0 } },
+    };
+    var nested_index = nested_geometries.len - 1;
+    while (nested_index > 0) {
+        nested_index -= 1;
+        nested_geometries[nested_index] = .{
+            .size = @sizeOf(c.mln_geometry),
+            .type = c.MLN_GEOMETRY_TYPE_GEOMETRY_COLLECTION,
+            .data = .{ .geometry_collection = .{ .geometries = &nested_geometries[nested_index + 1], .geometry_count = 1 } },
+        };
+    }
+    definition = offlineGeometryDefinition(&nested_geometries[0]);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_runtime_offline_region_create(runtime, &definition, metadata[0..].ptr, metadata.len, &snapshot));
+    try testing.expectEqual(@as(?*c.mln_offline_region_snapshot, null), snapshot);
+    try testing.expectEqualStrings("GeoJSON value nesting is too deep", std.mem.span(c.mln_thread_last_error_message()));
 }
 
 test "offline tile-pyramid regions persist and support metadata lifecycle" {
