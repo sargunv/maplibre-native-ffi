@@ -3400,6 +3400,7 @@ auto map_add_image_source_image(
     return add_status;
   }
 
+  auto native_image = to_native_premultiplied_rgba8_image(*image);
   style.addSource(
     std::make_unique<mbgl::style::ImageSource>(
       id, to_native_image_source_coordinates(coordinates)
@@ -3413,7 +3414,7 @@ auto map_add_image_source_image(
     set_thread_error("added source is not an image source");
     return MLN_STATUS_NATIVE_ERROR;
   }
-  image_source->setImage(to_native_premultiplied_rgba8_image(*image));
+  image_source->setImage(std::move(native_image));
   return MLN_STATUS_OK;
 }
 
