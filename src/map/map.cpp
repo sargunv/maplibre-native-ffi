@@ -43,6 +43,7 @@
 #include <mbgl/style/layers/location_indicator_layer.hpp>
 #include <mbgl/style/light.hpp>
 #include <mbgl/style/source.hpp>
+#include <mbgl/style/sources/custom_geometry_source.hpp>
 #include <mbgl/style/sources/geojson_source.hpp>
 #include <mbgl/style/sources/image_source.hpp>
 #include <mbgl/style/sources/raster_dem_source.hpp>
@@ -512,6 +513,228 @@ auto to_native_tileset(
     tileset.bounds = to_native_lat_lng_bounds(options.bounds);
   }
   return tileset;
+}
+
+auto has_custom_geometry_source_option(
+  const mln_custom_geometry_source_options& options, uint32_t field
+) -> bool {
+  return (options.fields & field) != 0U;
+}
+
+auto validate_custom_geometry_zoom(double zoom, const char* name)
+  -> mln_status {
+  if (
+    !std::isfinite(zoom) || zoom < 0.0 || zoom > 32.0 ||
+    std::floor(zoom) != zoom
+  ) {
+    auto message = std::string{name} + " must be an integer within [0, 32]";
+    mln::core::set_thread_error(message.c_str());
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto effective_custom_geometry_source_options(
+  const mln_custom_geometry_source_options& options
+) -> mln_custom_geometry_source_options;
+
+auto validate_custom_geometry_source_options(
+  const mln_custom_geometry_source_options* options
+) -> mln_status {
+  if (options == nullptr) {
+    mln::core::set_thread_error("options must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->size < sizeof(mln_custom_geometry_source_options)) {
+    mln::core::set_thread_error(
+      "mln_custom_geometry_source_options.size is too small"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  constexpr auto known_fields =
+    static_cast<uint32_t>(MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MIN_ZOOM) |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TOLERANCE |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TILE_SIZE |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_BUFFER |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_CLIP |
+    MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_WRAP;
+  if ((options->fields & ~known_fields) != 0U) {
+    mln::core::set_thread_error(
+      "mln_custom_geometry_source_options.fields contains unknown bits"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (options->fetch_tile == nullptr) {
+    mln::core::set_thread_error("fetch_tile must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (
+    has_custom_geometry_source_option(
+      *options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MIN_ZOOM
+    )
+  ) {
+    const auto status =
+      validate_custom_geometry_zoom(options->min_zoom, "min_zoom");
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  if (
+    has_custom_geometry_source_option(
+      *options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM
+    )
+  ) {
+    const auto status =
+      validate_custom_geometry_zoom(options->max_zoom, "max_zoom");
+    if (status != MLN_STATUS_OK) {
+      return status;
+    }
+  }
+  const auto effective = effective_custom_geometry_source_options(*options);
+  if (effective.min_zoom > effective.max_zoom) {
+    mln::core::set_thread_error(
+      "min_zoom must be less than or equal to max_zoom"
+    );
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (!std::isfinite(effective.tolerance) || effective.tolerance < 0.0) {
+    mln::core::set_thread_error("tolerance must be finite and non-negative");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (effective.tile_size == 0 || effective.tile_size > 65535U) {
+    mln::core::set_thread_error("tile_size must be within [1, 65535]");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (effective.buffer > 65535U) {
+    mln::core::set_thread_error("buffer must be at most 65535");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto effective_custom_geometry_source_options(
+  const mln_custom_geometry_source_options& options
+) -> mln_custom_geometry_source_options {
+  auto result = mln::core::custom_geometry_source_options_default();
+  result.fields = options.fields;
+  result.fetch_tile = options.fetch_tile;
+  result.cancel_tile = options.cancel_tile;
+  result.user_data = options.user_data;
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MIN_ZOOM
+    )
+  ) {
+    result.min_zoom = options.min_zoom;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_MAX_ZOOM
+    )
+  ) {
+    result.max_zoom = options.max_zoom;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TOLERANCE
+    )
+  ) {
+    result.tolerance = options.tolerance;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_TILE_SIZE
+    )
+  ) {
+    result.tile_size = options.tile_size;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_BUFFER
+    )
+  ) {
+    result.buffer = options.buffer;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_CLIP
+    )
+  ) {
+    result.clip = options.clip;
+  }
+  if (
+    has_custom_geometry_source_option(
+      options, MLN_CUSTOM_GEOMETRY_SOURCE_OPTION_WRAP
+    )
+  ) {
+    result.wrap = options.wrap;
+  }
+  return result;
+}
+
+auto to_c_canonical_tile_id(const mbgl::CanonicalTileID& tile_id)
+  -> mln_canonical_tile_id {
+  return mln_canonical_tile_id{.z = tile_id.z, .x = tile_id.x, .y = tile_id.y};
+}
+
+auto to_native_tile_function(
+  mln_custom_geometry_source_tile_callback callback, void* user_data
+) -> mbgl::style::TileFunction {
+  if (callback == nullptr) {
+    return nullptr;
+  }
+  return [callback, user_data](const mbgl::CanonicalTileID& tile_id) -> void {
+    try {
+      callback(user_data, to_c_canonical_tile_id(tile_id));
+    } catch (const std::exception& exception) {
+      mln::core::set_thread_error(exception);
+    } catch (...) {
+      mln::core::set_thread_error("custom geometry source callback threw");
+    }
+  };
+}
+
+auto to_native_custom_geometry_source_options(
+  const mln_custom_geometry_source_options& options
+) -> mbgl::style::CustomGeometrySource::Options {
+  auto result = mbgl::style::CustomGeometrySource::Options{};
+  result.fetchTileFunction =
+    to_native_tile_function(options.fetch_tile, options.user_data);
+  result.cancelTileFunction =
+    to_native_tile_function(options.cancel_tile, options.user_data);
+  result.zoomRange = mbgl::Range<uint8_t>{
+    static_cast<uint8_t>(options.min_zoom),
+    static_cast<uint8_t>(options.max_zoom)
+  };
+  result.tileOptions = mbgl::style::CustomGeometrySource::TileOptions{
+    .tolerance = options.tolerance,
+    .tileSize = static_cast<uint16_t>(options.tile_size),
+    .buffer = static_cast<uint16_t>(options.buffer),
+    .clip = options.clip,
+    .wrap = options.wrap
+  };
+  return result;
+}
+
+auto validate_canonical_tile_id(mln_canonical_tile_id tile_id) -> mln_status {
+  if (tile_id.z > 32U) {
+    mln::core::set_thread_error("tile_id.z must be within [0, 32]");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  const auto coordinate_limit = uint64_t{1} << tile_id.z;
+  if (tile_id.x >= coordinate_limit || tile_id.y >= coordinate_limit) {
+    mln::core::set_thread_error("tile_id x and y must be within zoom bounds");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto to_native_canonical_tile_id(mln_canonical_tile_id tile_id)
+  -> mbgl::CanonicalTileID {
+  return mbgl::CanonicalTileID{
+    static_cast<uint8_t>(tile_id.z), tile_id.x, tile_id.y
+  };
 }
 
 auto validate_source_id(mln_string_view source_id) -> mln_status {
@@ -2332,6 +2555,24 @@ auto style_tile_source_options_default() noexcept
   };
 }
 
+auto custom_geometry_source_options_default() noexcept
+  -> mln_custom_geometry_source_options {
+  return mln_custom_geometry_source_options{
+    .size = sizeof(mln_custom_geometry_source_options),
+    .fields = 0,
+    .fetch_tile = nullptr,
+    .cancel_tile = nullptr,
+    .user_data = nullptr,
+    .min_zoom = 0,
+    .max_zoom = 18,
+    .tolerance = 0.375,
+    .tile_size = mbgl::util::tileSize_I,
+    .buffer = 128,
+    .clip = false,
+    .wrap = false
+  };
+}
+
 auto premultiplied_rgba8_image_default() noexcept
   -> mln_premultiplied_rgba8_image {
   return mln_premultiplied_rgba8_image{
@@ -3359,6 +3600,134 @@ auto map_add_raster_dem_source_tiles(
       id, *tileset, static_cast<uint16_t>(effective.tile_size)
     )
   );
+  return MLN_STATUS_OK;
+}
+
+auto map_add_custom_geometry_source(
+  mln_map* map, mln_string_view source_id,
+  const mln_custom_geometry_source_options* options
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto options_status = validate_custom_geometry_source_options(options);
+  if (options_status != MLN_STATUS_OK) {
+    return options_status;
+  }
+
+  auto& style = map->map->getStyle();
+  const auto id = string_from_view(source_id);
+  const auto add_status = validate_source_can_be_added(style, id);
+  if (add_status != MLN_STATUS_OK) {
+    return add_status;
+  }
+
+  const auto effective = effective_custom_geometry_source_options(*options);
+  style.addSource(
+    std::make_unique<mbgl::style::CustomGeometrySource>(
+      id, to_native_custom_geometry_source_options(effective)
+    )
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_set_custom_geometry_source_tile_data(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id,
+  const mln_geojson* data
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto tile_status = validate_canonical_tile_id(tile_id);
+  if (tile_status != MLN_STATUS_OK) {
+    return tile_status;
+  }
+  auto geojson = to_native_geojson(data);
+  if (!geojson) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* custom_source = source->as<mbgl::style::CustomGeometrySource>();
+  if (custom_source == nullptr) {
+    set_thread_error("source is not a custom geometry source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  custom_source->setTileData(to_native_canonical_tile_id(tile_id), *geojson);
+  return MLN_STATUS_OK;
+}
+
+auto map_invalidate_custom_geometry_source_tile(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto tile_status = validate_canonical_tile_id(tile_id);
+  if (tile_status != MLN_STATUS_OK) {
+    return tile_status;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* custom_source = source->as<mbgl::style::CustomGeometrySource>();
+  if (custom_source == nullptr) {
+    set_thread_error("source is not a custom geometry source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  custom_source->invalidateTile(to_native_canonical_tile_id(tile_id));
+  return MLN_STATUS_OK;
+}
+
+auto map_invalidate_custom_geometry_source_region(
+  mln_map* map, mln_string_view source_id, mln_lat_lng_bounds bounds
+) -> mln_status {
+  const auto status = validate_map(map);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto source_id_status = validate_source_id(source_id);
+  if (source_id_status != MLN_STATUS_OK) {
+    return source_id_status;
+  }
+  const auto bounds_status = validate_lat_lng_bounds(bounds);
+  if (bounds_status != MLN_STATUS_OK) {
+    return bounds_status;
+  }
+
+  auto* source = map->map->getStyle().getSource(string_from_view(source_id));
+  if (source == nullptr) {
+    set_thread_error("source does not exist");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* custom_source = source->as<mbgl::style::CustomGeometrySource>();
+  if (custom_source == nullptr) {
+    set_thread_error("source is not a custom geometry source");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  custom_source->invalidateRegion(to_native_lat_lng_bounds(bounds));
   return MLN_STATUS_OK;
 }
 

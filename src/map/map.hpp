@@ -26,6 +26,8 @@ auto map_viewport_options_default() noexcept -> mln_map_viewport_options;
 auto map_tile_options_default() noexcept -> mln_map_tile_options;
 auto style_tile_source_options_default() noexcept
   -> mln_style_tile_source_options;
+auto custom_geometry_source_options_default() noexcept
+  -> mln_custom_geometry_source_options;
 auto premultiplied_rgba8_image_default() noexcept
   -> mln_premultiplied_rgba8_image;
 auto style_image_options_default() noexcept -> mln_style_image_options;
@@ -102,6 +104,20 @@ auto map_add_raster_dem_source_url(
 auto map_add_raster_dem_source_tiles(
   mln_map* map, mln_string_view source_id, const mln_string_view* tiles,
   size_t tile_count, const mln_style_tile_source_options* options
+) -> mln_status;
+auto map_add_custom_geometry_source(
+  mln_map* map, mln_string_view source_id,
+  const mln_custom_geometry_source_options* options
+) -> mln_status;
+auto map_set_custom_geometry_source_tile_data(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id,
+  const mln_geojson* data
+) -> mln_status;
+auto map_invalidate_custom_geometry_source_tile(
+  mln_map* map, mln_string_view source_id, mln_canonical_tile_id tile_id
+) -> mln_status;
+auto map_invalidate_custom_geometry_source_region(
+  mln_map* map, mln_string_view source_id, mln_lat_lng_bounds bounds
 ) -> mln_status;
 auto map_set_style_image(
   mln_map* map, mln_string_view image_id,
