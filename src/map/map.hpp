@@ -84,6 +84,14 @@ auto map_get_style_layer_json(
   mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_layer,
   bool* out_found
 ) -> mln_status;
+auto map_set_style_light_json(mln_map* map, const mln_json_value* light_json)
+  -> mln_status;
+auto map_set_style_light_property(
+  mln_map* map, mln_string_view property_name, const mln_json_value* value
+) -> mln_status;
+auto map_get_style_light_property(
+  mln_map* map, mln_string_view property_name, mln_json_snapshot** out_value
+) -> mln_status;
 auto map_set_layer_property(
   mln_map* map, mln_string_view layer_id, mln_string_view property_name,
   const mln_json_value* value
