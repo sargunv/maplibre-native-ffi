@@ -36,6 +36,7 @@
 #include "map/map.hpp"
 
 #include "diagnostics/diagnostics.hpp"
+#include "geojson/geojson.hpp"
 #include "maplibre_native_c.h"
 #include "runtime/runtime.hpp"
 
@@ -1801,6 +1802,34 @@ auto map_projection_set_visible_coordinates(
   projection->projection->setVisibleCoordinates(
     to_native_lat_lngs(coordinates, coordinate_count),
     to_native_edge_insets(padding)
+  );
+  return MLN_STATUS_OK;
+}
+
+auto map_projection_set_visible_geometry(
+  mln_map_projection* projection, const mln_geometry* geometry,
+  mln_edge_insets padding
+) -> mln_status {
+  const auto status = validate_map_projection(projection);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto padding_status = validate_edge_insets(padding);
+  if (padding_status != MLN_STATUS_OK) {
+    return padding_status;
+  }
+  auto native_geometry = to_native_geometry(geometry);
+  if (!native_geometry) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto coordinates = geometry_lat_lngs(*native_geometry);
+  if (coordinates.empty()) {
+    set_thread_error("geometry must contain at least one coordinate");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  projection->projection->setVisibleCoordinates(
+    coordinates, to_native_edge_insets(padding)
   );
   return MLN_STATUS_OK;
 }

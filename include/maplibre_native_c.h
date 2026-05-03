@@ -955,6 +955,202 @@ typedef struct mln_lat_lng {
   double longitude;
 } mln_lat_lng;
 
+/** UTF-8 text view. The pointer may be null only when size is 0. */
+typedef struct mln_string_view {
+  /** UTF-8 bytes. Null only when size is 0. */
+  const char* data;
+  size_t size;
+} mln_string_view;
+
+typedef struct mln_json_value mln_json_value;
+typedef struct mln_geometry mln_geometry;
+
+/** Geometry variant tags used by mln_geometry. */
+typedef enum mln_geometry_type : uint32_t {
+  MLN_GEOMETRY_TYPE_EMPTY = 0,
+  MLN_GEOMETRY_TYPE_POINT = 1,
+  MLN_GEOMETRY_TYPE_LINE_STRING = 2,
+  MLN_GEOMETRY_TYPE_POLYGON = 3,
+  MLN_GEOMETRY_TYPE_MULTI_POINT = 4,
+  MLN_GEOMETRY_TYPE_MULTI_LINE_STRING = 5,
+  MLN_GEOMETRY_TYPE_MULTI_POLYGON = 6,
+  MLN_GEOMETRY_TYPE_GEOMETRY_COLLECTION = 7,
+} mln_geometry_type;
+
+/** Coordinate array view. Coordinates are latitude/longitude pairs. */
+typedef struct mln_coordinate_span {
+  /** Coordinates. Null only when coordinate_count is 0. */
+  const mln_lat_lng* coordinates;
+  size_t coordinate_count;
+} mln_coordinate_span;
+
+/** Polygon ring array view. Each ring is a coordinate span. */
+typedef struct mln_polygon_geometry {
+  /** Rings. Null only when ring_count is 0. */
+  const mln_coordinate_span* rings;
+  size_t ring_count;
+} mln_polygon_geometry;
+
+/** Multi-line geometry view. Each line is a coordinate span. */
+typedef struct mln_multi_line_geometry {
+  /** Lines. Null only when line_count is 0. */
+  const mln_coordinate_span* lines;
+  size_t line_count;
+} mln_multi_line_geometry;
+
+/** Multi-polygon geometry view. Each polygon contains ring views. */
+typedef struct mln_multi_polygon_geometry {
+  /** Polygons. Null only when polygon_count is 0. */
+  const mln_polygon_geometry* polygons;
+  size_t polygon_count;
+} mln_multi_polygon_geometry;
+
+/** Geometry collection view. */
+typedef struct mln_geometry_collection {
+  /** Child geometries. Null only when geometry_count is 0. */
+  const mln_geometry* geometries;
+  size_t geometry_count;
+} mln_geometry_collection;
+
+/**
+ * MapLibre geometry input descriptor graph.
+ *
+ * Geometry coordinates use mln_lat_lng for consistency with the rest of the C
+ * API. They are converted to native geometry points as longitude/latitude.
+ */
+typedef struct mln_geometry {
+  uint32_t size;
+  /** One of mln_geometry_type. */
+  uint32_t type;
+  union {
+    mln_lat_lng point;
+    mln_coordinate_span line_string;
+    mln_polygon_geometry polygon;
+    mln_coordinate_span multi_point;
+    mln_multi_line_geometry multi_line_string;
+    mln_multi_polygon_geometry multi_polygon;
+    mln_geometry_collection geometry_collection;
+  } data;
+} mln_geometry;
+
+/** JSON-like value variant tags used by mln_json_value. */
+typedef enum mln_json_value_type : uint32_t {
+  MLN_JSON_VALUE_TYPE_NULL = 0,
+  MLN_JSON_VALUE_TYPE_BOOL = 1,
+  MLN_JSON_VALUE_TYPE_UINT = 2,
+  MLN_JSON_VALUE_TYPE_INT = 3,
+  MLN_JSON_VALUE_TYPE_DOUBLE = 4,
+  MLN_JSON_VALUE_TYPE_STRING = 5,
+  MLN_JSON_VALUE_TYPE_ARRAY = 6,
+  MLN_JSON_VALUE_TYPE_OBJECT = 7,
+} mln_json_value_type;
+
+/** JSON value array view. */
+typedef struct mln_json_array {
+  /** Values. Null only when value_count is 0. */
+  const mln_json_value* values;
+  size_t value_count;
+} mln_json_array;
+
+/** JSON object member view. */
+typedef struct mln_json_member {
+  mln_string_view key;
+  /** Value descriptor. Must not be null. */
+  const mln_json_value* value;
+} mln_json_member;
+
+/** JSON object member array view. */
+typedef struct mln_json_object {
+  /** Members. Null only when member_count is 0. */
+  const mln_json_member* members;
+  size_t member_count;
+} mln_json_object;
+
+/**
+ * JSON-like value input descriptor graph used by feature properties/states.
+ *
+ * Input functions reject NaN and infinities for double values because JSON and
+ * GeoJSON numbers are finite.
+ */
+typedef struct mln_json_value {
+  uint32_t size;
+  /** One of mln_json_value_type. */
+  uint32_t type;
+  union {
+    bool bool_value;
+    uint64_t uint_value;
+    int64_t int_value;
+    double double_value;
+    mln_string_view string_value;
+    mln_json_array array_value;
+    mln_json_object object_value;
+  } data;
+} mln_json_value;
+
+/** Feature identifier variant tags used by mln_feature. */
+typedef enum mln_feature_identifier_type : uint32_t {
+  MLN_FEATURE_IDENTIFIER_TYPE_NULL = 0,
+  MLN_FEATURE_IDENTIFIER_TYPE_UINT = 1,
+  MLN_FEATURE_IDENTIFIER_TYPE_INT = 2,
+  MLN_FEATURE_IDENTIFIER_TYPE_DOUBLE = 3,
+  MLN_FEATURE_IDENTIFIER_TYPE_STRING = 4,
+} mln_feature_identifier_type;
+
+/** GeoJSON feature input descriptor graph. */
+typedef struct mln_feature {
+  uint32_t size;
+  /**
+   * Geometry descriptor. Must not be null. Use MLN_GEOMETRY_TYPE_EMPTY for an
+   * empty geometry.
+   */
+  const mln_geometry* geometry;
+  /** Property member views. May be null only when property_count is 0. */
+  const mln_json_member* properties;
+  size_t property_count;
+  /** One of mln_feature_identifier_type. */
+  uint32_t identifier_type;
+  union {
+    uint64_t uint_value;
+    int64_t int_value;
+    double double_value;
+    mln_string_view string_value;
+  } identifier;
+} mln_feature;
+
+/** GeoJSON variant tags used by mln_geojson. */
+typedef enum mln_geojson_type : uint32_t {
+  MLN_GEOJSON_TYPE_GEOMETRY = 1,
+  MLN_GEOJSON_TYPE_FEATURE = 2,
+  MLN_GEOJSON_TYPE_FEATURE_COLLECTION = 3,
+} mln_geojson_type;
+
+/** Feature collection view. */
+typedef struct mln_feature_collection {
+  /** Features. Null only when feature_count is 0. */
+  const mln_feature* features;
+  size_t feature_count;
+} mln_feature_collection;
+
+/** GeoJSON geometry, feature, or feature collection input descriptor graph. */
+typedef struct mln_geojson {
+  uint32_t size;
+  /** One of mln_geojson_type. */
+  uint32_t type;
+  union {
+    /**
+     * Geometry descriptor selected by MLN_GEOJSON_TYPE_GEOMETRY. Must not be
+     * null.
+     */
+    const mln_geometry* geometry;
+    /**
+     * Feature descriptor selected by MLN_GEOJSON_TYPE_FEATURE. Must not be
+     * null.
+     */
+    const mln_feature* feature;
+    mln_feature_collection feature_collection;
+  } data;
+} mln_geojson;
+
 /** Geographic bounds in degrees. */
 typedef struct mln_lat_lng_bounds {
   mln_lat_lng southwest;
@@ -977,7 +1173,7 @@ typedef struct mln_offline_tile_pyramid_region_definition {
   bool include_ideographs;
 } mln_offline_tile_pyramid_region_definition;
 
-/** Placeholder for future geometry offline region definitions. */
+/** Placeholder for future offline geometry region definitions. */
 typedef struct mln_offline_geometry_region_definition {
   uint32_t size;
 } mln_offline_geometry_region_definition;
@@ -993,12 +1189,12 @@ typedef struct mln_offline_region_definition {
   } data;
 } mln_offline_region_definition;
 
-/** Region data borrowed from a snapshot or list handle. */
+/** Region data view returned from a snapshot or list handle. */
 typedef struct mln_offline_region_info {
   uint32_t size;
   mln_offline_region_id id;
   mln_offline_region_definition definition;
-  /** Borrowed metadata bytes. Valid until the owner snapshot/list is destroyed.
+  /** Metadata bytes. Valid until the owner snapshot/list is destroyed.
    */
   const uint8_t* metadata;
   size_t metadata_size;
@@ -1008,8 +1204,8 @@ typedef struct mln_offline_region_info {
  * Creates a tile-pyramid offline region.
  *
  * The returned snapshot owns copied region data. Destroy it with
- * mln_offline_region_snapshot_destroy(). Geometry definitions are reserved for
- * future shared geometry ABI support and return MLN_STATUS_UNSUPPORTED.
+ * mln_offline_region_snapshot_destroy(). Geometry definitions are not wired to
+ * native offline storage yet and return MLN_STATUS_UNSUPPORTED.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1201,7 +1397,10 @@ MLN_API mln_status mln_runtime_offline_region_delete(
 ) MLN_NOEXCEPT;
 
 /**
- * Copies borrowed region data out of a snapshot handle.
+ * Copies a region data view out of a snapshot handle.
+ *
+ * On success, out_info receives pointers into snapshot-owned storage. Those
+ * pointers remain valid until the snapshot is destroyed.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1232,7 +1431,10 @@ MLN_API mln_status mln_offline_region_list_count(
 ) MLN_NOEXCEPT;
 
 /**
- * Copies borrowed region data for one list entry.
+ * Copies a region data view for one list entry.
+ *
+ * On success, out_info receives pointers into list-owned storage. Those
+ * pointers remain valid until the list is destroyed.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1906,8 +2108,9 @@ MLN_API mln_status mln_map_projection_set_camera(
 /**
  * Updates a projection helper camera so coordinates are visible within padding.
  *
- * The caller owns coordinates. Use mln_map_projection_get_camera() after this
- * call to read the computed camera.
+ * The coordinates array is borrowed for the duration of this call and is not
+ * retained. Use mln_map_projection_get_camera() after this call to read the
+ * computed camera.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -1922,6 +2125,29 @@ MLN_API mln_status mln_map_projection_set_camera(
 MLN_API mln_status mln_map_projection_set_visible_coordinates(
   mln_map_projection* projection, const mln_lat_lng* coordinates,
   size_t coordinate_count, mln_edge_insets padding
+) MLN_NOEXCEPT;
+
+/**
+ * Updates a projection helper camera so geometry coordinates are visible.
+ *
+ * The geometry descriptor graph, including all nested pointers, is borrowed for
+ * the duration of this call and is not retained. Use
+ * mln_map_projection_get_camera() after this call to read the computed camera.
+ * Empty geometry objects and geometry collections with no coordinates are
+ * invalid for camera fitting.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when projection is null or not live, geometry
+ *   is null or invalid, padding contains negative or non-finite values, or the
+ *   geometry contains no coordinates.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the projection
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_map_projection_set_visible_geometry(
+  mln_map_projection* projection, const mln_geometry* geometry,
+  mln_edge_insets padding
 ) MLN_NOEXCEPT;
 
 /**

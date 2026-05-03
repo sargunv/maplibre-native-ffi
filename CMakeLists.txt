@@ -197,6 +197,7 @@ add_library(
     src/c_api/texture.cpp
     src/c_api/version.cpp
     src/diagnostics/diagnostics.cpp
+    src/geojson/geojson.cpp
     src/logging/logging.cpp
     src/map/map.cpp
     src/render/render_session_common.cpp

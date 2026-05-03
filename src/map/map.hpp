@@ -79,6 +79,10 @@ auto map_projection_set_visible_coordinates(
   mln_map_projection* projection, const mln_lat_lng* coordinates,
   size_t coordinate_count, mln_edge_insets padding
 ) -> mln_status;
+auto map_projection_set_visible_geometry(
+  mln_map_projection* projection, const mln_geometry* geometry,
+  mln_edge_insets padding
+) -> mln_status;
 auto map_projection_pixel_for_lat_lng(
   mln_map_projection* projection, mln_lat_lng coordinate,
   mln_screen_point* out_point

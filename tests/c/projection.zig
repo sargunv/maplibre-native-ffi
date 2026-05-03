@@ -183,6 +183,16 @@ test "standalone projection converts and updates camera" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_projection_get_camera(helper, &snapshot));
     try testing.expect((snapshot.fields & c.MLN_CAMERA_OPTION_CENTER) != 0);
     try testing.expect((snapshot.fields & c.MLN_CAMERA_OPTION_ZOOM) != 0);
+
+    const line = c.mln_geometry{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_LINE_STRING,
+        .data = .{ .line_string = .{ .coordinates = visible[0..].ptr, .coordinate_count = visible.len } },
+    };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_projection_set_visible_geometry(helper, &line, padding));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_projection_get_camera(helper, &snapshot));
+    try testing.expect((snapshot.fields & c.MLN_CAMERA_OPTION_CENTER) != 0);
+    try testing.expect((snapshot.fields & c.MLN_CAMERA_OPTION_ZOOM) != 0);
 }
 
 test "standalone projection rejects invalid arguments" {
@@ -212,6 +222,17 @@ test "standalone projection rejects invalid arguments" {
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_coordinates(helper, null, 0, padding));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_coordinates(helper, null, 1, padding));
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_coordinates(helper, &center, 1, .{ .top = -1.0, .left = 0.0, .bottom = 0.0, .right = 0.0 }));
+
+    var empty_geometry = c.mln_geometry{
+        .size = @sizeOf(c.mln_geometry),
+        .type = c.MLN_GEOMETRY_TYPE_EMPTY,
+        .data = .{ .point = center },
+    };
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_geometry(helper, null, padding));
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_geometry(helper, &empty_geometry, padding));
+    empty_geometry.type = c.MLN_GEOMETRY_TYPE_POINT;
+    empty_geometry.data.point = .{ .latitude = std.math.inf(f64), .longitude = 0.0 };
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_projection_set_visible_geometry(helper, &empty_geometry, padding));
 
     var point: c.mln_screen_point = undefined;
     var coordinate: c.mln_lat_lng = undefined;
