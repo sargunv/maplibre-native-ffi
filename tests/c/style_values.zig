@@ -615,3 +615,111 @@ test "runtime style images copy premultiplied RGBA8 pixels" {
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_remove_style_image(map, stringView("runtime-icon"), &removed));
     try testing.expect(!removed);
 }
+
+test "image source helpers add and update URL and inline images" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, support.style_json));
+    _ = try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_STYLE_LOADED);
+
+    var coordinates = [_]c.mln_lat_lng{
+        .{ .latitude = 38.0, .longitude = -123.0 },
+        .{ .latitude = 38.0, .longitude = -122.0 },
+        .{ .latitude = 37.0, .longitude = -122.0 },
+        .{ .latitude = 37.0, .longitude = -123.0 },
+    };
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_image_source_url(map, stringView("image-url-source"), &coordinates, coordinates.len, stringView("https://example.com/image.png")),
+    );
+
+    var found = false;
+    var source_type: u32 = c.MLN_STYLE_SOURCE_TYPE_UNKNOWN;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_style_source_type(map, stringView("image-url-source"), &source_type, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(c.MLN_STYLE_SOURCE_TYPE_IMAGE, source_type);
+
+    var required_coordinates: usize = 0;
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_get_image_source_coordinates(map, stringView("image-url-source"), null, 0, &required_coordinates, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 4), required_coordinates);
+
+    var copied_coordinates: [4]c.mln_lat_lng = undefined;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_image_source_coordinates(map, stringView("image-url-source"), &copied_coordinates, copied_coordinates.len, &required_coordinates, &found),
+    );
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 4), required_coordinates);
+    try testing.expectApproxEqAbs(coordinates[0].latitude, copied_coordinates[0].latitude, 0.000001);
+    try testing.expectApproxEqAbs(coordinates[0].longitude, copied_coordinates[0].longitude, 0.000001);
+
+    var image_pixels = [_]u8{ 1, 2, 3, 4 };
+    var image = c.mln_premultiplied_rgba8_image_default();
+    image.width = 1;
+    image.height = 1;
+    image.stride = 4;
+    image.pixels = &image_pixels;
+    image.byte_length = image_pixels.len;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_add_image_source_image(map, stringView("image-inline-source"), &coordinates, coordinates.len, &image),
+    );
+    image_pixels[0] = 9;
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_set_image_source_url(map, stringView("image-inline-source"), stringView("https://example.com/replacement.png")),
+    );
+    image_pixels[0] = 5;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_image_source_image(map, stringView("image-inline-source"), &image));
+
+    const updated_coordinates = [_]c.mln_lat_lng{
+        .{ .latitude = 39.0, .longitude = -124.0 },
+        .{ .latitude = 39.0, .longitude = -121.0 },
+        .{ .latitude = 36.0, .longitude = -121.0 },
+        .{ .latitude = 36.0, .longitude = -124.0 },
+    };
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_set_image_source_coordinates(map, stringView("image-inline-source"), &updated_coordinates, updated_coordinates.len),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_image_source_coordinates(map, stringView("image-inline-source"), &copied_coordinates, copied_coordinates.len, &required_coordinates, &found),
+    );
+    try testing.expect(found);
+    try testing.expectApproxEqAbs(updated_coordinates[0].latitude, copied_coordinates[0].latitude, 0.000001);
+    try testing.expectApproxEqAbs(updated_coordinates[0].longitude, copied_coordinates[0].longitude, 0.000001);
+
+    try testing.expectEqual(
+        c.MLN_STATUS_OK,
+        c.mln_map_get_image_source_coordinates(map, stringView("missing-image-source"), &copied_coordinates, copied_coordinates.len, &required_coordinates, &found),
+    );
+    try testing.expect(!found);
+    try testing.expectEqual(@as(usize, 0), required_coordinates);
+
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_add_image_source_url(map, stringView("image-url-source"), &coordinates, coordinates.len, stringView("https://example.com/duplicate.png")),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_set_image_source_url(map, stringView("point"), stringView("https://example.com/not-image.png")),
+    );
+    try testing.expectEqual(
+        c.MLN_STATUS_INVALID_ARGUMENT,
+        c.mln_map_set_image_source_coordinates(map, stringView("image-url-source"), &coordinates, 3),
+    );
+}

@@ -309,6 +309,68 @@ auto mln_map_copy_style_image_premultiplied_rgba8(
   });
 }
 
+auto mln_map_add_image_source_url(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, mln_string_view url
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_image_source_url(
+      map, source_id, coordinates, coordinate_count, url
+    );
+  });
+}
+
+auto mln_map_add_image_source_image(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count, const mln_premultiplied_rgba8_image* image
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_add_image_source_image(
+      map, source_id, coordinates, coordinate_count, image
+    );
+  });
+}
+
+auto mln_map_set_image_source_url(
+  mln_map* map, mln_string_view source_id, mln_string_view url
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_image_source_url(map, source_id, url);
+  });
+}
+
+auto mln_map_set_image_source_image(
+  mln_map* map, mln_string_view source_id,
+  const mln_premultiplied_rgba8_image* image
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_image_source_image(map, source_id, image);
+  });
+}
+
+auto mln_map_set_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, const mln_lat_lng* coordinates,
+  size_t coordinate_count
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_set_image_source_coordinates(
+      map, source_id, coordinates, coordinate_count
+    );
+  });
+}
+
+auto mln_map_get_image_source_coordinates(
+  mln_map* map, mln_string_view source_id, mln_lat_lng* out_coordinates,
+  size_t coordinate_capacity, size_t* out_coordinate_count, bool* out_found
+) noexcept -> mln_status {
+  return mln::c_api::status_boundary([&]() -> mln_status {
+    return mln::core::map_get_image_source_coordinates(
+      map, source_id, out_coordinates, coordinate_capacity,
+      out_coordinate_count, out_found
+    );
+  });
+}
+
 auto mln_map_add_style_layer_json(
   mln_map* map, const mln_json_value* layer_json,
   mln_string_view before_layer_id
