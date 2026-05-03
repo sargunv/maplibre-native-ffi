@@ -70,6 +70,11 @@ test "camera rejects invalid arguments" {
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_ease_to(map, &camera, &animation));
 
     animation = c.mln_animation_options_default();
+    animation.fields = c.MLN_ANIMATION_OPTION_DURATION;
+    animation.duration_ms = std.math.floatMax(f64);
+    try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_ease_to(map, &camera, &animation));
+
+    animation = c.mln_animation_options_default();
     animation.fields = c.MLN_ANIMATION_OPTION_EASING;
     animation.easing.x1 = 2;
     try testing.expectEqual(c.MLN_STATUS_INVALID_ARGUMENT, c.mln_map_fly_to(map, &camera, &animation));

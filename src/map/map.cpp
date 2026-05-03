@@ -473,6 +473,12 @@ auto validate_camera_options(const mln_camera_options* camera) -> mln_status {
   return MLN_STATUS_OK;
 }
 
+auto max_animation_duration_ms() -> double {
+  using DoubleMilliseconds = std::chrono::duration<double, std::milli>;
+  return std::chrono::duration_cast<DoubleMilliseconds>(mbgl::Duration::max())
+    .count();
+}
+
 auto validate_animation_options(const mln_animation_options* animation)
   -> mln_status {
   if (animation == nullptr) {
@@ -495,10 +501,11 @@ auto validate_animation_options(const mln_animation_options* animation)
   }
   if (
     (animation->fields & MLN_ANIMATION_OPTION_DURATION) != 0U &&
-    (!std::isfinite(animation->duration_ms) || animation->duration_ms < 0.0)
+    (!std::isfinite(animation->duration_ms) || animation->duration_ms < 0.0 ||
+     animation->duration_ms > max_animation_duration_ms())
   ) {
     mln::core::set_thread_error(
-      "animation duration_ms must be finite and greater than or equal to 0"
+      "animation duration_ms must fit the native duration range"
     );
     return MLN_STATUS_INVALID_ARGUMENT;
   }

@@ -1012,8 +1012,7 @@ typedef struct mln_unit_bezier {
 typedef struct mln_animation_options {
   uint32_t size;
   uint32_t fields;
-  /** Duration in milliseconds. Must be finite and greater than or equal to 0.
-   */
+  /** Duration in milliseconds. Must fit the native duration range. */
   double duration_ms;
   /** Average flyTo velocity in screenfuls per second. Must be positive. */
   double velocity;
