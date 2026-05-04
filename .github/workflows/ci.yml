@@ -24,8 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-ci-deps
-      - run: mise run ci:lint:common
-      - run: mise run ci:verify-clean-worktree
+      - run: mise run ci:lint common
 
   docs:
     name: docs
@@ -59,8 +58,7 @@ jobs:
           path: third_party/maplibre-native
           key: mln-src-v1-${{ hashFiles('cmake/mln_version.cmake') }}
       - run: mise run configure
-      - run: mise run ci:lint:native
-      - run: mise run ci:verify-clean-worktree
+      - run: mise run ci:lint native
       - run: mise run test
       - run: mise run ci:prepare-native-artifact
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
