@@ -5,6 +5,9 @@ PKG_CONFIG = "{{config_root}}/../../.pixi/envs/default/bin/pkg-config"
 PKG_CONFIG_PATH = "{{config_root}}/../../build/pkgconfig"
 XDG_DATA_DIRS = "{{config_root}}/../../.pixi/envs/default/share:{{env.XDG_DATA_DIRS | default(value=\"/usr/local/share:/usr/share\")}}"
 
+[tasks.ci]
+run = ["mise run :build"]
+
 [tasks.build]
 depends = ["//:ensure-native-library", ":compile-shaders"]
 run = "zig build"

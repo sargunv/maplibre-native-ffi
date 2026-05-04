@@ -1,26 +1,20 @@
-# Mise environment containing CI-only task composition. Use with
-# `MISE_ENV=ci mise run ...`.
+# Place CI-only scripts here so GitHub Actions `run` blocks are one-liners.
+# Use locally with `MISE_ENV=ci mise run ...`.
 
-[tasks."ci:hygiene"]
+[tasks."ci:lint:common"]
+run = ["hk fix --all --profile ci-common"]
+
+[tasks."ci:lint:native"]
+run = ["hk fix --all --profile ci-native"]
+
+[tasks."ci:verify-clean-worktree"]
 run = [
-  "hk fix --all --profile ci-common",
-  "mise run _verify-clean-worktree",
+  "git update-index -q --refresh",
+  "git diff --exit-code",
+  "git diff --cached --exit-code",
 ]
 
-[tasks."ci:native-lint"]
-run = [
-  "mise run configure",
-  "hk fix --all --profile ci-native",
-  "mise run _verify-clean-worktree",
-]
-
-[tasks."ci:native"]
-run = [
-  "mise run ci:native-lint",
-  "mise run test",
-]
-
-[tasks."ci:native-artifact"]
+[tasks."ci:prepare-native-artifact"]
 run = [
   "pixi run cmake -E rm -rf ci-artifact",
   "pixi run cmake -E make_directory ci-artifact/build/pkgconfig",
@@ -29,15 +23,3 @@ run = [
   "pixi run cmake -E copy cmake/maplibre-native-c.ci-artifact.pc ci-artifact/build/pkgconfig/maplibre-native-c.pc",
   "pixi run cmake -E copy_directory third_party/maplibre-native/vendor/Vulkan-Headers/include ci-artifact/third_party/maplibre-native/vendor/Vulkan-Headers/include",
 ]
-
-[tasks."ci:docs"]
-run = "mise run docs:c"
-
-[tasks."ci:examples:zig-map"]
-run = "mise run //examples/zig-map:build"
-
-[tasks."ci:examples:zig-readback"]
-run = "mise run //examples/zig-readback:run"
-
-[tasks."ci:examples:swift-map"]
-run = "mise run //examples/swift-map:build"
