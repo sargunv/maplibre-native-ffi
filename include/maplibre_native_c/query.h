@@ -19,6 +19,7 @@ extern "C" {
 #pragma region Rendered and source feature queries
 
 typedef struct mln_feature_query_result mln_feature_query_result;
+typedef struct mln_feature_extension_result mln_feature_extension_result;
 
 /** Rendered feature query geometry variants. */
 typedef enum mln_rendered_query_geometry_type : uint32_t {
@@ -106,6 +107,27 @@ typedef struct mln_queried_feature {
   const mln_json_value* state;
 } mln_queried_feature;
 
+/** Feature extension query result variants. */
+typedef enum mln_feature_extension_result_type : uint32_t {
+  MLN_FEATURE_EXTENSION_RESULT_TYPE_VALUE = 1,
+  MLN_FEATURE_EXTENSION_RESULT_TYPE_FEATURE_COLLECTION = 2,
+} mln_feature_extension_result_type;
+
+/** Tagged feature extension query result view. */
+typedef struct mln_feature_extension_result_info {
+  uint32_t size;
+  /** One of mln_feature_extension_result_type. */
+  uint32_t type;
+  union {
+    /** JSON-like value view selected by
+     * MLN_FEATURE_EXTENSION_RESULT_TYPE_VALUE. */
+    const mln_json_value* value;
+    /** Feature collection view selected by
+     * MLN_FEATURE_EXTENSION_RESULT_TYPE_FEATURE_COLLECTION. */
+    mln_feature_collection feature_collection;
+  } data;
+} mln_feature_extension_result_info;
+
 /** Returns default rendered feature query options. */
 MLN_API mln_rendered_feature_query_options
 mln_rendered_feature_query_options_default(void) MLN_NOEXCEPT;
@@ -178,6 +200,33 @@ MLN_API mln_status mln_render_session_query_source_features(
 ) MLN_NOEXCEPT;
 
 /**
+ * Queries a feature extension from the latest render session state.
+ *
+ * The session renderer must already exist. source_id, feature, extension,
+ * extension_field, and arguments are borrowed for the duration of the call.
+ * arguments may be null. When non-null, arguments must be a JSON object
+ * descriptor. On success, *out_result receives an owned result handle. Destroy
+ * it with mln_feature_extension_result_destroy().
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when session is null or not live, source_id,
+ *   feature, extension, extension_field, or arguments are invalid, out_result
+ *   is null, or *out_result is not null.
+ * - MLN_STATUS_INVALID_STATE when the session is detached or no renderer has
+ *   been created for the session yet.
+ * - MLN_STATUS_WRONG_THREAD when called from a thread other than the session
+ *   owner thread.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_render_session_query_feature_extensions(
+  mln_render_session* session, mln_string_view source_id,
+  const mln_feature* feature, mln_string_view extension,
+  mln_string_view extension_field, const mln_json_value* arguments,
+  mln_feature_extension_result** out_result
+) MLN_NOEXCEPT;
+
+/**
  * Gets the number of features in a query result handle.
  *
  * Returns:
@@ -210,6 +259,28 @@ MLN_API mln_status mln_feature_query_result_get(
 /** Destroys a feature query result handle. Null is accepted as a no-op. */
 MLN_API void mln_feature_query_result_destroy(
   mln_feature_query_result* result
+) MLN_NOEXCEPT;
+
+/**
+ * Borrows a feature extension query result view.
+ *
+ * On success, out_info receives views into result-owned storage. Those views
+ * remain valid until result is destroyed.
+ *
+ * Returns:
+ * - MLN_STATUS_OK on success.
+ * - MLN_STATUS_INVALID_ARGUMENT when result is null or not live, out_info is
+ *   null, or out_info->size is too small.
+ * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
+ */
+MLN_API mln_status mln_feature_extension_result_get(
+  const mln_feature_extension_result* result,
+  mln_feature_extension_result_info* out_info
+) MLN_NOEXCEPT;
+
+/** Destroys a feature extension result handle. Null is accepted as a no-op. */
+MLN_API void mln_feature_extension_result_destroy(
+  mln_feature_extension_result* result
 ) MLN_NOEXCEPT;
 
 #pragma endregion

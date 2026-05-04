@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -20,6 +21,7 @@
 #include <mbgl/style/filter.hpp>
 #include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
+#include <mbgl/util/geojson.hpp>
 #include <mbgl/util/size.hpp>
 
 #include "render/render_session_common.hpp"
@@ -53,6 +55,14 @@ struct mln_feature_query_result {
     features;
 };
 
+struct mln_feature_extension_result {
+  mln_feature_extension_result_info info{};
+  std::unique_ptr<mln::core::OwnedJsonDescriptor> value;
+  std::vector<std::unique_ptr<mln::core::OwnedQueriedFeatureDescriptor>>
+    features;
+  std::vector<mln_feature> feature_roots;
+};
+
 namespace {
 
 auto render_session_mutex() -> std::mutex& {
@@ -77,6 +87,20 @@ auto feature_query_results() -> std::unordered_map<
   static auto value = std::unordered_map<
     const mln_feature_query_result*,
     std::unique_ptr<mln_feature_query_result>>{};
+  return value;
+}
+
+auto feature_extension_result_mutex() -> std::mutex& {
+  static auto value = std::mutex{};
+  return value;
+}
+
+auto feature_extension_results() -> std::unordered_map<
+  const mln_feature_extension_result*,
+  std::unique_ptr<mln_feature_extension_result>>& {
+  static auto value = std::unordered_map<
+    const mln_feature_extension_result*,
+    std::unique_ptr<mln_feature_extension_result>>{};
   return value;
 }
 
@@ -174,6 +198,19 @@ auto validate_screen_point(mln_screen_point point) -> bool {
 }
 
 auto validate_query_result_output(mln_feature_query_result** out_result)
+  -> mln_status {
+  if (out_result == nullptr) {
+    mln::core::set_thread_error("out_result must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (*out_result != nullptr) {
+    mln::core::set_thread_error("*out_result must be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto validate_extension_result_output(mln_feature_extension_result** out_result)
   -> mln_status {
   if (out_result == nullptr) {
     mln::core::set_thread_error("out_result must not be null");
@@ -510,6 +547,125 @@ auto find_feature_query_result_locked(const mln_feature_query_result* result)
   -> const mln_feature_query_result* {
   const auto found = feature_query_results().find(result);
   if (found == feature_query_results().end()) {
+    return nullptr;
+  }
+  return found->second.get();
+}
+
+auto validate_non_empty_string(mln_string_view string, const char* name)
+  -> bool {
+  if (!validate_string_view(string)) {
+    return false;
+  }
+  if (string.size == 0) {
+    auto message = std::string{name} + " must not be empty";
+    mln::core::set_thread_error(message.c_str());
+    return false;
+  }
+  return true;
+}
+
+auto to_feature_extension_arguments(const mln_json_value* arguments)
+  -> std::optional<std::optional<std::map<std::string, mbgl::Value>>> {
+  if (arguments == nullptr) {
+    return std::optional<std::map<std::string, mbgl::Value>>{std::nullopt};
+  }
+  auto converted = mln::core::to_native_json_value(arguments);
+  if (!converted) {
+    return std::nullopt;
+  }
+  const auto* object = converted->getObject();
+  if (object == nullptr) {
+    mln::core::set_thread_error(
+      "feature extension arguments must be a JSON object"
+    );
+    return std::nullopt;
+  }
+  auto result = std::map<std::string, mbgl::Value>{};
+  for (const auto& [key, value] : *object) {
+    result.emplace(key, value);
+  }
+  return std::optional<std::map<std::string, mbgl::Value>>{std::move(result)};
+}
+
+auto create_feature_extension_value_result(
+  mbgl::Value value, mln_feature_extension_result** out_result
+) -> mln_status {
+  const auto output_status = validate_extension_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  auto result = std::make_unique<mln_feature_extension_result>();
+  result->value = mln::core::to_c_json_value(value);
+  result->info = mln_feature_extension_result_info{
+    .size = sizeof(mln_feature_extension_result_info),
+    .type = MLN_FEATURE_EXTENSION_RESULT_TYPE_VALUE,
+    .data = {.value = &result->value->root}
+  };
+  auto* handle = result.get();
+  const auto lock = std::scoped_lock{feature_extension_result_mutex()};
+  feature_extension_results().emplace(handle, std::move(result));
+  *out_result = handle;
+  return MLN_STATUS_OK;
+}
+
+auto create_feature_extension_collection_result(
+  mbgl::FeatureCollection features, mln_feature_extension_result** out_result
+) -> mln_status {
+  const auto output_status = validate_extension_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  auto result = std::make_unique<mln_feature_extension_result>();
+  result->features.reserve(features.size());
+  result->feature_roots.reserve(features.size());
+  for (const auto& feature : features) {
+    result->features.emplace_back(
+      make_queried_feature(mbgl::Feature{feature}, std::nullopt)
+    );
+  }
+  for (const auto& feature : result->features) {
+    result->feature_roots.emplace_back(feature->feature);
+  }
+  result->info = mln_feature_extension_result_info{
+    .size = sizeof(mln_feature_extension_result_info),
+    .type = MLN_FEATURE_EXTENSION_RESULT_TYPE_FEATURE_COLLECTION,
+    .data = {
+      .feature_collection = {
+        .features = result->feature_roots.empty()
+                      ? nullptr
+                      : result->feature_roots.data(),
+        .feature_count = result->feature_roots.size()
+      }
+    }
+  };
+  auto* handle = result.get();
+  const auto lock = std::scoped_lock{feature_extension_result_mutex()};
+  feature_extension_results().emplace(handle, std::move(result));
+  *out_result = handle;
+  return MLN_STATUS_OK;
+}
+
+auto create_feature_extension_result(
+  mbgl::FeatureExtensionValue value, mln_feature_extension_result** out_result
+) -> mln_status {
+  if (value.is<mbgl::Value>()) {
+    return create_feature_extension_value_result(
+      std::move(value.get<mbgl::Value>()), out_result
+    );
+  }
+  return create_feature_extension_collection_result(
+    std::move(value.get<mbgl::FeatureCollection>()), out_result
+  );
+}
+
+auto find_feature_extension_result_locked(
+  const mln_feature_extension_result* result
+) -> const mln_feature_extension_result* {
+  const auto found = feature_extension_results().find(result);
+  if (found == feature_extension_results().end()) {
     return nullptr;
   }
   return found->second.get();
@@ -1062,6 +1218,51 @@ auto render_session_query_source_features(
   );
 }
 
+auto render_session_query_feature_extensions(
+  mln_render_session* session, mln_string_view source_id,
+  const mln_feature* feature, mln_string_view extension,
+  mln_string_view extension_field, const mln_json_value* arguments,
+  mln_feature_extension_result** out_result
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto output_status = validate_extension_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  if (
+    !validate_non_empty_string(source_id, "source_id") ||
+    !validate_non_empty_string(extension, "extension") ||
+    !validate_non_empty_string(extension_field, "extension_field")
+  ) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto native_feature = to_native_feature(feature);
+  if (!native_feature) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto native_arguments = to_feature_extension_arguments(arguments);
+  if (!native_arguments) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto query_feature = mbgl::Feature{std::move(*native_feature)};
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  auto result = session->renderer->queryFeatureExtensions(
+    string_from_view(source_id), query_feature, string_from_view(extension),
+    string_from_view(extension_field), std::move(*native_arguments)
+  );
+  return create_feature_extension_result(std::move(result), out_result);
+}
+
 auto feature_query_result_count(
   const mln_feature_query_result* result, std::size_t* out_count
 ) -> mln_status {
@@ -1121,6 +1322,42 @@ auto feature_query_result_destroy(mln_feature_query_result* result) -> void {
   }
   const auto lock = std::scoped_lock{feature_query_result_mutex()};
   feature_query_results().erase(result);
+}
+
+auto feature_extension_result_get(
+  const mln_feature_extension_result* result,
+  mln_feature_extension_result_info* out_info
+) -> mln_status {
+  if (result == nullptr) {
+    set_thread_error("feature extension result must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_info == nullptr) {
+    set_thread_error("out_info must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_info->size < sizeof(mln_feature_extension_result_info)) {
+    set_thread_error("mln_feature_extension_result_info.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{feature_extension_result_mutex()};
+  const auto* live_result = find_feature_extension_result_locked(result);
+  if (live_result == nullptr) {
+    set_thread_error("feature extension result is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_info = live_result->info;
+  return MLN_STATUS_OK;
+}
+
+auto feature_extension_result_destroy(mln_feature_extension_result* result)
+  -> void {
+  if (result == nullptr) {
+    return;
+  }
+  const auto lock = std::scoped_lock{feature_extension_result_mutex()};
+  feature_extension_results().erase(result);
 }
 
 }  // namespace mln::core
