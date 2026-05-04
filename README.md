@@ -43,70 +43,28 @@ mise run //examples/zig-map:run
 mise run //examples/swift-map:run
 ```
 
-## Project Docs
-
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to prepare changes for
-  review.
-- [`docs/src/content/docs/development/conventions.md`](docs/src/content/docs/development/conventions.md)
-  explains project scope and development conventions.
-- [`docs/src/content/docs/development/setup.md`](docs/src/content/docs/development/setup.md)
-  explains platform setup, pinned tools, and local commands.
-
 ## Current Status
 
-Target support tracks renderer and platform combinations that can build and run
-through this C API.
+The vast majority of the MapLibre Native API surface is already covered.
+Advanced extension APIs (custom layers, shader registry) are not yet included.
 
-| Target             | Support | Tracking                                                        |
-| ------------------ | ------- | --------------------------------------------------------------- |
-| Linux Vulkan       | 🟢      |                                                                 |
-| Linux OpenGL/EGL   | ❌      | [#23](https://github.com/sargunv/maplibre-native-ffi/issues/23) |
-| macOS Metal        | 🟢      |                                                                 |
-| macOS Vulkan       | ❌      | [#20](https://github.com/sargunv/maplibre-native-ffi/issues/20) |
-| Windows Vulkan     | ❌      | [#21](https://github.com/sargunv/maplibre-native-ffi/issues/21) |
-| Windows OpenGL/WGL | ❌      | [#22](https://github.com/sargunv/maplibre-native-ffi/issues/22) |
-| Android Vulkan     | ❌      | [#24](https://github.com/sargunv/maplibre-native-ffi/issues/24) |
-| Android OpenGL/EGL | ❌      | [#24](https://github.com/sargunv/maplibre-native-ffi/issues/24) |
-| iOS Metal          | ❌      | [#25](https://github.com/sargunv/maplibre-native-ffi/issues/25) |
-| WebGPU             | ❌      | [#37](https://github.com/sargunv/maplibre-native-ffi/issues/37) |
+Legend: 🟢 built and tested in CI; ❌ not yet implemented.
 
-API coverage tracks MapLibre Native domains exposed through the C API.
+| Platform | OpenGL             | Vulkan             | Metal              | WebGPU             |
+| -------- | ------------------ | ------------------ | ------------------ | ------------------ |
+| Linux    | ❌ [#23][issue-23] | 🟢                 | -                  | ❌ [#37][issue-37] |
+| Android  | ❌ [#24][issue-24] | ❌ [#24][issue-24] | -                  | ❌ [#37][issue-37] |
+| macOS    | -                  | ❌ [#20][issue-20] | 🟢                 | ❌ [#37][issue-37] |
+| iOS      | -                  | -                  | ❌ [#25][issue-25] | ❌ [#37][issue-37] |
+| Windows  | ❌ [#22][issue-22] | ❌ [#21][issue-21] | -                  | ❌ [#37][issue-37] |
 
-| Domain                | Coverage | Tracking                                                                                                                                                                                                                                                          |
-| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ABI contract          | 🟢       |                                                                                                                                                                                                                                                                   |
-| Diagnostics, logging  | 🟢       |                                                                                                                                                                                                                                                                   |
-| Runtime lifecycle     | 🟢       |                                                                                                                                                                                                                                                                   |
-| Resources, networking | 🟢       |                                                                                                                                                                                                                                                                   |
-| Map lifecycle         | 🟢       |                                                                                                                                                                                                                                                                   |
-| Camera                | 🟡       | [#26](https://github.com/sargunv/maplibre-native-ffi/issues/26)                                                                                                                                                                                                   |
-| Projection            | 🟢       |                                                                                                                                                                                                                                                                   |
-| Map events            | 🟢       |                                                                                                                                                                                                                                                                   |
-| Texture rendering     | 🟢       |                                                                                                                                                                                                                                                                   |
-| Style mutation        | ❌       | [#15](https://github.com/sargunv/maplibre-native-ffi/issues/15)                                                                                                                                                                                                   |
-| Feature queries       | ❌       | [#17](https://github.com/sargunv/maplibre-native-ffi/issues/17)                                                                                                                                                                                                   |
-| Geometry, values      | ❌       | [#19](https://github.com/sargunv/maplibre-native-ffi/issues/19)                                                                                                                                                                                                   |
-| Expressions, filters  | ❌       | [#30](https://github.com/sargunv/maplibre-native-ffi/issues/30)                                                                                                                                                                                                   |
-| Sources, layers       | ❌       | [#29](https://github.com/sargunv/maplibre-native-ffi/issues/29), [#31](https://github.com/sargunv/maplibre-native-ffi/issues/31), [#33](https://github.com/sargunv/maplibre-native-ffi/issues/33)-[#36](https://github.com/sargunv/maplibre-native-ffi/issues/36) |
-| Feature state         | ❌       | [#27](https://github.com/sargunv/maplibre-native-ffi/issues/27)                                                                                                                                                                                                   |
-| Offline regions       | 🟡       | [#13](https://github.com/sargunv/maplibre-native-ffi/issues/13)                                                                                                                                                                                                   |
-
-Language binding support tracks low-level bindings intended to sit directly
-above the C API. No bindings are implemented yet.
-
-| Target               | Support | Example                           | Tracking                                                        |
-| -------------------- | ------- | --------------------------------- | --------------------------------------------------------------- |
-| Rust                 | ❌      |                                   | [#41](https://github.com/sargunv/maplibre-native-ffi/issues/41) |
-| Zig                  | ❌      | [`zig-map`](examples/zig-map)     | [#42](https://github.com/sargunv/maplibre-native-ffi/issues/42) |
-| Go                   | ❌      |                                   | [#43](https://github.com/sargunv/maplibre-native-ffi/issues/43) |
-| Swift                | ❌      | [`swift-map`](examples/swift-map) | [#44](https://github.com/sargunv/maplibre-native-ffi/issues/44) |
-| Kotlin/Native        | ❌      |                                   | [#46](https://github.com/sargunv/maplibre-native-ffi/issues/46) |
-| Java FFM             | ❌      |                                   | [#45](https://github.com/sargunv/maplibre-native-ffi/issues/45) |
-| Java JNI / Android   | ❌      |                                   | [#47](https://github.com/sargunv/maplibre-native-ffi/issues/47) |
-| C# / .NET            | ❌      |                                   | [#48](https://github.com/sargunv/maplibre-native-ffi/issues/48) |
-| Python               | ❌      |                                   | [#49](https://github.com/sargunv/maplibre-native-ffi/issues/49) |
-| TypeScript / Node.js | ❌      |                                   | [#50](https://github.com/sargunv/maplibre-native-ffi/issues/50) |
-| Dart                 | ❌      |                                   | [#51](https://github.com/sargunv/maplibre-native-ffi/issues/51) |
+[issue-20]: https://github.com/sargunv/maplibre-native-ffi/issues/20
+[issue-21]: https://github.com/sargunv/maplibre-native-ffi/issues/21
+[issue-22]: https://github.com/sargunv/maplibre-native-ffi/issues/22
+[issue-23]: https://github.com/sargunv/maplibre-native-ffi/issues/23
+[issue-24]: https://github.com/sargunv/maplibre-native-ffi/issues/24
+[issue-25]: https://github.com/sargunv/maplibre-native-ffi/issues/25
+[issue-37]: https://github.com/sargunv/maplibre-native-ffi/issues/37
 
 ## License
 
