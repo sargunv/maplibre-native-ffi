@@ -17,10 +17,6 @@ extern "C" {
 #endif
 
 /**
- * @defgroup camera Map camera and coordinate conversion
- * @{
- */
-/**
  * Returns empty camera options initialized for this C API version.
  */
 MLN_API mln_camera_options mln_camera_options_default(void) MLN_NOEXCEPT;
@@ -708,8 +704,6 @@ MLN_API mln_status mln_map_lat_lngs_for_pixels(
   mln_map* map, const mln_screen_point* points, size_t point_count,
   mln_lat_lng* out_coordinates
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

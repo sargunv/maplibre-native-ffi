@@ -15,11 +15,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup texture Texture render targets
- * @{
- */
-
 /** Default texture session attachment options for a session-owned target. */
 typedef struct mln_owned_texture_descriptor {
   uint32_t size;
@@ -492,8 +487,6 @@ MLN_API mln_status mln_metal_owned_texture_release_frame(
 MLN_API mln_status mln_vulkan_owned_texture_release_frame(
   mln_render_session* session, const mln_vulkan_owned_texture_frame* frame
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

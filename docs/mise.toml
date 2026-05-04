@@ -1,5 +1,5 @@
 [tasks."api:c"]
-run = "rm -rf api/c/gen src/content/docs/api/c && mkdir -p api/c/gen src/content/docs/api/c && doxygen api/c/Doxyfile && pnpm exec moxygen --quiet --groups --frontmatter --html-anchors --source-root ../include --output 'src/content/docs/api/c/%s.md' api/c/gen/xml"
+run = "rm -rf api/c/gen src/content/docs/api/c src/content/docs/api/c.md && mkdir -p api/c/gen src/content/docs/api && doxygen api/c/Doxyfile && pnpm exec moxygen --quiet --frontmatter --html-anchors --source-root ../include --templates api/c/templates/cpp --output src/content/docs/api/c.md api/c/gen/xml"
 
 [tasks.dev]
 depends = ["api:c"]

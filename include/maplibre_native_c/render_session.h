@@ -16,11 +16,6 @@ extern "C" {
 #endif
 
 /**
- * @defgroup render_session Render sessions
- * @{
- */
-
-/**
  * Resizes an attached render session.
  *
  * Width and height are logical map dimensions. The scale_factor value maps
@@ -238,8 +233,6 @@ MLN_API mln_status mln_json_snapshot_get(
 MLN_API void mln_json_snapshot_destroy(
   mln_json_snapshot* snapshot
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

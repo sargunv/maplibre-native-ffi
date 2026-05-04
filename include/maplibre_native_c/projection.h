@@ -16,11 +16,6 @@ extern "C" {
 #endif
 
 /**
- * @defgroup projection Projection helpers
- * @{
- */
-
-/**
  * Creates a standalone projection helper from the current map transform.
  *
  * The helper owns projection and camera transform state only. It does not own
@@ -198,8 +193,6 @@ MLN_API mln_status mln_projected_meters_for_lat_lng(
 MLN_API mln_status mln_lat_lng_for_projected_meters(
   mln_projected_meters meters, mln_lat_lng* out_coordinate
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

@@ -19,10 +19,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup runtime Runtime, resources, and events
- * @{
- */
 typedef enum mln_network_status : uint32_t {
   MLN_NETWORK_STATUS_ONLINE = 1,
   MLN_NETWORK_STATUS_OFFLINE = 2,
@@ -651,8 +647,6 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 MLN_API mln_status mln_runtime_poll_event(
   mln_runtime* runtime, mln_runtime_event* out_event, bool* out_has_event
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

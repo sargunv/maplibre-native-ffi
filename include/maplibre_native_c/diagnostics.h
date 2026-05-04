@@ -13,10 +13,6 @@ extern "C" {
 #endif
 
 /**
- * @defgroup diagnostics Diagnostics
- * @{
- */
-/**
  * Returns the last thread-local diagnostic message.
  *
  * The returned string is empty when no diagnostic is available. The pointer is
@@ -24,8 +20,6 @@ extern "C" {
  * thread that writes a thread-local diagnostic.
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

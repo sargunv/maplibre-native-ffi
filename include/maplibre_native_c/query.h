@@ -16,11 +16,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup query Feature queries
- * @{
- */
-
 typedef struct mln_feature_query_result mln_feature_query_result;
 typedef struct mln_feature_extension_result mln_feature_extension_result;
 
@@ -285,8 +280,6 @@ MLN_API mln_status mln_feature_extension_result_get(
 MLN_API void mln_feature_extension_result_destroy(
   mln_feature_extension_result* result
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

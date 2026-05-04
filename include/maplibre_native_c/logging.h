@@ -14,10 +14,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup logging Logging
- * @{
- */
 /** Log severity values emitted by MapLibre Native. */
 typedef enum mln_log_severity : uint32_t {
   MLN_LOG_SEVERITY_INFO = 1,
@@ -120,8 +116,6 @@ MLN_API mln_status mln_log_clear_callback(void) MLN_NOEXCEPT;
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
  */
 MLN_API mln_status mln_log_set_async_severity_mask(uint32_t mask) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

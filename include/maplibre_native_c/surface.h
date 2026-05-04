@@ -14,11 +14,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup surface Surface render targets
- * @{
- */
-
 /** Metal native surface session attachment options. */
 typedef struct mln_metal_surface_descriptor {
   uint32_t size;
@@ -122,8 +117,6 @@ MLN_API mln_status mln_vulkan_surface_attach(
   mln_map* map, const mln_vulkan_surface_descriptor* descriptor,
   mln_render_session** out_session
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

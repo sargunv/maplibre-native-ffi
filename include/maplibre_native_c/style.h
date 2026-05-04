@@ -20,11 +20,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup style Style sources, layers, and images
- * @{
- */
-
 typedef struct mln_style_id_list mln_style_id_list;
 
 /** Style source type values returned by mln_map_get_style_source_type(). */
@@ -1308,8 +1303,6 @@ MLN_API mln_status mln_map_set_layer_filter(
 MLN_API mln_status mln_map_get_layer_filter(
   mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_filter
 ) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

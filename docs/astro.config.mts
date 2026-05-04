@@ -25,12 +25,7 @@ export default defineConfig({
         },
         {
           label: "Reference",
-          items: [
-            {
-              label: "C API",
-              autogenerate: { directory: "api/c" },
-            },
-          ],
+          items: [{ label: "C API", slug: "api/c" }],
         },
       ],
     }),

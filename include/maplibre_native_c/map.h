@@ -21,10 +21,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup map Map lifecycle, shared types, and offline regions
- * @{
- */
 /** Field mask values for mln_camera_options. */
 typedef enum mln_camera_option_field : uint32_t {
   MLN_CAMERA_OPTION_CENTER = 1U << 0U,
@@ -970,8 +966,6 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
  */
 MLN_API mln_status
 mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }

@@ -33,10 +33,6 @@
 extern "C" {
 #endif
 
-/**
- * @defgroup base Base ABI contract
- * @{
- */
 /** Status values returned by status-returning functions. */
 typedef enum mln_status : int32_t {
   MLN_STATUS_OK = 0,
@@ -69,8 +65,6 @@ typedef struct mln_render_session mln_render_session;
  * YYYYMMDD and change only when the ABI contract changes.
  */
 MLN_API uint32_t mln_c_version(void) MLN_NOEXCEPT;
-
-/** @} */
 
 #ifdef __cplusplus
 }
