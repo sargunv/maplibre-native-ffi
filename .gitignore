@@ -4,8 +4,16 @@ docs/api/c/
 zig-out/
 zig-pkg/
 *.spv
-workpad.md
 
 # Fetched on demand by CMake (see cmake/mln_version.cmake) when
 # MLN_SOURCE_DIR is not set externally.
 third_party/maplibre-native/
+
+# astro / node
+dist/
+.astro/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

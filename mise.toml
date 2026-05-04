@@ -28,6 +28,7 @@ node = "24.11.0"
 postinstall = [
   "hk install --mise",
   "pixi install --locked",
+  "cd docs && pnpm install",
 ]
 
 [tasks.configure]

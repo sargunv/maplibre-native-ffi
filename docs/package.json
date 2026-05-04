@@ -1,7 +1,7 @@
 {
-  "name": "docs2",
+  "name": "docs",
   "type": "module",
-  "version": "0.0.1",
+  "private": "true",
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
@@ -13,5 +13,6 @@
     "@astrojs/starlight": "^0.38.4",
     "astro": "^6.1.9",
     "sharp": "^0.34.5"
-  }
+  },
+  "devDependencies": { "vite-plus": "^0.1.20" }
 }

@@ -1,0 +1,14 @@
+[tasks.dev]
+run = "pnpm exec astro dev"
+
+[tasks.start]
+run = "pnpm exec astro dev"
+
+[tasks.build]
+run = "pnpm exec astro build"
+
+[tasks.preview]
+run = "pnpm exec astro preview"
+
+[tasks.astro]
+run = "pnpm exec astro"

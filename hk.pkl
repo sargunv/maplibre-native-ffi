@@ -22,6 +22,12 @@ local commonSteps = new Mapping<String, Step> {
     profiles = commonProfiles
     check = "jvl check {{files}}"
   }
+  ["vp-check"] {
+    glob = List("docs/**/*.ts", "docs/**/*.tsx", "docs/**/*.js", "docs/**/*.jsx", "docs/**/*.mjs", "docs/**/*.cjs")
+    profiles = commonProfiles
+    check = "pnpm --dir docs exec vp check --no-fmt"
+    fix = "pnpm --dir docs exec vp check --no-fmt --fix"
+  }
   ["zig-ast-check"] {
     glob = List("**/*.zig")
     profiles = commonProfiles
