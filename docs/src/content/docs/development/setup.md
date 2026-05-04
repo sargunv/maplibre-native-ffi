@@ -1,11 +1,11 @@
 ---
 title: Development Setup
-description: Platform setup, pinned tools, and local commands for contributors.
+description: Platform setup, workflow commands, and local tooling for contributors.
 ---
 
 ## Getting Set Up
 
-Install the platform toolchain first:
+Install the platform toolchain:
 
 - On macOS, install a recent version of Xcode.
 - On Windows, install a recent version of Visual Studio Community with the
@@ -23,7 +23,7 @@ Run the Zig map example as a smoke test:
 mise run //examples/zig-map:run
 ```
 
-The first build configures CMake, which fetches MapLibre Native into
+The first build configures CMake and fetches MapLibre Native into
 `third_party/maplibre-native`. To use a separate MapLibre Native checkout, set
 `MLN_SOURCE_DIR` before configuring or running builds.
 
@@ -47,7 +47,7 @@ Run checks:
 mise run check
 ```
 
-Run formatters and linters that can modify files:
+Run formatters and linters that may edit files:
 
 ```bash
 mise run fix
@@ -58,6 +58,18 @@ such as rendering or host integration:
 
 ```bash
 mise run //examples/<project>:run
+```
+
+Build the documentation site and regenerate API reference pages:
+
+```bash
+mise run //docs:build
+```
+
+Regenerate only the C API reference:
+
+```bash
+mise run //docs:api:c
 ```
 
 Pre-commit runs the configured formatters and linters on changed files.
@@ -72,9 +84,8 @@ environment, or activate mise to run tools such as `pixi` and `dprint` directly
 from the project directory.
 
 [`pixi`](https://pixi.sh/) supplies native packages from
-[`conda-forge`](https://conda-forge.org/). CMake is run through Pixi so C and
-C++ dependencies are declared in the repository instead of depending on a
-particular system package manager.
+[`conda-forge`](https://conda-forge.org/). Pixi runs CMake so the repository
+declares C and C++ dependencies instead of relying on a system package manager.
 
 [`hk`](https://github.com/jdx/hk) decides which checks run for pre-commit,
 `mise run check`, and `mise run fix`. [`dprint`](https://dprint.dev/) owns
@@ -83,3 +94,6 @@ linter configs tune the tools that those entry points invoke.
 
 [`CMake`](https://cmake.org/) builds the native C/C++ library.
 [`Zig`](https://ziglang.org/) consumes the CMake-built library for C ABI tests.
+
+Astro and Starlight build the documentation site. Generated reference
+documentation is exported as Markdown into `docs/src/content/docs/reference/`.

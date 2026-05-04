@@ -1,29 +1,12 @@
 ---
-title: Development Conventions
-description: Scope, ABI, ownership, threading, and testing conventions.
+title: C
+description: C ABI contract and C/C++ implementation rules for contributors.
 ---
 
-## Project Scope
-
-The project exposes MapLibre Native through two layers.
-
-The C API exposes core MapLibre Native features on supported native platforms:
-runtime, resources, maps, cameras, events, diagnostics, logging, render target
-primitives, texture readback, and low-level extension points such as resource
-providers and URL transforms. It excludes convenience APIs such as snapshotting
-and platform integrations such as gestures and device sensors.
-
-Language bindings sit directly above the C API. They manage C handles, struct
-initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
-events, threading, and event draining in the target language. They do not aim to
-provide fully idiomatic APIs, higher-level async models over runtime events,
-view lifecycle integrations, convenience workflows, or new abstractions beyond
-the C API's concepts.
-
-## Code Layout
+## Public API Layout
 
 `include/` is the public C API boundary. Keep implementation-only helpers out of
-public headers. Consumers should include `maplibre_native_c.h`; domain headers
+public headers. Consumers include `maplibre_native_c.h`; domain headers
 under `include/maplibre_native_c/` keep declarations maintainable and may be
 included directly when useful.
 
@@ -47,10 +30,9 @@ fixed-underlying enum syntax: `int32_t` for status values and `uint32_t` for
 non-negative domains and masks unless a native ABI field requires another width.
 
 Shape structs for future ABI stability. Option and output structs that may grow
-over time use `uint32_t size` fields. Default constructors populate those
-fields.
+use `uint32_t size` fields. Default constructors populate them.
 
-Use field masks or presence booleans for optional values where zero is valid.
+Use field masks or presence booleans for optional values when zero is valid.
 
 Keep public struct fields friendly to binding generators. Prefer scalar fields,
 pointers with length fields, structs, unions, and opaque handles. Do not use
@@ -64,7 +46,7 @@ the function that accepts or returns the struct.
 ## Errors And Diagnostics
 
 Status-returning C API functions return `mln_status`. Each function's public
-comment lists its status values and their meanings.
+comment lists its status values and meanings.
 
 Use these categories consistently:
 
@@ -93,7 +75,7 @@ Make ownership explicit at every boundary.
 
 Struct definitions describe data shape, required fields, and pointer validity.
 Function comments describe whether input pointers are borrowed, copied,
-retained, or consumed, and when returned views become invalid.
+retained, or consumed. They also describe when returned views become invalid.
 
 Borrow host-provided strings and buffers for call-duration inputs. Copy
 host-provided strings and buffers that outlive the function or native callback.
@@ -106,7 +88,7 @@ Give owned handles and scoped resources explicit destroy or release functions.
 Status-returning functions reject null handles. Void release functions accept
 null as a no-op.
 
-Output handle parameters reject non-null `*out_handle` values, preserving live
+Output handle parameters reject non-null `*out_handle` values and preserve live
 host-owned handles on failure. Document when scoped resource ownership begins,
 when it ends, and whether completion may happen inline or later.
 
@@ -127,8 +109,8 @@ one live runtime. `mln_runtime_run_once()` pumps that runtime's run loop.
 ## Async And Events
 
 Preserve MapLibre Native's imperative, observer-driven model. C API calls return
-status for synchronous acceptance or failure. Later native work is reported
-through drained events.
+status for synchronous acceptance or failure. Drained events report later native
+work.
 
 Events are copied into runtime-owned storage and drained with C API calls. Event
 payloads use plain data with documented lifetimes. Each event identifies its
@@ -140,7 +122,7 @@ Classify each operation as one of:
 - a command, where return status means accepted and later effects arrive as
   events;
 - a state snapshot, where the returned data is last-known state;
-- a blocking query, used sparingly and documented with deadlock risks;
+- a blocking query, used rarely and documented with deadlock risks;
 - an event stream, where many events are expected over time.
 
 ## Native Callbacks
@@ -163,9 +145,9 @@ A callback API documents:
 - whether it may call back into any C API function;
 - what happens when it returns an error or unknown decision value.
 
-Callbacks must not unwind through the C API. Bindings must catch host
-exceptions, panics, and errors inside the callback and convert them to the
-callback's documented return behavior.
+Callbacks must not unwind through the C API. Bindings catch host exceptions,
+panics, and errors inside the callback and convert them to the callback's
+documented return behavior.
 
 ## Maps And Render Targets
 
@@ -181,16 +163,3 @@ same separation from `mln_map`.
 Render target APIs must document owner thread, backend handle ownership,
 synchronization, borrowed pointer lifetimes, generation or stale-frame behavior,
 and teardown rules.
-
-## Tests And Examples
-
-Every feature needs CI coverage through an automated test when practical. Tests
-should consume the public C API. Zig tests also check header shape because
-`@cImport` catches C API issues quickly.
-
-Use examples for human demos and for behavior that needs manual validation, such
-as visual output, interactive input, or host graphics integration.
-
-Keep examples small. This repository may include low-level language bindings and
-focused integration examples. Full application SDKs live outside this
-repository.

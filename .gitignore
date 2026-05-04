@@ -1,6 +1,7 @@
 build*/
 docs/api/c/gen/
 docs/src/content/docs/api/c.md
+docs/src/content/docs/reference/c.md
 .zig-cache/
 zig-out/
 zig-pkg/
