@@ -30,6 +30,31 @@ const query_style_json =
     \\}
 ;
 
+const cluster_style_json =
+    \\{
+    \\  "version": 8,
+    \\  "name": "zig-c-cluster-query-test",
+    \\  "sources": {
+    \\    "cluster-source": {
+    \\      "type": "geojson",
+    \\      "cluster": true,
+    \\      "data": {
+    \\        "type": "FeatureCollection",
+    \\        "features": [
+    \\          {"type":"Feature","geometry":{"type":"Point","coordinates":[0.0,0.0]},"properties":{"name":"one"}},
+    \\          {"type":"Feature","geometry":{"type":"Point","coordinates":[0.001,0.001]},"properties":{"name":"two"}},
+    \\          {"type":"Feature","geometry":{"type":"Point","coordinates":[0.002,0.002]},"properties":{"name":"three"}}
+    \\        ]
+    \\      }
+    \\    }
+    \\  },
+    \\  "layers": [
+    \\    {"id":"background","type":"background","paint":{"background-color":"#ffffff"}},
+    \\    {"id":"cluster-circle","type":"circle","source":"cluster-source","filter":["has","point_count"],"paint":{"circle-color":"#2563eb","circle-radius":20}}
+    \\  ]
+    \\}
+;
+
 fn stringView(value: []const u8) c.mln_string_view {
     return .{ .data = value.ptr, .size = value.len };
 }
@@ -42,12 +67,32 @@ fn jsonString(value: []const u8) c.mln_json_value {
     };
 }
 
+fn jsonUint(value: u64) c.mln_json_value {
+    return .{
+        .size = @sizeOf(c.mln_json_value),
+        .type = c.MLN_JSON_VALUE_TYPE_UINT,
+        .data = .{ .uint_value = value },
+    };
+}
+
 fn jsonArray(values: []const c.mln_json_value) c.mln_json_value {
     return .{
         .size = @sizeOf(c.mln_json_value),
         .type = c.MLN_JSON_VALUE_TYPE_ARRAY,
         .data = .{ .array_value = .{ .values = values.ptr, .value_count = values.len } },
     };
+}
+
+fn jsonObject(members: []const c.mln_json_member) c.mln_json_value {
+    return .{
+        .size = @sizeOf(c.mln_json_value),
+        .type = c.MLN_JSON_VALUE_TYPE_OBJECT,
+        .data = .{ .object_value = .{ .members = members.ptr, .member_count = members.len } },
+    };
+}
+
+fn jsonMember(key: []const u8, value: *const c.mln_json_value) c.mln_json_member {
+    return .{ .key = stringView(key), .value = value };
 }
 
 fn viewBytes(view: c.mln_string_view) []const u8 {
@@ -73,6 +118,21 @@ fn loadStyleAndRender(runtime: *c.mln_runtime, map: *c.mln_map, session: *c.mln_
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_jump_to(map, &camera));
 
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, query_style_json));
+    for (0..5) |_| {
+        if (!try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE)) break;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(session));
+    }
+}
+
+fn loadClusterStyleAndRender(runtime: *c.mln_runtime, map: *c.mln_map, session: *c.mln_render_session) !void {
+    var camera = c.mln_camera_options_default();
+    camera.fields = c.MLN_CAMERA_OPTION_CENTER | c.MLN_CAMERA_OPTION_ZOOM;
+    camera.latitude = 0.0;
+    camera.longitude = 0.0;
+    camera.zoom = 0.0;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_jump_to(map, &camera));
+
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_set_style_json(map, cluster_style_json));
     for (0..5) |_| {
         if (!try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE)) break;
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(session));
@@ -174,6 +234,74 @@ test "render session queries rendered and source features" {
     try testing.expect((source_feature.fields & c.MLN_QUERIED_FEATURE_SOURCE_ID) != 0);
     try testing.expect(std.mem.eql(u8, viewBytes(source_feature.source_id), "point"));
     try expectFeatureKind(&source_feature, "capital");
+}
+
+test "render session queries feature extensions" {
+    try support.suppressLogs();
+    defer support.restoreLogs();
+
+    const runtime = try support.createRuntime();
+    defer support.destroyRuntime(runtime);
+    const map = try support.createMap(runtime);
+    defer support.destroyMap(map);
+    const session = try attachTextureSession(map);
+    defer testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_destroy(session)) catch @panic("session destroy failed");
+
+    try loadClusterStyleAndRender(runtime, map, session);
+
+    var query_point: c.mln_screen_point = undefined;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_map_pixel_for_lat_lng(map, .{ .latitude = 0.0, .longitude = 0.0 }, &query_point));
+    const geometry = c.mln_rendered_query_geometry_box(.{
+        .min = .{ .x = query_point.x - 30.0, .y = query_point.y - 30.0 },
+        .max = .{ .x = query_point.x + 30.0, .y = query_point.y + 30.0 },
+    });
+    var options = c.mln_rendered_feature_query_options_default();
+    const layer_ids = [_]c.mln_string_view{stringView("cluster-circle")};
+    options.fields = c.MLN_RENDERED_FEATURE_QUERY_OPTION_LAYER_IDS;
+    options.layer_ids = &layer_ids;
+    options.layer_id_count = layer_ids.len;
+
+    var cluster_result: ?*c.mln_feature_query_result = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_rendered_features(session, &geometry, &options, &cluster_result));
+    defer c.mln_feature_query_result_destroy(cluster_result.?);
+
+    var count: usize = 0;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_count(cluster_result.?, &count));
+    try testing.expectEqual(@as(usize, 1), count);
+
+    var cluster: c.mln_queried_feature = .{ .size = @sizeOf(c.mln_queried_feature), .fields = 0, .feature = undefined, .source_id = .{ .data = null, .size = 0 }, .source_layer_id = .{ .data = null, .size = 0 }, .state = null };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_get(cluster_result.?, 0, &cluster));
+
+    var children_result: ?*c.mln_feature_extension_result = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_feature_extensions(session, stringView("cluster-source"), &cluster.feature, stringView("supercluster"), stringView("children"), null, &children_result));
+    defer c.mln_feature_extension_result_destroy(children_result.?);
+
+    var info: c.mln_feature_extension_result_info = .{ .size = @sizeOf(c.mln_feature_extension_result_info), .type = 0, .data = .{ .value = null } };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_extension_result_get(children_result.?, &info));
+    try testing.expectEqual(c.MLN_FEATURE_EXTENSION_RESULT_TYPE_FEATURE_COLLECTION, info.type);
+    try testing.expect(info.data.feature_collection.feature_count > 0);
+
+    var zoom_result: ?*c.mln_feature_extension_result = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_feature_extensions(session, stringView("cluster-source"), &cluster.feature, stringView("supercluster"), stringView("expansion-zoom"), null, &zoom_result));
+    defer c.mln_feature_extension_result_destroy(zoom_result.?);
+
+    info = .{ .size = @sizeOf(c.mln_feature_extension_result_info), .type = 0, .data = .{ .value = null } };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_extension_result_get(zoom_result.?, &info));
+    try testing.expectEqual(c.MLN_FEATURE_EXTENSION_RESULT_TYPE_VALUE, info.type);
+    try testing.expectEqual(c.MLN_JSON_VALUE_TYPE_UINT, info.data.value.*.type);
+
+    const limit = jsonUint(1);
+    const offset = jsonUint(0);
+    const args_members = [_]c.mln_json_member{ jsonMember("limit", &limit), jsonMember("offset", &offset) };
+    const args = jsonObject(&args_members);
+    var leaves_result: ?*c.mln_feature_extension_result = null;
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_feature_extensions(session, stringView("cluster-source"), &cluster.feature, stringView("supercluster"), stringView("leaves"), &args, &leaves_result));
+    defer c.mln_feature_extension_result_destroy(leaves_result.?);
+
+    info = .{ .size = @sizeOf(c.mln_feature_extension_result_info), .type = 0, .data = .{ .value = null } };
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_extension_result_get(leaves_result.?, &info));
+    try testing.expectEqual(c.MLN_FEATURE_EXTENSION_RESULT_TYPE_FEATURE_COLLECTION, info.type);
+    try testing.expectEqual(@as(usize, 1), info.data.feature_collection.feature_count);
 }
 
 test "feature query validation" {

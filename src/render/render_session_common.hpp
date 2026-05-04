@@ -155,6 +155,12 @@ auto render_session_query_source_features(
   const mln_source_feature_query_options* options,
   mln_feature_query_result** out_result
 ) -> mln_status;
+auto render_session_query_feature_extensions(
+  mln_render_session* session, mln_string_view source_id,
+  const mln_feature* feature, mln_string_view extension,
+  mln_string_view extension_field, const mln_json_value* arguments,
+  mln_feature_extension_result** out_result
+) -> mln_status;
 auto feature_query_result_count(
   const mln_feature_query_result* result, std::size_t* out_count
 ) -> mln_status;
@@ -163,5 +169,11 @@ auto feature_query_result_get(
   mln_queried_feature* out_feature
 ) -> mln_status;
 auto feature_query_result_destroy(mln_feature_query_result* result) -> void;
+auto feature_extension_result_get(
+  const mln_feature_extension_result* result,
+  mln_feature_extension_result_info* out_info
+) -> mln_status;
+auto feature_extension_result_destroy(mln_feature_extension_result* result)
+  -> void;
 
 }  // namespace mln::core
