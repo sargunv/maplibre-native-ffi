@@ -5,19 +5,6 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
-  vite: {
-    plugins: [
-      {
-        name: "serve-public-directory-indexes",
-        configureServer(server) {
-          server.middlewares.use((request, _response, next) => {
-            if (request.url === "/api/c/") request.url = "/api/c/index.html";
-            next();
-          });
-        },
-      },
-    ],
-  },
   integrations: [
     starlight({
       title: "MapLibre Native FFI",
@@ -38,7 +25,12 @@ export default defineConfig({
         },
         {
           label: "Reference",
-          items: [{ label: "C API", link: "/api/c/" }],
+          items: [
+            {
+              label: "C API",
+              autogenerate: { directory: "api/c" },
+            },
+          ],
         },
       ],
     }),

@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/projection.h
- * Public C API declarations for projection helpers and utilities.
+ * Public C API declarations for projection helpers.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_PROJECTION_H
@@ -15,7 +15,10 @@
 extern "C" {
 #endif
 
-#pragma region Projection helpers and utilities
+/**
+ * @defgroup projection Projection helpers
+ * @{
+ */
 
 /**
  * Creates a standalone projection helper from the current map transform.
@@ -196,7 +199,7 @@ MLN_API mln_status mln_lat_lng_for_projected_meters(
   mln_projected_meters meters, mln_lat_lng* out_coordinate
 ) MLN_NOEXCEPT;
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }

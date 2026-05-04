@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/texture.h
- * Public C API declarations for texture sessions.
+ * Public C API declarations for texture render targets.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_TEXTURE_H
@@ -15,7 +15,10 @@
 extern "C" {
 #endif
 
-#pragma region Texture sessions
+/**
+ * @defgroup texture Texture render targets
+ * @{
+ */
 
 /** Default texture session attachment options for a session-owned target. */
 typedef struct mln_owned_texture_descriptor {
@@ -490,7 +493,7 @@ MLN_API mln_status mln_vulkan_owned_texture_release_frame(
   mln_render_session* session, const mln_vulkan_owned_texture_frame* frame
 ) MLN_NOEXCEPT;
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,6 @@
 /**
  * @file maplibre_native_c/camera.h
- * Public C API declarations for map camera, render transform, and coordinate
- * conversion.
+ * Public C API declarations for map camera and coordinate conversion.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_CAMERA_H
@@ -17,7 +16,10 @@
 extern "C" {
 #endif
 
-#pragma region Map camera, render transform, and coordinate conversion
+/**
+ * @defgroup camera Map camera and coordinate conversion
+ * @{
+ */
 /**
  * Returns empty camera options initialized for this C API version.
  */
@@ -707,7 +709,7 @@ MLN_API mln_status mln_map_lat_lngs_for_pixels(
   mln_lat_lng* out_coordinates
 ) MLN_NOEXCEPT;
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }

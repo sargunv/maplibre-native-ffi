@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/surface.h
- * Public C API declarations for surface sessions.
+ * Public C API declarations for surface render targets.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_SURFACE_H
@@ -14,7 +14,10 @@
 extern "C" {
 #endif
 
-#pragma region Surface sessions
+/**
+ * @defgroup surface Surface render targets
+ * @{
+ */
 
 /** Metal native surface session attachment options. */
 typedef struct mln_metal_surface_descriptor {
@@ -120,7 +123,7 @@ MLN_API mln_status mln_vulkan_surface_attach(
   mln_render_session** out_session
 ) MLN_NOEXCEPT;
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }

@@ -12,7 +12,10 @@
 extern "C" {
 #endif
 
-#pragma region Diagnostics
+/**
+ * @defgroup diagnostics Diagnostics
+ * @{
+ */
 /**
  * Returns the last thread-local diagnostic message.
  *
@@ -22,7 +25,7 @@ extern "C" {
  */
 MLN_API const char* mln_thread_last_error_message(void) MLN_NOEXCEPT;
 
-#pragma endregion
+/** @} */
 
 #ifdef __cplusplus
 }
