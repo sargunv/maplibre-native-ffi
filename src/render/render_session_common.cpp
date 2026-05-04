@@ -1,17 +1,25 @@
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/gfx/renderer_backend.hpp>
 #include <mbgl/map/map.hpp>
+#include <mbgl/renderer/query.hpp>
 #include <mbgl/renderer/renderer.hpp>
+#include <mbgl/style/filter.hpp>
+#include <mbgl/util/feature.hpp>
+#include <mbgl/util/geo.hpp>
 #include <mbgl/util/size.hpp>
 
 #include "render/render_session_common.hpp"
@@ -20,6 +28,30 @@
 #include "geojson/geojson.hpp"
 #include "map/map.hpp"
 #include "maplibre_native_c.h"
+#include "style/style_value.hpp"
+
+namespace mln::core {
+
+struct OwnedQueriedFeatureDescriptor {
+  mln_queried_feature queried{};
+  mln_feature feature{};
+  std::unique_ptr<OwnedGeometryDescriptor> geometry;
+  std::vector<std::string> property_keys;
+  std::vector<std::unique_ptr<OwnedJsonDescriptor>> property_values;
+  std::vector<mln_json_value> property_value_roots;
+  std::vector<mln_json_member> properties;
+  std::string identifier_string;
+  std::string source_id;
+  std::string source_layer_id;
+  std::unique_ptr<OwnedJsonDescriptor> state;
+};
+
+}  // namespace mln::core
+
+struct mln_feature_query_result {
+  std::vector<std::unique_ptr<mln::core::OwnedQueriedFeatureDescriptor>>
+    features;
+};
 
 namespace {
 
@@ -32,6 +64,19 @@ auto render_sessions() -> std::unordered_map<
   mln_render_session*, std::unique_ptr<mln_render_session>>& {
   static auto value = std::unordered_map<
     mln_render_session*, std::unique_ptr<mln_render_session>>{};
+  return value;
+}
+
+auto feature_query_result_mutex() -> std::mutex& {
+  static auto value = std::mutex{};
+  return value;
+}
+
+auto feature_query_results() -> std::unordered_map<
+  const mln_feature_query_result*, std::unique_ptr<mln_feature_query_result>>& {
+  static auto value = std::unordered_map<
+    const mln_feature_query_result*,
+    std::unique_ptr<mln_feature_query_result>>{};
   return value;
 }
 
@@ -91,11 +136,64 @@ auto validate_string_view(mln_string_view string) -> bool {
   return true;
 }
 
+auto validate_string_views(
+  std::span<const mln_string_view> strings, const char* name
+) -> bool {
+  return std::ranges::all_of(strings, [name](const auto string) -> bool {
+    if (!validate_string_view(string)) {
+      return false;
+    }
+    if (string.size == 0) {
+      auto message = std::string{name} + " must not contain empty strings";
+      mln::core::set_thread_error(message.c_str());
+      return false;
+    }
+    return true;
+  });
+}
+
 auto string_from_view(mln_string_view string) -> std::string {
   if (string.size == 0) {
     return {};
   }
   return std::string{string.data, string.size};
+}
+
+auto string_view_from_string(const std::string& string) -> mln_string_view {
+  return mln_string_view{
+    .data = string.empty() ? nullptr : string.data(), .size = string.size()
+  };
+}
+
+auto validate_screen_point(mln_screen_point point) -> bool {
+  if (!std::isfinite(point.x) || !std::isfinite(point.y)) {
+    mln::core::set_thread_error("screen point coordinates must be finite");
+    return false;
+  }
+  return true;
+}
+
+auto validate_query_result_output(mln_feature_query_result** out_result)
+  -> mln_status {
+  if (out_result == nullptr) {
+    mln::core::set_thread_error("out_result must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (*out_result != nullptr) {
+    mln::core::set_thread_error("*out_result must be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return MLN_STATUS_OK;
+}
+
+auto make_string_vector(std::span<const mln_string_view> strings)
+  -> std::vector<std::string> {
+  auto result = std::vector<std::string>{};
+  result.reserve(strings.size());
+  for (const auto string : strings) {
+    result.emplace_back(string_from_view(string));
+  }
+  return result;
 }
 
 auto selector_has_field(
@@ -179,6 +277,242 @@ auto feature_state_source_layer(const mln_feature_state_selector& selector)
     selector, MLN_FEATURE_STATE_SELECTOR_SOURCE_LAYER_ID,
     selector.source_layer_id
   );
+}
+
+auto to_rendered_query_options(
+  const mln_rendered_feature_query_options* options
+) -> std::optional<mbgl::RenderedQueryOptions> {
+  auto layer_ids = std::optional<std::vector<std::string>>{};
+  auto filter = std::optional<mbgl::style::Filter>{};
+  if (options == nullptr) {
+    return mbgl::RenderedQueryOptions{};
+  }
+  if (options->size < sizeof(mln_rendered_feature_query_options)) {
+    mln::core::set_thread_error(
+      "mln_rendered_feature_query_options.size is too small"
+    );
+    return std::nullopt;
+  }
+  constexpr auto known_fields = MLN_RENDERED_FEATURE_QUERY_OPTION_LAYER_IDS;
+  if ((options->fields & ~known_fields) != 0) {
+    mln::core::set_thread_error("rendered feature query has unknown fields");
+    return std::nullopt;
+  }
+  if ((options->fields & MLN_RENDERED_FEATURE_QUERY_OPTION_LAYER_IDS) != 0) {
+    if (options->layer_id_count > 0 && options->layer_ids == nullptr) {
+      mln::core::set_thread_error("query layer IDs must not be null");
+      return std::nullopt;
+    }
+    auto views = std::span<const mln_string_view>{
+      options->layer_ids, options->layer_id_count
+    };
+    if (!validate_string_views(views, "query layer IDs")) {
+      return std::nullopt;
+    }
+    layer_ids = make_string_vector(views);
+  }
+  if (options->filter != nullptr) {
+    auto converted_filter = mln::core::to_native_style_filter(options->filter);
+    if (!converted_filter) {
+      return std::nullopt;
+    }
+    filter = std::move(*converted_filter);
+  }
+  return mbgl::RenderedQueryOptions{std::move(layer_ids), std::move(filter)};
+}
+
+auto to_source_query_options(const mln_source_feature_query_options* options)
+  -> std::optional<mbgl::SourceQueryOptions> {
+  auto source_layer_ids = std::optional<std::vector<std::string>>{};
+  auto filter = std::optional<mbgl::style::Filter>{};
+  if (options == nullptr) {
+    return mbgl::SourceQueryOptions{};
+  }
+  if (options->size < sizeof(mln_source_feature_query_options)) {
+    mln::core::set_thread_error(
+      "mln_source_feature_query_options.size is too small"
+    );
+    return std::nullopt;
+  }
+  constexpr auto known_fields =
+    MLN_SOURCE_FEATURE_QUERY_OPTION_SOURCE_LAYER_IDS;
+  if ((options->fields & ~known_fields) != 0) {
+    mln::core::set_thread_error("source feature query has unknown fields");
+    return std::nullopt;
+  }
+  if (
+    (options->fields & MLN_SOURCE_FEATURE_QUERY_OPTION_SOURCE_LAYER_IDS) != 0
+  ) {
+    if (
+      options->source_layer_id_count > 0 && options->source_layer_ids == nullptr
+    ) {
+      mln::core::set_thread_error("query source layer IDs must not be null");
+      return std::nullopt;
+    }
+    auto views = std::span<const mln_string_view>{
+      options->source_layer_ids, options->source_layer_id_count
+    };
+    if (!validate_string_views(views, "query source layer IDs")) {
+      return std::nullopt;
+    }
+    source_layer_ids = make_string_vector(views);
+  }
+  if (options->filter != nullptr) {
+    auto converted_filter = mln::core::to_native_style_filter(options->filter);
+    if (!converted_filter) {
+      return std::nullopt;
+    }
+    filter = std::move(*converted_filter);
+  }
+  return mbgl::SourceQueryOptions{
+    std::move(source_layer_ids), std::move(filter)
+  };
+}
+
+auto to_screen_line_string(
+  const mln_screen_line_string& line_string, mbgl::ScreenLineString& out_line
+) -> bool {
+  if (line_string.point_count == 0) {
+    mln::core::set_thread_error("query line string must contain points");
+    return false;
+  }
+  if (line_string.points == nullptr) {
+    mln::core::set_thread_error("query line string points must not be null");
+    return false;
+  }
+  auto result = mbgl::ScreenLineString{};
+  result.reserve(line_string.point_count);
+  for (const auto point : std::span<const mln_screen_point>{
+         line_string.points, line_string.point_count
+       }) {
+    if (!validate_screen_point(point)) {
+      return false;
+    }
+    result.emplace_back(point.x, point.y);
+  }
+  out_line = std::move(result);
+  return true;
+}
+
+auto feature_identifier_type(
+  const mbgl::FeatureIdentifier& identifier,
+  mln::core::OwnedQueriedFeatureDescriptor& storage
+) -> uint32_t {
+  if (identifier.is<mbgl::NullValue>()) {
+    return MLN_FEATURE_IDENTIFIER_TYPE_NULL;
+  }
+  if (identifier.is<uint64_t>()) {
+    storage.feature.identifier.uint_value = identifier.get<uint64_t>();
+    return MLN_FEATURE_IDENTIFIER_TYPE_UINT;
+  }
+  if (identifier.is<int64_t>()) {
+    storage.feature.identifier.int_value = identifier.get<int64_t>();
+    return MLN_FEATURE_IDENTIFIER_TYPE_INT;
+  }
+  if (identifier.is<double>()) {
+    storage.feature.identifier.double_value = identifier.get<double>();
+    return MLN_FEATURE_IDENTIFIER_TYPE_DOUBLE;
+  }
+  storage.identifier_string = identifier.get<std::string>();
+  storage.feature.identifier.string_value =
+    string_view_from_string(storage.identifier_string);
+  return MLN_FEATURE_IDENTIFIER_TYPE_STRING;
+}
+
+auto make_queried_feature(
+  const mbgl::Feature& feature, const std::optional<std::string>& source_id
+) -> std::unique_ptr<mln::core::OwnedQueriedFeatureDescriptor> {
+  auto result = std::make_unique<mln::core::OwnedQueriedFeatureDescriptor>();
+  result->geometry = mln::core::to_c_geometry(feature.geometry);
+  result->property_keys.reserve(feature.properties.size());
+  result->property_values.reserve(feature.properties.size());
+  result->property_value_roots.reserve(feature.properties.size());
+  result->properties.reserve(feature.properties.size());
+  for (const auto& [key, value] : feature.properties) {
+    result->property_keys.emplace_back(key);
+    result->property_values.emplace_back(mln::core::to_c_json_value(value));
+  }
+  for (std::size_t index = 0; index < result->property_values.size(); ++index) {
+    result->property_value_roots.emplace_back(
+      result->property_values.at(index)->root
+    );
+    result->properties.emplace_back(
+      mln_json_member{
+        .key = string_view_from_string(result->property_keys.at(index)),
+        .value = &result->property_value_roots.back()
+      }
+    );
+  }
+
+  result->feature = mln_feature{
+    .size = sizeof(mln_feature),
+    .geometry = &result->geometry->root,
+    .properties =
+      result->properties.empty() ? nullptr : result->properties.data(),
+    .property_count = result->properties.size(),
+    .identifier_type = MLN_FEATURE_IDENTIFIER_TYPE_NULL,
+    .identifier = {.uint_value = 0}
+  };
+  result->feature.identifier_type =
+    feature_identifier_type(feature.id, *result);
+
+  result->queried = mln_queried_feature{
+    .size = sizeof(mln_queried_feature),
+    .fields = 0,
+    .feature = result->feature,
+    .source_id = {},
+    .source_layer_id = {},
+    .state = nullptr
+  };
+  result->source_id =
+    feature.source.empty() && source_id ? *source_id : feature.source;
+  if (!result->source_id.empty()) {
+    result->queried.fields |= MLN_QUERIED_FEATURE_SOURCE_ID;
+    result->queried.source_id = string_view_from_string(result->source_id);
+  }
+  result->source_layer_id = feature.sourceLayer;
+  if (!result->source_layer_id.empty()) {
+    result->queried.fields |= MLN_QUERIED_FEATURE_SOURCE_LAYER_ID;
+    result->queried.source_layer_id =
+      string_view_from_string(result->source_layer_id);
+  }
+  if (!feature.state.empty()) {
+    result->state = mln::core::to_c_json_value(mbgl::Value{feature.state});
+    result->queried.fields |= MLN_QUERIED_FEATURE_STATE;
+    result->queried.state = &result->state->root;
+  }
+  return result;
+}
+
+auto create_feature_query_result(
+  std::vector<mbgl::Feature> features,
+  const std::optional<std::string>& source_id,
+  mln_feature_query_result** out_result
+) -> mln_status {
+  const auto output_status = validate_query_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+
+  auto result = std::make_unique<mln_feature_query_result>();
+  result->features.reserve(features.size());
+  for (const auto& feature : features) {
+    result->features.emplace_back(make_queried_feature(feature, source_id));
+  }
+  auto* handle = result.get();
+  const auto lock = std::scoped_lock{feature_query_result_mutex()};
+  feature_query_results().emplace(handle, std::move(result));
+  *out_result = handle;
+  return MLN_STATUS_OK;
+}
+
+auto find_feature_query_result_locked(const mln_feature_query_result* result)
+  -> const mln_feature_query_result* {
+  const auto found = feature_query_results().find(result);
+  if (found == feature_query_results().end()) {
+    return nullptr;
+  }
+  return found->second.get();
 }
 
 }  // namespace
@@ -597,6 +931,196 @@ auto render_session_remove_feature_state(
     native_map->triggerRepaint();
   }
   return MLN_STATUS_OK;
+}
+
+auto render_session_query_rendered_features(
+  mln_render_session* session, const mln_rendered_query_geometry* geometry,
+  const mln_rendered_feature_query_options* options,
+  mln_feature_query_result** out_result
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto output_status = validate_query_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  if (geometry == nullptr) {
+    set_thread_error("rendered query geometry must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (geometry->size < sizeof(mln_rendered_query_geometry)) {
+    set_thread_error("mln_rendered_query_geometry.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto native_options = to_rendered_query_options(options);
+  if (!native_options) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto line_string = mbgl::ScreenLineString{};
+  switch (geometry->type) {
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_POINT:
+      if (!validate_screen_point(geometry->data.point)) {
+        return MLN_STATUS_INVALID_ARGUMENT;
+      }
+      break;
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_BOX:
+      if (
+        !validate_screen_point(geometry->data.box.min) ||
+        !validate_screen_point(geometry->data.box.max)
+      ) {
+        return MLN_STATUS_INVALID_ARGUMENT;
+      }
+      break;
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_LINE_STRING: {
+      if (!to_screen_line_string(geometry->data.line_string, line_string)) {
+        return MLN_STATUS_INVALID_ARGUMENT;
+      }
+      break;
+    }
+    default:
+      set_thread_error("rendered query geometry type is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  auto features = std::vector<mbgl::Feature>{};
+  switch (geometry->type) {
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_POINT:
+      features = session->renderer->queryRenderedFeatures(
+        mbgl::ScreenCoordinate{geometry->data.point.x, geometry->data.point.y},
+        *native_options
+      );
+      break;
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_BOX:
+      features = session->renderer->queryRenderedFeatures(
+        mbgl::ScreenBox{
+          {geometry->data.box.min.x, geometry->data.box.min.y},
+          {geometry->data.box.max.x, geometry->data.box.max.y}
+        },
+        *native_options
+      );
+      break;
+    case MLN_RENDERED_QUERY_GEOMETRY_TYPE_LINE_STRING:
+      features =
+        session->renderer->queryRenderedFeatures(line_string, *native_options);
+      break;
+    default:
+      set_thread_error("rendered query geometry type is invalid");
+      return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  return create_feature_query_result(
+    std::move(features), std::nullopt, out_result
+  );
+}
+
+auto render_session_query_source_features(
+  mln_render_session* session, mln_string_view source_id,
+  const mln_source_feature_query_options* options,
+  mln_feature_query_result** out_result
+) -> mln_status {
+  const auto status = validate_live_attached_render_session(session);
+  if (status != MLN_STATUS_OK) {
+    return status;
+  }
+  const auto output_status = validate_query_result_output(out_result);
+  if (output_status != MLN_STATUS_OK) {
+    return output_status;
+  }
+  if (!validate_string_view(source_id)) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (source_id.size == 0) {
+    set_thread_error("source_id must not be empty");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto native_options = to_source_query_options(options);
+  if (!native_options) {
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  auto* backend = validate_renderer_backend(session);
+  if (backend == nullptr) {
+    return MLN_STATUS_INVALID_STATE;
+  }
+
+  auto native_source_id = string_from_view(source_id);
+  auto guard = mbgl::gfx::BackendScope{
+    *backend, mbgl::gfx::BackendScope::ScopeType::Implicit
+  };
+  auto features =
+    session->renderer->querySourceFeatures(native_source_id, *native_options);
+  return create_feature_query_result(
+    std::move(features), native_source_id, out_result
+  );
+}
+
+auto feature_query_result_count(
+  const mln_feature_query_result* result, std::size_t* out_count
+) -> mln_status {
+  if (result == nullptr) {
+    set_thread_error("feature query result must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_count == nullptr) {
+    set_thread_error("out_count must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{feature_query_result_mutex()};
+  const auto* live_result = find_feature_query_result_locked(result);
+  if (live_result == nullptr) {
+    set_thread_error("feature query result is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_count = live_result->features.size();
+  return MLN_STATUS_OK;
+}
+
+auto feature_query_result_get(
+  const mln_feature_query_result* result, std::size_t index,
+  mln_queried_feature* out_feature
+) -> mln_status {
+  if (result == nullptr) {
+    set_thread_error("feature query result must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_feature == nullptr) {
+    set_thread_error("out_feature must not be null");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (out_feature->size < sizeof(mln_queried_feature)) {
+    set_thread_error("mln_queried_feature.size is too small");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+
+  const auto lock = std::scoped_lock{feature_query_result_mutex()};
+  const auto* live_result = find_feature_query_result_locked(result);
+  if (live_result == nullptr) {
+    set_thread_error("feature query result is not a live handle");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  if (index >= live_result->features.size()) {
+    set_thread_error("index is out of range");
+    return MLN_STATUS_INVALID_ARGUMENT;
+  }
+  *out_feature = live_result->features.at(index)->queried;
+  return MLN_STATUS_OK;
+}
+
+auto feature_query_result_destroy(mln_feature_query_result* result) -> void {
+  if (result == nullptr) {
+    return;
+  }
+  const auto lock = std::scoped_lock{feature_query_result_mutex()};
+  feature_query_results().erase(result);
 }
 
 }  // namespace mln::core
