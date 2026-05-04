@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -144,5 +145,23 @@ auto render_session_get_feature_state(
 auto render_session_remove_feature_state(
   mln_render_session* session, const mln_feature_state_selector* selector
 ) -> mln_status;
+auto render_session_query_rendered_features(
+  mln_render_session* session, const mln_rendered_query_geometry* geometry,
+  const mln_rendered_feature_query_options* options,
+  mln_feature_query_result** out_result
+) -> mln_status;
+auto render_session_query_source_features(
+  mln_render_session* session, mln_string_view source_id,
+  const mln_source_feature_query_options* options,
+  mln_feature_query_result** out_result
+) -> mln_status;
+auto feature_query_result_count(
+  const mln_feature_query_result* result, std::size_t* out_count
+) -> mln_status;
+auto feature_query_result_get(
+  const mln_feature_query_result* result, std::size_t index,
+  mln_queried_feature* out_feature
+) -> mln_status;
+auto feature_query_result_destroy(mln_feature_query_result* result) -> void;
 
 }  // namespace mln::core
