@@ -1,3 +1,7 @@
+# https://mise.jdx.dev
+# Mise is the contributor entrypoint: it pins tools, installs hooks, and runs
+# repository tasks.
+
 experimental_monorepo_root = true
 
 [settings]

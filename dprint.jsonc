@@ -1,3 +1,6 @@
+// https://dprint.dev
+// dprint owns formatter routing. Prefer plugins where available and exec
+// mise-installed formatters for languages without a dprint plugin.
 {
   "$schema": "https://dprint.dev/schemas/v0.json",
   "lineWidth": 80,
@@ -11,25 +14,25 @@
     "commands": [
       {
         "command": "pixi run clang-format --assume-filename={{file_path}}",
-        "exts": ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm"]
+        "exts": ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm"],
       },
       {
         "command": "cmakefmt --line-width {{line_width}} --tab-size {{indent_width}} -",
-        "exts": ["cmake"]
+        "exts": ["cmake"],
       },
       {
         "command": "cmakefmt --line-width {{line_width}} --tab-size {{indent_width}} -",
-        "fileNames": ["cmakelists.txt", "cmakelists.txt.in"]
+        "fileNames": ["cmakelists.txt", "cmakelists.txt.in"],
       },
       { "command": "zig fmt --stdin", "exts": ["zig"] },
-      { "command": "zig fmt --stdin --zon", "exts": ["zon"] }
-    ]
+      { "command": "zig fmt --stdin --zon", "exts": ["zon"] },
+    ],
   },
   "plugins": [
     "https://plugins.dprint.dev/json-0.21.3.wasm",
     "https://plugins.dprint.dev/markdown-0.21.1.wasm",
     "https://plugins.dprint.dev/toml-0.7.0.wasm",
     "https://plugins.dprint.dev/g-plane/pretty_yaml-v0.6.0.wasm",
-    "https://plugins.dprint.dev/exec-0.6.2.json@df98f54ffd3092b8a841aedd6d098a2651f16d0a796a40535774f1a8b4b9d463"
-  ]
+    "https://plugins.dprint.dev/exec-0.6.2.json@df98f54ffd3092b8a841aedd6d098a2651f16d0a796a40535774f1a8b4b9d463",
+  ],
 }

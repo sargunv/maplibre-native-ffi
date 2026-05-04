@@ -1,3 +1,5 @@
+# Public headers define the C ABI, so disable lint rules that push C++ syntax or
+# implementation-only style preferences into `include/`.
 ---
 Checks:
   - -*

@@ -49,6 +49,8 @@ mise run //examples/swift-map:run
   review.
 - [`docs/development.md`](docs/development.md) explains project scope and
   development conventions.
+- [`docs/development-setup.md`](docs/development-setup.md) explains platform
+  setup, pinned tools, and local commands.
 
 ## Current Status
 
