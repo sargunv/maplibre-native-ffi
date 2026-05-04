@@ -10,10 +10,19 @@ Feature changes need tests through the C ABI when practical.
 
 Campsite rules apply: leave anything you touch tidier than when you found it.
 
-## Conventions
+## Documentation
 
-- Read
-  [`docs/src/content/docs/development/conventions.md`](docs/src/content/docs/development/conventions.md)
-  before before working on the C API.
-- Inspect `third_party/maplibre-native` or `MLN_SOURCE_DIR` before inferring
-  native behavior.
+When working on documentation, determine up front who the audience is and
+whether the documentation is a Tutorial, Guide, Reference, or Explanation,
+according to the
+[Diátaxis Framework](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/start-here.rst).
+State your determination for the user, then load and follow the appropriate
+guide before making changes:
+
+- [Reference](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/reference.rst)
+  usually covers comments attached to source code (e.g, Doxygen).
+- [Guides](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/how-to-guides.rst)
+  usually covers user-facing documentation.
+- [Explanation](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/explanation.rst)
+  usually covers contributor facing or user facing documentation.
+- [Tutorials](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/tutorials.rst)
