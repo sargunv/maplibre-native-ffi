@@ -1,21 +1,47 @@
 {{cleanAnchor refid name}}
 
-## {{shortname name}}
+# {{shortname name}}
 
-{{#if includes}}
-```cpp
-#include <{{includes}}>
-```
-{{/if}}
-
-{{#if basecompoundref}}> **Inherits:** {{#each basecompoundref}}{{linkedName name refid}}{{#unless @last}}, {{/unless}}{{/each}}
-{{/if}}
-{{#if derivedcompoundref}}> **Subclassed by:** {{#each derivedcompoundref}}{{linkedName name refid}}{{#unless @last}}, {{/unless}}{{/each}}
-{{/if}}
-
+{{#if (eq kind "group")}}
+{{summary}}
+{{else}}
 {{briefdescription}}
 
 {{detaileddescription}}
+{{/if}}
+
+{{#with (compoundsOfKind filtered.compounds "namespace") as |namespaces|}}
+{{#if namespaces}}
+### Namespaces
+
+| Name | Description |
+|------|-------------|
+{{#each namespaces}}| {{linkedName name refid}} | {{cell summary}} |
+{{/each}}
+{{/if}}
+{{/with}}
+
+{{#with (compoundsOfKind filtered.compounds "class" "struct" "interface") as |types|}}
+{{#if types}}
+### Classes
+
+| Name | Description |
+|------|-------------|
+{{#each types}}| {{linkedName name refid}} | {{cell summary}} |
+{{/each}}
+{{/if}}
+{{/with}}
+
+{{#with (compoundsOfKind filtered.compounds "enum") as |enums|}}
+{{#if enums}}
+### Enumerations
+
+| Name | Description |
+|------|-------------|
+{{#each enums}}| {{linkedName name refid}} | {{cell summary}} |
+{{/each}}
+{{/if}}
+{{/with}}
 
 {{#each filtered.sections}}
 ### {{label}}
