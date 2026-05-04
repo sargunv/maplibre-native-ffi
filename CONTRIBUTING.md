@@ -5,12 +5,15 @@ discussion.
 
 ## Before Making Changes
 
-See [`docs/development-setup.md`](docs/development-setup.md) for platform setup,
-pinned tools, and local commands.
+See
+[`docs/src/content/docs/development/setup.md`](docs/src/content/docs/development/setup.md)
+for platform setup, pinned tools, and local commands.
 
-Read [`docs/development.md`](docs/development.md) before changing behavior or
-public interfaces. It owns the project scope and the conventions for ABI shape,
-errors, ownership, threading, callbacks, render targets, tests, and examples.
+Read
+[`docs/src/content/docs/development/conventions.md`](docs/src/content/docs/development/conventions.md)
+before changing behavior or public interfaces. It owns the project scope and the
+conventions for ABI shape, errors, ownership, threading, callbacks, render
+targets, tests, and examples.
 
 Coordinate large API, ABI, ownership, threading, async, render target, or
 binding changes before opening a pull request.

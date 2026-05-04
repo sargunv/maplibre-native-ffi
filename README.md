@@ -47,10 +47,10 @@ mise run //examples/swift-map:run
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to prepare changes for
   review.
-- [`docs/development.md`](docs/development.md) explains project scope and
-  development conventions.
-- [`docs/development-setup.md`](docs/development-setup.md) explains platform
-  setup, pinned tools, and local commands.
+- [`docs/src/content/docs/development/conventions.md`](docs/src/content/docs/development/conventions.md)
+  explains project scope and development conventions.
+- [`docs/src/content/docs/development/setup.md`](docs/src/content/docs/development/setup.md)
+  explains platform setup, pinned tools, and local commands.
 
 ## Current Status
 
