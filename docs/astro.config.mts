@@ -2,7 +2,6 @@
 
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
-import gruvbox from "starlight-theme-gruvbox";
 
 // https://astro.build/config
 export default defineConfig({
@@ -16,13 +15,16 @@ export default defineConfig({
           href: "https://github.com/sargunv/maplibre-native-ffi",
         },
       ],
-      plugins: [gruvbox()],
       sidebar: [
         {
-          label: "Guides",
+          label: "Usage",
+          items: [{ label: "Overview", slug: "usage" }],
+        },
+        {
+          label: "Development",
           items: [
-            // Each item here is one entry in the navigation menu.
-            { label: "Example Guide", slug: "guides/example" },
+            { label: "Setup", slug: "development/setup" },
+            { label: "Conventions", slug: "development/conventions" },
           ],
         },
         {
