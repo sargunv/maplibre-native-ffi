@@ -1,10 +1,16 @@
+[tasks."api:c"]
+run = "rm -rf public/api/c && mkdir -p public/api/c && doxygen api/c/Doxyfile"
+
 [tasks.dev]
+depends = ["api:c"]
 run = "pnpm exec astro dev"
 
 [tasks.start]
+depends = ["api:c"]
 run = "pnpm exec astro dev"
 
 [tasks.build]
+depends = ["api:c"]
 run = "pnpm exec astro build"
 
 [tasks.preview]

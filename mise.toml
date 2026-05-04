@@ -54,7 +54,7 @@ run = "hk check --all"
 run = "hk fix --all"
 
 [tasks."docs:c"]
-run = "doxygen docs/api/Doxyfile"
+run = "mise run //docs:api:c"
 
 [tasks._verify-clean-worktree]
 description = "Verify the worktree is clean after the task run"

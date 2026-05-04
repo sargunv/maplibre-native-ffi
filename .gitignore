@@ -1,5 +1,5 @@
 build*/
-docs/api/c/
+docs/public/api/c/
 .zig-cache/
 zig-out/
 zig-pkg/
