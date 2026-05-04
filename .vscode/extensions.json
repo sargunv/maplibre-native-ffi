@@ -5,6 +5,7 @@
     "okerew.shader-with-metal",
     "ziglang.vscode-zig",
     "llvm-vs-code-extensions.vscode-clangd",
-    "bierner.markdown-mermaid"
+    "bierner.markdown-mermaid",
+    "astro-build.astro-vscode"
   ]
 }

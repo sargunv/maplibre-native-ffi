@@ -9,7 +9,7 @@ pin = true
 experimental = true
 
 [monorepo]
-config_roots = ["examples/*"]
+config_roots = ["examples/*", "docs"]
 
 [tools]
 hk = "1.40.0"
@@ -21,6 +21,8 @@ pixi = "0.67.2"
 zig = "0.16.0"
 "conda:doxygen" = "1.13.2"
 actionlint = "1.7.8"
+pnpm = "10.33.2"
+node = "24.11.0"
 
 [hooks]
 postinstall = [
