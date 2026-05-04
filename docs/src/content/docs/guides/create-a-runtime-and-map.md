@@ -3,8 +3,8 @@ title: Create a Runtime and Map
 description: Planned guide for creating the core runtime and map objects.
 ---
 
-This guide will cover the runtime and map objects that anchor a host
-integration.
+This planned language-agnostic guide covers the runtime and map objects that
+anchor a host integration.
 
 Planned coverage:
 

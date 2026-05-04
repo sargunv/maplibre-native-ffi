@@ -1,7 +1,23 @@
 ---
-title: Development Setup
-description: Platform setup, workflow commands, and local tooling for contributors.
+title: Overview
+description: Contributor setup, project scope, workflow commands, tests, and examples.
 ---
+
+## Project Scope
+
+The project exposes MapLibre Native through two layers.
+
+The C API exposes core MapLibre Native features on supported native platforms:
+runtime, resources, maps, cameras, events, diagnostics, logging, render target
+primitives, texture readback, and low-level extension points such as resource
+providers and URL transforms. It excludes convenience APIs such as snapshotting
+and platform integrations such as gestures and device sensors.
+
+Language bindings sit directly above the C API. They manage C handles, struct
+initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
+events, threading, and event draining in the target language. They preserve the
+C API's concepts. They do not provide full SDKs, higher-level async models,
+view lifecycle integrations, convenience workflows, or new abstractions.
 
 ## Getting Set Up
 
@@ -97,3 +113,16 @@ linter configs tune the tools that those entry points invoke.
 
 Astro and Starlight build the documentation site. Generated reference
 documentation is exported as Markdown into `docs/src/content/docs/reference/`.
+
+## Tests And Examples
+
+Every feature needs CI coverage through an automated test when practical. Tests
+consume the public C API. Zig tests also check header shape because `@cImport`
+catches C API issues quickly.
+
+Use examples for demos and for behavior that needs manual validation, such as
+visual output, interactive input, or host graphics integration.
+
+Keep examples small. This repository may include low-level language bindings and
+focused integration examples. Full application SDKs live outside this
+repository.

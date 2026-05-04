@@ -3,7 +3,7 @@ title: Query Features
 description: Planned guide for rendered and source feature queries.
 ---
 
-This guide will cover rendered and source feature queries.
+This planned language-agnostic guide covers rendered and source feature queries.
 
 Planned coverage:
 

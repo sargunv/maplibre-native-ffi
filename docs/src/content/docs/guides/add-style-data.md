@@ -3,7 +3,8 @@ title: Add Style Data
 description: Planned guide for runtime style sources, layers, images, and feature state.
 ---
 
-This guide will cover adding and updating style data at runtime.
+This planned language-agnostic guide covers adding and updating style data at
+runtime.
 
 Planned coverage:
 

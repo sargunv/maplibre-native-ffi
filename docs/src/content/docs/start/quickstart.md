@@ -1,34 +1,14 @@
 ---
 title: Quickstart
-description: Install pinned tools and run a supported example.
+description: Planned package installation and first-use guide.
 ---
 
-Install [`mise`](https://mise.jdx.dev/). Then install the pinned project tools:
+Packages are not published for consumption yet. This page will become the
+first-use guide when at least one supported binding is available as a package.
 
-```bash
-mise install
-```
+Planned coverage:
 
-Run the Zig map example:
-
-```bash
-# macOS and Linux
-mise run //examples/zig-map:run
-```
-
-On macOS, run the Swift map example too:
-
-```bash
-mise run //examples/swift-map:run
-```
-
-The first build configures CMake and fetches MapLibre Native into
-`third_party/maplibre-native`. To use a separate MapLibre Native checkout, set
-`MLN_SOURCE_DIR` before configuring or running builds.
-
-## Next Steps
-
-- Read the [runtime and event model](/concepts/).
-- Follow the [runtime and map guide](/guides/create-a-runtime-and-map/) when it
-  has content.
-- Use the [C reference](/reference/c/) for exact declarations.
+- installing a supported binding;
+- creating the smallest useful map integration;
+- linking to the matching generated reference;
+- identifying the next usage guide to read.

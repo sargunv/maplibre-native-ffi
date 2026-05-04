@@ -28,6 +28,19 @@ guide before making changes:
 - [Tutorials](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/tutorials.rst)
 
 Before finishing documentation changes, apply the prose rules from
-[Writing Clearly and Concisely](https://raw.githubusercontent.com/obra/the-elements-of-style/refs/heads/main/skills/writing-clearly-and-concisely/SKILL.md):
+[Writing Clearly and Concisely](https://raw.githubusercontent.com/obra/the-elements-of-style/refs/heads/main/skills/writing-clearly-and-concisely/SKILL.md#Limited%20Context%20Strategy):
 use active voice, positive statements, concrete language, parallel structure,
 and no needless words.
+
+## Project Docs
+
+Read these docs before changing related code:
+
+- `docs/src/content/docs/concepts.md` for project scope, ownership, threading,
+  events, rendering targets, and host integration boundaries.
+- `docs/src/content/docs/development/c-api.md` before changing public C headers,
+  C ABI behavior, callbacks, diagnostics, or render target contracts.
+- `docs/src/content/docs/development/*-bindings.md` before changing a language
+  binding or its generated reference docs.
+- `docs/src/content/docs/development/overview.md` for contributor setup,
+  workflow commands, tests, and examples.

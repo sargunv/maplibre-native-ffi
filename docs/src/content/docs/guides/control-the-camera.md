@@ -3,7 +3,8 @@ title: Control the Camera
 description: Planned guide for camera state and transitions.
 ---
 
-This guide will cover reading, setting, fitting, and animating map camera state.
+This planned language-agnostic guide covers reading, setting, fitting, and
+animating map camera state.
 
 Planned coverage:
 

@@ -3,7 +3,8 @@ title: Render to a Texture
 description: Planned guide for offscreen texture rendering and readback.
 ---
 
-This guide will cover rendering a map into an offscreen texture target.
+This planned language-agnostic guide covers rendering a map into an offscreen
+texture target.
 
 Planned coverage:
 

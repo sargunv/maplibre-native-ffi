@@ -3,7 +3,8 @@ title: Render to a Surface
 description: Planned guide for rendering and presenting through native surfaces.
 ---
 
-This guide will cover rendering a map through a caller-provided native surface.
+This planned language-agnostic guide covers rendering a map through a
+caller-provided native surface.
 
 Planned coverage:
 

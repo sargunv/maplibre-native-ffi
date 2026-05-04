@@ -3,7 +3,8 @@ title: Handle Events
 description: Planned guide for consuming runtime and map events.
 ---
 
-This guide will cover runtime events produced by asynchronous map work.
+This planned language-agnostic guide covers runtime events produced by
+asynchronous map work.
 
 Planned coverage:
 

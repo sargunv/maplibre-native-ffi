@@ -1,5 +1,5 @@
 ---
-title: C
+title: C API
 description: C ABI contract and C/C++ implementation rules for contributors.
 ---
 
@@ -94,7 +94,7 @@ when it ends, and whether completion may happen inline or later.
 
 ## Threading
 
-The runtime and map model is host-pumped. Runtime creation records the owner
+The runtime and map use a host-pumped model. Runtime creation records the owner
 thread. Runtime, map, map-projection, and render-target-session calls that touch
 thread-affine state validate the owner thread and return
 `MLN_STATUS_WRONG_THREAD` for mismatches.

@@ -3,7 +3,8 @@ title: Handle Diagnostics
 description: Planned guide for status values, diagnostics, and native errors.
 ---
 
-This guide will cover synchronous statuses and diagnostic strings.
+This planned language-agnostic guide covers synchronous statuses and diagnostic
+strings.
 
 Planned coverage:
 

@@ -1,6 +1,6 @@
 ---
 title: MapLibre Native FFI
-description: Experimental C API for MapLibre Native.
+description: What MapLibre Native FFI is, who it serves, and what it excludes.
 ---
 
 MapLibre Native FFI provides an experimental C API for
@@ -8,24 +8,30 @@ MapLibre Native FFI provides an experimental C API for
 low-level language bindings and host integrations that need a C boundary instead
 of direct C++ interop.
 
-The API keeps MapLibre Native concepts direct. Framework concerns such as
+The API exposes MapLibre Native concepts directly. Framework concerns such as
 gestures, widgets, declarative UI, and application lifecycle integration belong
 in downstream adapters.
 
 The C ABI is unstable while the project is pre-1.0.
 
-## Start Here
+## Where to Go Next
 
-Read the [overview](/start/overview/) for project scope. Then follow the
-[quickstart](/start/quickstart/) to run a supported example.
+- Read [concepts](/concepts/) before designing an integration.
+- Check [status](/start/status/) for current platform and backend support.
+- Use the [quickstart](/start/quickstart/) when package installation
+  instructions are available.
+- Use the [C API reference](/reference/c/) for declarations, ownership rules,
+  and status values.
+- Read the [development overview](/development/overview/) before contributing.
 
 ## Main Sections
 
-- [Guides](/guides/create-a-runtime-and-map/) show integration tasks with
-  language-specific code snippets as bindings become available.
 - [Concepts](/concepts/) explain the runtime, map, render target,
   ownership, threading, and host integration model.
+- [Usage](/guides/create-a-runtime-and-map/) covers language-agnostic
+  integration tasks and will add binding-specific snippets as bindings become
+  available.
 - [Reference](/reference/c/) contains generated API documentation for public
   surfaces.
-- [Development](/development/setup/) covers contributor setup, project
-  guidelines, the C contract, and language-specific binding work.
+- [Development](/development/overview/) covers contributor setup, project scope,
+  the C API contract, and language-specific binding work.

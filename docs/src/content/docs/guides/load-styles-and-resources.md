@@ -3,7 +3,8 @@ title: Load Styles and Resources
 description: Planned guide for style loading and resource integration.
 ---
 
-This guide will cover style loading and host resource integration.
+This planned language-agnostic guide covers style loading and host resource
+integration.
 
 Planned coverage:
 

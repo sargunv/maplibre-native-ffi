@@ -1,10 +1,12 @@
 ---
-title: Swift
+title: Swift Bindings
 description: Contributor notes for the Swift binding.
 ---
 
-This page will cover Swift binding design, implementation, tests, and reference
-generation.
+This planned contributor note covers Swift binding design, implementation,
+tests, and reference generation.
+
+Tracking issue: [Add Swift bindings](https://github.com/sargunv/maplibre-native-ffi/issues/44).
 
 Planned coverage:
 

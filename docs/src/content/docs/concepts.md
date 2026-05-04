@@ -3,9 +3,6 @@ title: Concepts
 description: Core mental models for using and wrapping MapLibre Native FFI.
 ---
 
-This page explains the ideas behind the user guides. Split a section into its
-own page only when it reads better alone.
-
 ## Mental Model
 
 MapLibre Native FFI exposes MapLibre Native as direct concepts, not as a full
@@ -41,13 +38,13 @@ Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
 events, threading, and event draining in the target language.
 
-Bindings preserve the C API's concepts rather than provide fully idiomatic
-application SDKs, higher-level async models over runtime events, view lifecycle
+Bindings preserve the C API's concepts. They do not provide full application
+SDKs, higher-level async models over runtime events, view lifecycle
 integrations, convenience workflows, or new abstractions.
 
 ## Runtime, Threading, And Events
 
-The runtime and map model is host-pumped. Runtime creation records the owner
+The runtime and map use a host-pumped model. Runtime creation records the owner
 thread. Runtime, map, map-projection, and render-target-session calls that touch
 thread-affine state validate the owner thread.
 
@@ -96,8 +93,8 @@ and graphics backend lifecycle outside the map object itself.
 
 ## Resources And Networking
 
-MapLibre Native FFI exposes resource loading through low-level extension points
-such as URL transforms and resource providers.
+MapLibre Native FFI exposes low-level resource loading extension points such as
+URL transforms and resource providers.
 
 These APIs let host integrations transform, fulfill, or fail MapLibre Native
 requests while preserving the C API's runtime event and diagnostic model.

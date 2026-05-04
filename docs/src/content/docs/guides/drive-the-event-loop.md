@@ -3,8 +3,8 @@ title: Drive the Event Loop
 description: Planned guide for pumping runtime work and draining events.
 ---
 
-This guide will cover how a host application drives MapLibre Native FFI's
-host-pumped runtime model.
+This planned language-agnostic guide covers how a host application drives
+MapLibre Native FFI's host-pumped runtime model.
 
 Planned coverage:
 

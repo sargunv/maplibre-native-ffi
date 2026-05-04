@@ -16,17 +16,12 @@ export default defineConfig({
         },
       ],
       sidebar: [
+        { label: "Overview", link: "/" },
+        { label: "Quickstart", slug: "start/quickstart" },
+        { label: "Status", slug: "start/status" },
+        { label: "Concepts", slug: "concepts" },
         {
-          label: "Start Here",
-          items: [
-            { label: "Overview", slug: "start/overview" },
-            { label: "Quickstart", slug: "start/quickstart" },
-            { label: "Platform Support", slug: "start/platform-support" },
-            { label: "Project Status", slug: "start/project-status" },
-          ],
-        },
-        {
-          label: "Guides",
+          label: "Usage",
           items: [
             {
               label: "Create a Runtime and Map",
@@ -59,30 +54,38 @@ export default defineConfig({
           ],
         },
         {
-          label: "Concepts",
-          items: [{ label: "Concepts", slug: "concepts" }],
-        },
-        {
           label: "Development",
           items: [
-            { label: "Setup", slug: "development/setup" },
-            { label: "Guidelines", slug: "development/guidelines" },
-            { label: "C", slug: "development/c" },
-            { label: "Swift", slug: "development/swift" },
-            { label: "Kotlin", slug: "development/kotlin" },
-            { label: "Java", slug: "development/java" },
-            { label: "Zig", slug: "development/zig" },
+            { label: "Overview", slug: "development/overview" },
+            { label: "C API", slug: "development/c-api" },
+            { label: "C# Bindings", slug: "development/csharp-bindings" },
+            {
+              label: "Dart (Flutter) Bindings",
+              slug: "development/dart-flutter-bindings",
+            },
+            { label: "Go Bindings", slug: "development/go-bindings" },
+            {
+              label: "Java (FFM) Bindings",
+              slug: "development/java-ffm-bindings",
+            },
+            {
+              label: "Java (JNI) Bindings",
+              slug: "development/java-jni-bindings",
+            },
+            { label: "Kotlin Bindings", slug: "development/kotlin-bindings" },
+            { label: "Python Bindings", slug: "development/python-bindings" },
+            { label: "Rust Bindings", slug: "development/rust-bindings" },
+            { label: "Swift Bindings", slug: "development/swift-bindings" },
+            {
+              label: "TypeScript (Node) Bindings",
+              slug: "development/typescript-node-bindings",
+            },
+            { label: "Zig Bindings", slug: "development/zig-bindings" },
           ],
         },
         {
           label: "Reference",
-          items: [
-            { label: "C", slug: "reference/c" },
-            { label: "Swift", slug: "reference/swift" },
-            { label: "Kotlin", slug: "reference/kotlin" },
-            { label: "Java", slug: "reference/java" },
-            { label: "Zig", slug: "reference/zig" },
-          ],
+          items: [{ label: "C API", slug: "reference/c" }],
         },
       ],
     }),
