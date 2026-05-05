@@ -168,7 +168,8 @@ auto validate_vulkan_borrowed_descriptor(
   return MLN_STATUS_OK;
 }
 
-class MetalTextureSessionBackend final : public mln::core::TextureSessionBackend {
+class MetalTextureSessionBackend final
+    : public mln::core::TextureSessionBackend {
  public:
   MetalTextureSessionBackend(MTL::Device* host_device, mbgl::Size size)
       : backend_(host_device, size) {}

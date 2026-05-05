@@ -249,7 +249,8 @@ class MetalSurfaceBackend final : public mbgl::mtl::RendererBackend,
   void updateAssumedState() override {}
 };
 
-class MetalSurfaceSessionBackend final : public mln::core::SurfaceSessionBackend {
+class MetalSurfaceSessionBackend final
+    : public mln::core::SurfaceSessionBackend {
  public:
   MetalSurfaceSessionBackend(
     CA::MetalLayer* layer, MTL::Device* host_device, mbgl::Size size

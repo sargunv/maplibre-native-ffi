@@ -27,7 +27,8 @@ class SurfaceSessionBackend {
  public:
   SurfaceSessionBackend() = default;
   SurfaceSessionBackend(const SurfaceSessionBackend&) = delete;
-  auto operator=(const SurfaceSessionBackend&) -> SurfaceSessionBackend& = delete;
+  auto operator=(const SurfaceSessionBackend&)
+    -> SurfaceSessionBackend& = delete;
   SurfaceSessionBackend(SurfaceSessionBackend&&) = delete;
   auto operator=(SurfaceSessionBackend&&) -> SurfaceSessionBackend& = delete;
   virtual ~SurfaceSessionBackend() = default;
@@ -40,7 +41,8 @@ class TextureSessionBackend {
  public:
   TextureSessionBackend() = default;
   TextureSessionBackend(const TextureSessionBackend&) = delete;
-  auto operator=(const TextureSessionBackend&) -> TextureSessionBackend& = delete;
+  auto operator=(const TextureSessionBackend&)
+    -> TextureSessionBackend& = delete;
   TextureSessionBackend(TextureSessionBackend&&) = delete;
   auto operator=(TextureSessionBackend&&) -> TextureSessionBackend& = delete;
   virtual ~TextureSessionBackend() = default;

@@ -45,13 +45,16 @@ auto validate_owned_descriptor(const mln_owned_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
-class GenericTextureSessionBackend final : public mln::core::TextureSessionBackend {
+class GenericTextureSessionBackend final
+    : public mln::core::TextureSessionBackend {
  public:
   explicit GenericTextureSessionBackend(mbgl::Size size)
-      : backend_(mbgl::gfx::HeadlessBackend::Create(
-          size, mbgl::gfx::Renderable::SwapBehaviour::Flush,
-          mbgl::gfx::ContextMode::Unique
-        )) {}
+      : backend_(
+          mbgl::gfx::HeadlessBackend::Create(
+            size, mbgl::gfx::Renderable::SwapBehaviour::Flush,
+            mbgl::gfx::ContextMode::Unique
+          )
+        ) {}
 
   auto headless_backend() -> mbgl::gfx::HeadlessBackend& override {
     return *backend_;
