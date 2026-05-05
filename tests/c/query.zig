@@ -139,6 +139,23 @@ fn loadClusterStyleAndRender(runtime: *c.mln_runtime, map: *c.mln_map, session: 
     }
 }
 
+fn waitForRenderedCluster(runtime: *c.mln_runtime, map: *c.mln_map, session: *c.mln_render_session, geometry: *const c.mln_rendered_query_geometry, options: *const c.mln_rendered_feature_query_options) !*c.mln_feature_query_result {
+    for (0..1000) |_| {
+        var result: ?*c.mln_feature_query_result = null;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_rendered_features(session, geometry, options, &result));
+
+        var count: usize = 0;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_count(result.?, &count));
+        if (count == 1) return result.?;
+
+        c.mln_feature_query_result_destroy(result.?);
+        if (try support.waitForEvent(runtime, map, c.MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE)) {
+            try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_render_update(session));
+        }
+    }
+    return error.ClusterNotQueryable;
+}
+
 fn expectFeatureKind(feature: *const c.mln_queried_feature, expected: []const u8) !void {
     const properties = feature.feature.properties[0..feature.feature.property_count];
     for (properties) |property| {
@@ -261,16 +278,11 @@ test "render session queries feature extensions" {
     options.layer_ids = &layer_ids;
     options.layer_id_count = layer_ids.len;
 
-    var cluster_result: ?*c.mln_feature_query_result = null;
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_rendered_features(session, &geometry, &options, &cluster_result));
-    defer c.mln_feature_query_result_destroy(cluster_result.?);
-
-    var count: usize = 0;
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_count(cluster_result.?, &count));
-    try testing.expectEqual(@as(usize, 1), count);
+    const cluster_result = try waitForRenderedCluster(runtime, map, session, &geometry, &options);
+    defer c.mln_feature_query_result_destroy(cluster_result);
 
     var cluster: c.mln_queried_feature = .{ .size = @sizeOf(c.mln_queried_feature), .fields = 0, .feature = undefined, .source_id = .{ .data = null, .size = 0 }, .source_layer_id = .{ .data = null, .size = 0 }, .state = null };
-    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_get(cluster_result.?, 0, &cluster));
+    try testing.expectEqual(c.MLN_STATUS_OK, c.mln_feature_query_result_get(cluster_result, 0, &cluster));
 
     var children_result: ?*c.mln_feature_extension_result = null;
     try testing.expectEqual(c.MLN_STATUS_OK, c.mln_render_session_query_feature_extensions(session, stringView("cluster-source"), &cluster.feature, stringView("supercluster"), stringView("children"), null, &children_result));
