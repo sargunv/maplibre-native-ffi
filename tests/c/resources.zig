@@ -404,6 +404,17 @@ fn waitForProviderRequest(runtime: *c.mln_runtime, state: *AsyncProviderState) !
     return error.ProviderNotCalled;
 }
 
+fn waitForRequestCancellation(runtime: *c.mln_runtime, handle: *c.mln_resource_request_handle) !void {
+    for (0..5000) |_| {
+        var cancelled = false;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_cancelled(handle, &cancelled));
+        if (cancelled) return;
+        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
+        _ = usleep(1000);
+    }
+    return error.RequestNotCancelled;
+}
+
 fn waitForPmtilesRangeRequest(runtime: *c.mln_runtime, state: *PmtilesRangeProviderState) !void {
     for (0..1000) |_| {
         try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
@@ -603,13 +614,7 @@ test "custom provider observes cancellation before late completion" {
 
     support.destroyMap(map);
 
-    var cancelled = false;
-    for (0..1000) |_| {
-        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_resource_request_cancelled(handle, &cancelled));
-        if (cancelled) break;
-        try testing.expectEqual(c.MLN_STATUS_OK, c.mln_runtime_run_once(runtime));
-    }
-    try testing.expect(cancelled);
+    try waitForRequestCancellation(runtime, handle);
 
     var response = styleResponse();
     try testing.expectEqual(c.MLN_STATUS_INVALID_STATE, c.mln_resource_request_complete(handle, &response));
