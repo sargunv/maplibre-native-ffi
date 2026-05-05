@@ -97,7 +97,7 @@ when it ends, and whether completion may happen inline or later.
 ## Threading
 
 The runtime and map use a host-pumped model. Runtime creation records the owner
-thread. Runtime, map, map-projection, and render-target-session calls that touch
+thread. Runtime, map, map-projection, and render session calls that touch
 thread-affine state validate the owner thread and return
 `MLN_STATUS_WRONG_THREAD` for mismatches.
 
@@ -151,17 +151,18 @@ Callbacks must not unwind through the C API. Bindings catch host exceptions,
 panics, and errors inside the callback and convert them to the callback's
 documented return behavior.
 
-## Maps And Render Targets
+## Maps, Render Sessions, And Render Targets
 
 Keep map state separate from render targets. `mln_map` owns style, camera,
 observer events, and render invalidation state. Each map may have one live
-render session; that session owns backend-bound resources.
+render session. A render session renders that map to one surface or texture
+render target and owns backend-bound resources.
 
 Texture sessions render offscreen into session-owned backend targets or
 caller-owned borrowed backend targets. Surface sessions render and present
 through caller-provided native surfaces. Future target kinds should preserve the
 same separation from `mln_map`.
 
-Render target APIs must document owner thread, backend handle ownership,
-synchronization, borrowed pointer lifetimes, generation or stale-frame behavior,
-and teardown rules.
+Render session APIs must document owner thread, render target backend handle
+ownership, synchronization, borrowed pointer lifetimes, generation or
+stale-frame behavior, and teardown rules.

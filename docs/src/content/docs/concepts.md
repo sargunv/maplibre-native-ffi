@@ -1,106 +1,64 @@
 ---
 title: Concepts
-description: Core mental models for using and wrapping MapLibre Native FFI.
+description: Core mental models for using MapLibre Native FFI.
 ---
 
 ## Mental Model
 
-MapLibre Native FFI exposes MapLibre Native concepts directly. It is intended to
-underpin framework and language integrations with a common portable API surface.
+MapLibre Native FFI exposes MapLibre Native concepts directly. Applications can
+use it directly or through language bindings, and higher-level adapters can
+build on the same model. It provides a common portable API surface for native
+map integration.
 
 Three concepts form the core API: the runtime, the map, and the render session.
+Events and bindings connect those concepts to host code.
+
+## Runtime
 
 The runtime owns scheduler state and event storage for one host owner thread.
-The map owns style, camera, observer events, and render invalidation state. A
-render session renders a map to a surface or texture render target.
+Host code creates a runtime on the thread that will pump it. Runtime work and
+events flow through that owner thread.
 
-Core relationships:
+Each owner thread may have one live runtime. The host pumps that runtime to let
+MapLibre Native make progress and to collect completed work.
 
-- A runtime is host-pumped from its owner thread.
-- A map belongs to a runtime and keeps map state independent of any particular
-  render target.
-- A render session connects a map to a surface or texture render target.
-- Events are copied into runtime-owned storage and drained by the host.
-- Bindings sit above the C API and preserve the same core model.
+## Map
 
-## Scope
+A map belongs to a runtime. It owns map state: style, camera, observer events,
+and render invalidation.
 
-MapLibre Native FFI provides a C API exposing core MapLibre Native features:
-runtime, resources, maps, cameras, events, diagnostics, logging, render target
-primitives, texture readback, and low-level extension points such as resource
-providers and URL transforms.
+A map is independent of any particular render target. Host code can create,
+configure, query, and observe the map without tying that map state to a window,
+surface, or texture.
 
-Language bindings sit directly above the C API. They manage C handles, struct
-initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
-events, threading, and event draining in the target language.
+## Render Session
 
-The FFI bindings here preserve the C API's concepts. Higher-level adapters built
-on this project may provide full application SDKs, async models over runtime
-events, view lifecycle integrations, convenience workflows, or new abstractions.
+A render session renders one map to one render target. Render targets are
+surfaces or textures.
 
-## Runtime, Threading, And Events
-
-The runtime and map use a host-pumped model. Runtime creation records the owner
-thread. Runtime, map, projection, style, and render session calls that touch
-thread-affine state validate the owner thread.
-
-Synchronous calls return status for acceptance or failure. The runtime reports
-later native work through copied events that the host drains explicitly.
-
-Operation shapes:
-
-- Immediate operations complete before the function returns.
-- Commands report synchronous acceptance and later effects through events.
-- State snapshots return last-known state.
-- Blocking queries are rare and document deadlock risks.
-- Event streams produce many events over time.
-
-## Ownership And Lifetimes
-
-MapLibre Native FFI makes ownership explicit at the boundary between the host
-language and native MapLibre code.
-
-Call-duration inputs are borrowed. Data that outlives a function call or native
-callback is copied. Owned handles and scoped resources have explicit destroy or
-release functions.
-
-Returned views document when they become invalid. Callback APIs document how
-long callbacks and `user_data` must remain valid, which thread may invoke them,
-and whether output pointers are copied before return.
-
-The generated reference is the source of truth for exact ownership and lifetime
-contracts on each function and type.
-
-## Rendering Targets
-
-Map state is separate from render targets. An `mln_map` owns style, camera,
-observer events, and render invalidation state. Each map may have one live
-render session, and that session owns backend-bound rendering resources.
-
+Surface sessions render and present through caller-provided native surfaces.
 Texture sessions render offscreen into session-owned backend targets or
-caller-owned borrowed backend targets. Surface sessions render and present
-through caller-provided native surfaces.
+caller-owned borrowed backend targets.
 
-This separation lets bindings and host integrations keep application lifecycle
-and graphics backend lifecycle outside the map object itself.
+A map may have one live render session at a time. Keeping render sessions
+separate from maps lets host code manage graphics backend lifecycle outside the
+map object itself.
 
-## Resources And Networking
+## Events
 
-MapLibre Native FFI exposes low-level resource loading extension points such as
-URL transforms and resource providers.
+Events preserve MapLibre Native's observer-driven model across the FFI boundary.
+The runtime copies events into host-visible storage, and host code drains those
+events from the runtime.
 
-These APIs let host integrations transform, fulfill, or fail MapLibre Native
-requests while preserving the C API's runtime event and diagnostic model.
+Events report map lifecycle, rendering progress, resource activity, diagnostics,
+and asynchronous failures.
 
-## Host Integration Boundaries
+## Language Bindings
 
-MapLibre Native FFI is a low-level integration layer. It exposes native map
-capabilities across a C boundary and through direct language bindings.
+Language bindings preserve the same runtime, map, render session, and event
+model in the target language. They keep the API portable while matching the
+target language's handle and error conventions.
 
-Downstream adapters own framework-specific behavior: gestures, widgets,
-declarative UI, application lifecycle, sensors, platform view integration, and
-opinionated async APIs.
-
-Keeping this boundary clear lets the C API and bindings remain predictable
-across host environments. Downstream adapters choose the application framework
-model.
+Bindings sit directly above the C API and stay close to its shape. They expose
+the same core objects and relationships with language-appropriate safety around
+handles, lifetimes, errors, and event draining.
