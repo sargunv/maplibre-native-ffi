@@ -1,18 +1,24 @@
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/gfx/renderable.hpp>
+#include <mbgl/gfx/renderer_backend.hpp>
 #include <mbgl/util/size.hpp>
-#include <mbgl/vulkan/context.hpp>
 #include <mbgl/vulkan/renderable_resource.hpp>
 #include <mbgl/vulkan/renderer_backend.hpp>
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
+#include "maplibre_native_c/base.h"
+#include "maplibre_native_c/surface.h"
 #include "render/render_session_common.hpp"
 #include "render/surface_session.hpp"
 
@@ -211,7 +217,17 @@ class VulkanSurfaceBackend final : public mbgl::vulkan::RendererBackend,
       VulkanSurfaceBackend& backend_, VkSurfaceKHR surface_
     )
         : SurfaceRenderableResource(backend_), borrowed_surface(surface_) {}
+    VulkanSurfaceRenderableResource(const VulkanSurfaceRenderableResource&) =
+      delete;
+    auto operator=(const VulkanSurfaceRenderableResource&)
+      -> VulkanSurfaceRenderableResource& = delete;
+    VulkanSurfaceRenderableResource(VulkanSurfaceRenderableResource&&) = delete;
+    auto operator=(VulkanSurfaceRenderableResource&&)
+      -> VulkanSurfaceRenderableResource& = delete;
 
+    // The VkSurfaceKHR is borrowed from the host, so release the unique wrapper
+    // before base destruction reaches the Vulkan surface deleter.
+    // NOLINTNEXTLINE(modernize-use-equals-default)
     ~VulkanSurfaceRenderableResource() noexcept override {
       static_cast<void>(surface.release());
     }
@@ -289,7 +305,7 @@ class VulkanSurfaceBackend final : public mbgl::vulkan::RendererBackend,
     return *this;
   }
 
-  void setSize(mbgl::Size size) {
+  void resize(mbgl::Size size) {
     mbgl::vulkan::Renderable::setSize(size);
     if (resource) {
       getResource<VulkanSurfaceRenderableResource>().resize(size);
@@ -392,7 +408,7 @@ class VulkanSurfaceSessionBackend final
   }
 
   void resize(uint32_t physical_width, uint32_t physical_height) override {
-    backend_.setSize(mbgl::Size{physical_width, physical_height});
+    backend_.resize(mbgl::Size{physical_width, physical_height});
   }
 
  private:

@@ -17,54 +17,30 @@ This project provides an experimental C API for
 low-level language bindings and host integrations that need a C boundary instead
 of direct C++ interop.
 
-The API keeps MapLibre Native concepts direct. Framework concerns such as
+The API exposes MapLibre Native concepts directly. Framework concerns such as
 gestures, widgets, declarative UI, and application lifecycle integration belong
 in downstream adapters.
 
-The C ABI is unstable while the project is pre-1.0.
+MapLibre Native FFI is pre-1.0. The C ABI is unstable while `mln_c_version()`
+returns `0`.
 
-## Try It
+## Documentation
 
-Install [mise](https://mise.jdx.dev/), then install the pinned tools:
+Read the documentation site for concepts, usage guides, the generated C API
+reference, and contributor notes.
 
-```bash
-mise install
-```
+- [Concepts](https://sargunv.github.io/maplibre-native-ffi/concepts/)
+- [Usage guides](https://sargunv.github.io/maplibre-native-ffi/guides/)
+- [C API reference](https://sargunv.github.io/maplibre-native-ffi/reference/c/)
+- [Development overview](https://sargunv.github.io/maplibre-native-ffi/development/overview/)
 
-Run a supported example:
+## Status
 
-```bash
-# macOS and Linux
-mise run //examples/zig-map:run
-```
+The C API covers most of the MapLibre Native API surface. Advanced extension
+APIs, including custom layers and shader registry access, are not yet included.
 
-```bash
-# macOS only
-mise run //examples/swift-map:run
-```
-
-## Current Status
-
-The vast majority of the MapLibre Native API surface is already covered.
-Advanced extension APIs (custom layers, shader registry) are not yet included.
-
-Legend: 🟢 built and tested in CI; ❌ not yet implemented.
-
-| Platform | OpenGL             | Vulkan             | Metal              | WebGPU             |
-| -------- | ------------------ | ------------------ | ------------------ | ------------------ |
-| Linux    | ❌ [#23][issue-23] | 🟢                 | -                  | ❌ [#37][issue-37] |
-| Android  | ❌ [#24][issue-24] | ❌ [#24][issue-24] | -                  | ❌ [#37][issue-37] |
-| macOS    | -                  | ❌ [#20][issue-20] | 🟢                 | ❌ [#37][issue-37] |
-| iOS      | -                  | -                  | ❌ [#25][issue-25] | ❌ [#37][issue-37] |
-| Windows  | ❌ [#22][issue-22] | ❌ [#21][issue-21] | -                  | ❌ [#37][issue-37] |
-
-[issue-20]: https://github.com/sargunv/maplibre-native-ffi/issues/20
-[issue-21]: https://github.com/sargunv/maplibre-native-ffi/issues/21
-[issue-22]: https://github.com/sargunv/maplibre-native-ffi/issues/22
-[issue-23]: https://github.com/sargunv/maplibre-native-ffi/issues/23
-[issue-24]: https://github.com/sargunv/maplibre-native-ffi/issues/24
-[issue-25]: https://github.com/sargunv/maplibre-native-ffi/issues/25
-[issue-37]: https://github.com/sargunv/maplibre-native-ffi/issues/37
+Current CI-backed render targets include Vulkan on Linux and Metal on macOS. See
+the documentation site for full platform status.
 
 ## License
 

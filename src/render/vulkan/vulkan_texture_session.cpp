@@ -7,12 +7,13 @@
 #include <mbgl/gfx/headless_backend.hpp>
 #include <mbgl/util/size.hpp>
 
-#include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
-#include "maplibre_native_c.h"
+#include "maplibre_native_c/base.h"
+#include "maplibre_native_c/texture.h"
 #include "render/render_session_common.hpp"
 #include "render/texture_session.hpp"
 #include "render/vulkan/vulkan_texture_backend.hpp"
