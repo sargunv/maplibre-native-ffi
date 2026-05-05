@@ -16,8 +16,8 @@ When working on documentation, determine up front who the audience is and
 whether the documentation is a Tutorial, Guide, Reference, or Explanation,
 according to the
 [Diátaxis Framework](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/start-here.rst).
-State your determination for the user, then load and follow the appropriate
-guide before making changes:
+State your audience and category determination to the user, then load and follow
+the appropriate skill before making changes:
 
 - [Reference](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/reference.rst)
   usually covers comments attached to source code (e.g., Doxygen).
@@ -27,7 +27,16 @@ guide before making changes:
   usually covers contributor-facing or user-facing documentation.
 - [Tutorials](https://raw.githubusercontent.com/evildmp/diataxis-documentation-framework/refs/heads/main/tutorials.rst)
 
-Before finishing documentation changes, apply the prose rules from
+Use positive wording for guidance. Use negative wording for real prohibitions,
+safety rules, and hard boundaries.
+
+- Prefer: "Examples stay small and focused."
+- Avoid: "Examples should not grow into full applications."
+- Prefer: "Higher-level adapters may add execution models above this layer."
+- Avoid: "This layer should not try to manage execution models for every
+  possible host."
+
+Before finalizing documentation changes, apply the prose review strategy from
 [Writing Clearly and Concisely](https://raw.githubusercontent.com/obra/the-elements-of-style/refs/heads/main/skills/writing-clearly-and-concisely/SKILL.md#Limited%20Context%20Strategy):
 use active voice, positive statements, concrete language, parallel structure,
 and no needless words.
@@ -36,11 +45,9 @@ and no needless words.
 
 Read these docs before changing related code:
 
-- `docs/src/content/docs/concepts.md` for project scope, ownership, threading,
-  events, rendering targets, and host integration boundaries.
-- `docs/src/content/docs/development/c-api.md` before changing public C headers,
-  C ABI behavior, callbacks, diagnostics, or render target contracts.
-- `docs/src/content/docs/development/*-bindings.md` before changing a language
-  binding or its generated reference docs.
-- `docs/src/content/docs/development/overview.md` for contributor setup,
-  workflow commands, tests, and examples.
+- [Concepts](docs/src/content/docs/concepts.md) for project scope, ownership,
+  threading, events, rendering targets, and host integration boundaries.
+- [C API](docs/src/content/docs/development/c-api.md) before changing public C
+  headers, C ABI behavior, callbacks, diagnostics, or render target contracts.
+- [Bindings](docs/src/content/docs/development/bindings/) before changing a
+  language binding or its generated reference docs.

@@ -1,14 +1,8 @@
 ---
 title: Load Styles and Resources
 description: Planned guide for style loading and resource integration.
+sidebar:
+  order: 5
 ---
 
-This planned language-agnostic guide covers style loading and host resource
-integration.
-
-Planned coverage:
-
-- loading styles;
-- resource providers and URL transforms;
-- asynchronous resource outcomes;
-- code snippets for supported bindings.
+This planned guide covers style loading and host resource integration.

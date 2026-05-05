@@ -38,9 +38,9 @@ Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
 events, threading, and event draining in the target language.
 
-Bindings preserve the C API's concepts. They do not provide full application
-SDKs, higher-level async models over runtime events, view lifecycle
-integrations, convenience workflows, or new abstractions.
+Bindings preserve the C API's concepts. Higher-level adapters may provide full
+application SDKs, async models over runtime events, view lifecycle integrations,
+convenience workflows, or new abstractions.
 
 ## Runtime, Threading, And Events
 
@@ -108,5 +108,6 @@ Downstream adapters own framework-specific behavior: gestures, widgets,
 declarative UI, application lifecycle, sensors, platform view integration, and
 opinionated async APIs.
 
-Keeping this boundary clear lets the C API and bindings remain predictable for
-multiple host environments without choosing one application framework's model.
+Keeping this boundary clear lets the C API and bindings remain predictable
+across host environments. Downstream adapters choose the application framework
+model.

@@ -1,6 +1,8 @@
 ---
 title: Overview
 description: Contributor setup, project scope, workflow commands, tests, and examples.
+sidebar:
+  order: 1
 ---
 
 ## Project Scope
@@ -16,7 +18,7 @@ and platform integrations such as gestures and device sensors.
 Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
 events, threading, and event draining in the target language. They preserve the
-C API's concepts. They do not provide full SDKs, higher-level async models,
+C API's concepts. Higher-level adapters may provide full SDKs, async models,
 view lifecycle integrations, convenience workflows, or new abstractions.
 
 ## Getting Set Up
@@ -51,7 +53,7 @@ Build and test:
 mise run test
 ```
 
-Build without running tests:
+Build only:
 
 ```bash
 mise run build
@@ -69,8 +71,8 @@ Run formatters and linters that may edit files:
 mise run fix
 ```
 
-Run targeted examples when they provide evidence that automated tests cannot,
-such as rendering or host integration:
+Run targeted examples when they provide evidence beyond automated tests, such as
+rendering or host integration:
 
 ```bash
 mise run //examples/<project>:run
@@ -101,7 +103,7 @@ from the project directory.
 
 [`pixi`](https://pixi.sh/) supplies native packages from
 [`conda-forge`](https://conda-forge.org/). Pixi runs CMake so the repository
-declares C and C++ dependencies instead of relying on a system package manager.
+declares C and C++ dependencies in one place.
 
 [`hk`](https://github.com/jdx/hk) decides which checks run for pre-commit,
 `mise run check`, and `mise run fix`. [`dprint`](https://dprint.dev/) owns

@@ -12,26 +12,40 @@ The API exposes MapLibre Native concepts directly. Framework concerns such as
 gestures, widgets, declarative UI, and application lifecycle integration belong
 in downstream adapters.
 
-The C ABI is unstable while the project is pre-1.0.
+## Status
 
-## Where to Go Next
+MapLibre Native FFI is pre-1.0. The C ABI is unstable while `mln_c_version()`
+returns `0`.
 
-- Read [concepts](/concepts/) before designing an integration.
-- Check [status](/start/status/) for current platform and backend support.
-- Use the [quickstart](/start/quickstart/) when package installation
-  instructions are available.
-- Use the [C API reference](/reference/c/) for declarations, ownership rules,
-  and status values.
-- Read the [development overview](/development/overview/) before contributing.
+The C API covers most of the MapLibre Native API surface. It excludes advanced
+extension APIs, including custom layers and shader registry access.
 
-## Main Sections
+Legend: 🟢 built and tested in CI; ❌ not yet implemented.
 
-- [Concepts](/concepts/) explain the runtime, map, render target,
-  ownership, threading, and host integration model.
-- [Usage](/guides/create-a-runtime-and-map/) covers language-agnostic
-  integration tasks and will add binding-specific snippets as bindings become
-  available.
-- [Reference](/reference/c/) contains generated API documentation for public
-  surfaces.
-- [Development](/development/overview/) covers contributor setup, project scope,
-  the C API contract, and language-specific binding work.
+| Platform | OpenGL             | Vulkan             | Metal              | WebGPU             |
+| -------- | ------------------ | ------------------ | ------------------ | ------------------ |
+| Linux    | ❌ [#23][issue-23] | 🟢                 | -                  | ❌ [#37][issue-37] |
+| Android  | ❌ [#24][issue-24] | ❌ [#24][issue-24] | -                  | ❌ [#37][issue-37] |
+| macOS    | -                  | ❌ [#20][issue-20] | 🟢                 | ❌ [#37][issue-37] |
+| iOS      | -                  | -                  | ❌ [#25][issue-25] | ❌ [#37][issue-37] |
+| Windows  | ❌ [#22][issue-22] | ❌ [#21][issue-21] | -                  | ❌ [#37][issue-37] |
+
+## Use the Docs
+
+- Start with [Concepts](/concepts/) to understand the runtime, map, render target,
+ownership, threading, and host integration model. 
+- Read the
+[Usage guides](/guides/create-a-runtime-and-map/) for integration tasks.
+- Consult the
+[C API reference](/reference/c/) for declarations, ownership rules, and status
+values.
+- If you are contributing, read the
+[Development overview](/development/overview/) first.
+
+[issue-20]: https://github.com/sargunv/maplibre-native-ffi/issues/20
+[issue-21]: https://github.com/sargunv/maplibre-native-ffi/issues/21
+[issue-22]: https://github.com/sargunv/maplibre-native-ffi/issues/22
+[issue-23]: https://github.com/sargunv/maplibre-native-ffi/issues/23
+[issue-24]: https://github.com/sargunv/maplibre-native-ffi/issues/24
+[issue-25]: https://github.com/sargunv/maplibre-native-ffi/issues/25
+[issue-37]: https://github.com/sargunv/maplibre-native-ffi/issues/37

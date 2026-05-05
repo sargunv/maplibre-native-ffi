@@ -1,14 +1,16 @@
 ---
 title: C API
 description: C ABI contract and C/C++ implementation rules for contributors.
+sidebar:
+  order: 2
 ---
 
 ## Public API Layout
 
 `include/` is the public C API boundary. Keep implementation-only helpers out of
-public headers. Consumers include `maplibre_native_c.h`; domain headers
-under `include/maplibre_native_c/` keep declarations maintainable and may be
-included directly when useful.
+public headers. Consumers include `maplibre_native_c.h`; domain headers under
+`include/maplibre_native_c/` keep declarations maintainable and may be included
+directly when useful.
 
 ```text
 include/                 # public C API headers
