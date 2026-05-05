@@ -170,8 +170,8 @@ auto validate_vulkan_borrowed_descriptor(
 
 auto finish_metal_render(mln_render_session* texture) -> mln_status {
   // Metal sessions always store a Metal backend.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
   auto& backend =
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
     static_cast<mln::core::MetalTextureBackend&>(*texture->texture.backend);
   auto* rendered_texture = backend.metal_texture();
   if (rendered_texture == nullptr) {

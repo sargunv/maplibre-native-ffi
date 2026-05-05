@@ -32,7 +32,6 @@ class MetalTextureBackend::MetalTextureRenderableResource final
       );
       return;
     }
-
     depthTexture = context.createTexture2D();
     depthTexture->setSize(size);
     depthTexture->setFormat(
@@ -44,6 +43,8 @@ class MetalTextureBackend::MetalTextureRenderableResource final
        .wrapU = mbgl::gfx::TextureWrapType::Clamp,
        .wrapV = mbgl::gfx::TextureWrapType::Clamp}
     );
+    // The texture was created by mbgl::mtl::Context above.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
     static_cast<mbgl::mtl::Texture2D*>(depthTexture.get())
       ->setUsage(
         MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite |
@@ -62,6 +63,8 @@ class MetalTextureBackend::MetalTextureRenderableResource final
        .wrapU = mbgl::gfx::TextureWrapType::Clamp,
        .wrapV = mbgl::gfx::TextureWrapType::Clamp}
     );
+    // The texture was created by mbgl::mtl::Context above.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
     static_cast<mbgl::mtl::Texture2D*>(stencilTexture.get())
       ->setUsage(
         MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite |
@@ -71,6 +74,13 @@ class MetalTextureBackend::MetalTextureRenderableResource final
 
     context.renderingStats().numFrameBuffers++;
   }
+  MetalTextureRenderableResource(const MetalTextureRenderableResource&) =
+    delete;
+  auto operator=(const MetalTextureRenderableResource&)
+    -> MetalTextureRenderableResource& = delete;
+  MetalTextureRenderableResource(MetalTextureRenderableResource&&) = delete;
+  auto operator=(MetalTextureRenderableResource&&)
+    -> MetalTextureRenderableResource& = delete;
 
   ~MetalTextureRenderableResource() override {
     if (borrowedTexture != nullptr) {
@@ -98,6 +108,8 @@ class MetalTextureBackend::MetalTextureRenderableResource final
       depthTexture->create();
       if (auto* depthTarget = renderPassDescriptor->depthAttachment()) {
         depthTarget->setTexture(
+          // The texture was created by mbgl::mtl::Context above.
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
           static_cast<mbgl::mtl::Texture2D*>(depthTexture.get())
             ->getMetalTexture()
         );
@@ -107,6 +119,8 @@ class MetalTextureBackend::MetalTextureRenderableResource final
       stencilTexture->create();
       if (auto* stencilTarget = renderPassDescriptor->stencilAttachment()) {
         stencilTarget->setTexture(
+          // The texture was created by mbgl::mtl::Context above.
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
           static_cast<mbgl::mtl::Texture2D*>(stencilTexture.get())
             ->getMetalTexture()
         );
@@ -138,6 +152,8 @@ class MetalTextureBackend::MetalTextureRenderableResource final
     if (borrowedTexture != nullptr) {
       return borrowedTexture;
     }
+    // Offscreen textures are created by the Metal context for this backend.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
     return static_cast<mbgl::mtl::Texture2D*>(
              offscreenTexture->getTexture().get()
     )
@@ -219,6 +235,8 @@ MetalTextureBackend::~MetalTextureBackend() {
 auto MetalTextureBackend::getDefaultRenderable() -> mbgl::gfx::Renderable& {
   if (!resource) {
     resource = std::make_unique<MetalTextureRenderableResource>(
+      // MetalTextureBackend always creates a Metal context.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
       *this, static_cast<mbgl::mtl::Context&>(getContext()), size,
       borrowed_texture_
     );
