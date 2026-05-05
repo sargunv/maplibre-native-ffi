@@ -5,6 +5,8 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
+  site: "https://code.sargunv.dev",
+  base: "/maplibre-native-ffi",
   integrations: [
     starlight({
       title: "MapLibre Native FFI",
