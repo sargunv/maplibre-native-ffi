@@ -6,6 +6,7 @@
     "ziglang.vscode-zig",
     "llvm-vs-code-extensions.vscode-clangd",
     "bierner.markdown-mermaid",
-    "astro-build.astro-vscode"
+    "astro-build.astro-vscode",
+    "unifiedjs.vscode-mdx"
   ]
 }
