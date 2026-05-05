@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/runtime.h
- * Public C API declarations for runtime and resources.
+ * Public C API declarations for runtime, resources, and events.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_RUNTIME_H
@@ -19,7 +19,6 @@
 extern "C" {
 #endif
 
-#pragma region Runtime and resources
 typedef enum mln_network_status : uint32_t {
   MLN_NETWORK_STATUS_ONLINE = 1,
   MLN_NETWORK_STATUS_OFFLINE = 2,
@@ -648,8 +647,6 @@ MLN_API mln_status mln_runtime_run_once(mln_runtime* runtime) MLN_NOEXCEPT;
 MLN_API mln_status mln_runtime_poll_event(
   mln_runtime* runtime, mln_runtime_event* out_event, bool* out_has_event
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

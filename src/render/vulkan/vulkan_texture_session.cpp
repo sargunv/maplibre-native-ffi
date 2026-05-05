@@ -1,12 +1,19 @@
 #include <cmath>
+#include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
+#include <mbgl/gfx/headless_backend.hpp>
 #include <mbgl/util/size.hpp>
+
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
-#include "maplibre_native_c.h"
+#include "maplibre_native_c/base.h"
+#include "maplibre_native_c/texture.h"
 #include "render/render_session_common.hpp"
 #include "render/texture_session.hpp"
 #include "render/vulkan/vulkan_texture_backend.hpp"
@@ -214,13 +221,52 @@ auto validate_vulkan_handles(
   return MLN_STATUS_OK;
 }
 
-void prepare_vulkan_render_resources(mln_render_session* texture) {
-  // Renderer::render creates the Vulkan context before requesting the default
-  // renderable, so shared-device resources must be ready first.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-  static_cast<mln::core::VulkanTextureBackend&>(*texture->texture.backend)
-    .prepareRenderResources();
-}
+class VulkanTextureSessionBackend final
+    : public mln::core::TextureSessionBackend {
+ public:
+  VulkanTextureSessionBackend(
+    const mln_vulkan_owned_texture_descriptor& descriptor, mbgl::Size size
+  )
+      : backend_(descriptor, size) {}
+
+  VulkanTextureSessionBackend(
+    const mln_vulkan_borrowed_texture_descriptor& descriptor, mbgl::Size size
+  )
+      : backend_(descriptor, size) {}
+
+  auto headless_backend() -> mbgl::gfx::HeadlessBackend& override {
+    return backend_;
+  }
+
+  void prepare_render_resources() override {
+    // Renderer::render creates the Vulkan context before requesting the default
+    // renderable, so shared-device resources must be ready first.
+    backend_.prepareRenderResources();
+  }
+
+  auto acquire_vulkan_owned_frame(
+    const mln_render_session& texture, mln_vulkan_owned_texture_frame& out_frame
+  ) -> mln_status override {
+    const auto resources = backend_.frame_resources();
+    out_frame = mln_vulkan_owned_texture_frame{
+      .size = sizeof(mln_vulkan_owned_texture_frame),
+      .generation = texture.generation,
+      .width = texture.physical_width,
+      .height = texture.physical_height,
+      .scale_factor = texture.scale_factor,
+      .frame_id = texture.texture.next_frame_id,
+      .image = resources.image,
+      .image_view = resources.image_view,
+      .device = resources.device,
+      .format = static_cast<uint32_t>(resources.format),
+      .layout = static_cast<uint32_t>(vk::ImageLayout::eShaderReadOnlyOptimal),
+    };
+    return MLN_STATUS_OK;
+  }
+
+ private:
+  mln::core::VulkanTextureBackend backend_;
+};
 
 }  // namespace
 
@@ -304,10 +350,9 @@ auto vulkan_owned_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Vulkan;
   session->texture.mode = TextureSessionMode::Owned;
-  session->texture.backend = std::make_unique<VulkanTextureBackend>(
+  session->texture.backend = std::make_unique<VulkanTextureSessionBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->texture.prepare_render_resources = prepare_vulkan_render_resources;
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{
@@ -372,10 +417,9 @@ auto vulkan_borrowed_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Vulkan;
   session->texture.mode = TextureSessionMode::Borrowed;
-  session->texture.backend = std::make_unique<VulkanTextureBackend>(
+  session->texture.backend = std::make_unique<VulkanTextureSessionBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->texture.prepare_render_resources = prepare_vulkan_render_resources;
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{
@@ -416,24 +460,11 @@ auto vulkan_owned_texture_acquire_frame(
     return MLN_STATUS_UNSUPPORTED;
   }
 
-  // The Vulkan acquire path is only valid for owned Vulkan sessions, and this
-  // Linux build only creates Vulkan sessions.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-  auto& backend = static_cast<VulkanTextureBackend&>(*texture->texture.backend);
-  const auto resources = backend.frame_resources();
-  *out_frame = mln_vulkan_owned_texture_frame{
-    .size = sizeof(mln_vulkan_owned_texture_frame),
-    .generation = texture->generation,
-    .width = texture->physical_width,
-    .height = texture->physical_height,
-    .scale_factor = texture->scale_factor,
-    .frame_id = texture->texture.next_frame_id,
-    .image = resources.image,
-    .image_view = resources.image_view,
-    .device = resources.device,
-    .format = static_cast<uint32_t>(resources.format),
-    .layout = static_cast<uint32_t>(vk::ImageLayout::eShaderReadOnlyOptimal),
-  };
+  const auto acquire_status =
+    texture->texture.backend->acquire_vulkan_owned_frame(*texture, *out_frame);
+  if (acquire_status != MLN_STATUS_OK) {
+    return acquire_status;
+  }
   texture->texture.acquired = true;
   texture->texture.acquired_frame_id = out_frame->frame_id;
   texture->texture.acquired_frame_kind = TextureSessionFrameKind::VulkanOwned;

@@ -1,3 +1,7 @@
+# https://pixi.prefix.dev/
+# Pixi supplies native packages from conda-forge so C/C++ dependencies are
+# declared in the repository. Platform SDKs such as Xcode still come from the OS.
+
 [workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]

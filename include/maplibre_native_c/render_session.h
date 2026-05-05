@@ -15,8 +15,6 @@
 extern "C" {
 #endif
 
-#pragma region Render sessions
-
 /**
  * Resizes an attached render session.
  *
@@ -235,8 +233,6 @@ MLN_API mln_status mln_json_snapshot_get(
 MLN_API void mln_json_snapshot_destroy(
   mln_json_snapshot* snapshot
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

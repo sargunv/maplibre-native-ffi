@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/surface.h
- * Public C API declarations for surface sessions.
+ * Public C API declarations for surface render targets.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_SURFACE_H
@@ -13,8 +13,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#pragma region Surface sessions
 
 /** Metal native surface session attachment options. */
 typedef struct mln_metal_surface_descriptor {
@@ -72,7 +70,7 @@ mln_vulkan_surface_descriptor_default(void) MLN_NOEXCEPT;
 /**
  * Attaches a Metal native surface render target to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every surface-session call are owner-thread affine to the map owner thread.
  * The session retains descriptor->layer and optional descriptor->device. It
  * renders into the layer and presents through it. On success, *out_session
@@ -82,7 +80,7 @@ mln_vulkan_surface_descriptor_default(void) MLN_NOEXCEPT;
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Metal surface sessions are not supported by
@@ -97,7 +95,7 @@ MLN_API mln_status mln_metal_surface_attach(
 /**
  * Attaches a Vulkan native surface render target to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every surface-session call are owner-thread affine to the map owner thread.
  * The session renders to descriptor->surface and presents through it. Vulkan
  * handles are borrowed and must remain valid until the session is detached or
@@ -108,7 +106,7 @@ MLN_API mln_status mln_metal_surface_attach(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Vulkan surface sessions are not supported by
@@ -119,8 +117,6 @@ MLN_API mln_status mln_vulkan_surface_attach(
   mln_map* map, const mln_vulkan_surface_descriptor* descriptor,
   mln_render_session** out_session
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

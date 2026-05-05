@@ -1,3 +1,6 @@
+# Enable broad lint families here and exclude noisy or project-inappropriate
+# rules centrally instead of scattering NOLINT comments through implementation
+# files.
 ---
 Checks:
   - -*
@@ -13,6 +16,8 @@ Checks:
   - -cppcoreguidelines-pro-type-union-access
   - -readability-magic-numbers
 CheckOptions:
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: vulkan/.*
   - key: readability-braces-around-statements.ShortStatementLines
     value: 2
   - key: readability-identifier-length.IgnoredVariableNames

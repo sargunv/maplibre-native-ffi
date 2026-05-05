@@ -1,0 +1,55 @@
+---
+title: MapLibre Native FFI
+description: Project overview.
+---
+
+MapLibre Native FFI provides an experimental C API for
+[MapLibre Native](https://github.com/maplibre/maplibre-native). It targets
+low-level language bindings and host integrations that need a C boundary instead
+of direct C++ interop.
+
+The API exposes MapLibre Native concepts directly. Framework concerns such as
+gestures, widgets, declarative UI, and application lifecycle integration belong
+in downstream adapters.
+
+## Use the Docs
+
+* Start with [Concepts](/maplibre-native-ffi/concepts/) to understand the runtime, map, render target, ownership, threading, and host integration model.
+* Read the [Usage guides](/maplibre-native-ffi/guides/installation/) for integration tasks.
+* Consult the
+  [C API reference](/maplibre-native-ffi/reference/c/) for declarations, ownership rules, and status
+  values.
+* If you are contributing, read the
+  [Development overview](/maplibre-native-ffi/development/overview/) first.
+
+## Status
+
+MapLibre Native FFI is pre-1.0. The C ABI is unstable while `mln_c_version()`
+returns `0`.
+
+The C API covers most of the MapLibre Native API surface. It excludes advanced
+extension APIs, including custom layers and shader registry access.
+
+Legend: 🟢 built and tested in CI; ❌ not yet implemented.
+
+| Platform | OpenGL            | Vulkan            | Metal             | WebGPU            |
+| -------- | ----------------- | ----------------- | ----------------- | ----------------- |
+| Linux    | ❌ [#23][issue-23] | 🟢                | -                 | ❌ [#37][issue-37] |
+| Android  | ❌ [#24][issue-24] | ❌ [#24][issue-24] | -                 | ❌ [#37][issue-37] |
+| macOS    | -                 | ❌ [#20][issue-20] | 🟢                | ❌ [#37][issue-37] |
+| iOS      | -                 | -                 | ❌ [#25][issue-25] | ❌ [#37][issue-37] |
+| Windows  | ❌ [#22][issue-22] | ❌ [#21][issue-21] | -                 | ❌ [#37][issue-37] |
+
+[issue-20]: https://github.com/sargunv/maplibre-native-ffi/issues/20
+
+[issue-21]: https://github.com/sargunv/maplibre-native-ffi/issues/21
+
+[issue-22]: https://github.com/sargunv/maplibre-native-ffi/issues/22
+
+[issue-23]: https://github.com/sargunv/maplibre-native-ffi/issues/23
+
+[issue-24]: https://github.com/sargunv/maplibre-native-ffi/issues/24
+
+[issue-25]: https://github.com/sargunv/maplibre-native-ffi/issues/25
+
+[issue-37]: https://github.com/sargunv/maplibre-native-ffi/issues/37

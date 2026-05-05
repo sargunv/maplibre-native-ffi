@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/query.h
- * Public C API declarations for rendered and source feature queries.
+ * Public C API declarations for feature queries.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_QUERY_H
@@ -15,8 +15,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#pragma region Rendered and source feature queries
 
 typedef struct mln_feature_query_result mln_feature_query_result;
 typedef struct mln_feature_extension_result mln_feature_extension_result;
@@ -282,8 +280,6 @@ MLN_API mln_status mln_feature_extension_result_get(
 MLN_API void mln_feature_extension_result_destroy(
   mln_feature_extension_result* result
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

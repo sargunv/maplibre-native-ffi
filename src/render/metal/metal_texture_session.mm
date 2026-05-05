@@ -168,21 +168,34 @@ auto validate_vulkan_borrowed_descriptor(
   return MLN_STATUS_OK;
 }
 
-auto finish_metal_render(mln_render_session* texture) -> mln_status {
-  // Metal sessions always store a Metal backend.
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-  auto& backend =
-    static_cast<mln::core::MetalTextureBackend&>(*texture->texture.backend);
-  auto* rendered_texture = backend.metal_texture();
-  if (rendered_texture == nullptr) {
-    mln::core::set_thread_error(
-      "render update did not produce a Metal texture"
-    );
-    return MLN_STATUS_INVALID_STATE;
+class MetalTextureSessionBackend final
+    : public mln::core::TextureSessionBackend {
+ public:
+  MetalTextureSessionBackend(MTL::Device* host_device, mbgl::Size size)
+      : backend_(host_device, size) {}
+
+  MetalTextureSessionBackend(MTL::Texture* borrowed_texture, mbgl::Size size)
+      : backend_(borrowed_texture, size) {}
+
+  auto headless_backend() -> mbgl::gfx::HeadlessBackend& override {
+    return backend_;
   }
-  texture->texture.rendered_native_texture = rendered_texture;
-  return MLN_STATUS_OK;
-}
+
+  auto after_render(mln_render_session& texture) -> mln_status override {
+    auto* rendered_texture = backend_.metal_texture();
+    if (rendered_texture == nullptr) {
+      mln::core::set_thread_error(
+        "render update did not produce a Metal texture"
+      );
+      return MLN_STATUS_INVALID_STATE;
+    }
+    texture.texture.rendered_native_texture = rendered_texture;
+    return MLN_STATUS_OK;
+  }
+
+ private:
+  mln::core::MetalTextureBackend backend_;
+};
 
 auto fill_frame(
   mln_render_session* texture, mln_metal_owned_texture_frame* out_frame
@@ -272,11 +285,10 @@ auto metal_owned_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Metal;
   session->texture.mode = TextureSessionMode::Owned;
-  session->texture.backend = std::make_unique<MetalTextureBackend>(
+  session->texture.backend = std::make_unique<MetalTextureSessionBackend>(
     static_cast<MTL::Device*>(descriptor->device),
     mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->texture.after_render = finish_metal_render;
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{
@@ -319,11 +331,10 @@ auto metal_borrowed_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Metal;
   session->texture.mode = TextureSessionMode::Borrowed;
-  session->texture.backend = std::make_unique<MetalTextureBackend>(
+  session->texture.backend = std::make_unique<MetalTextureSessionBackend>(
     static_cast<MTL::Texture*>(descriptor->texture),
     mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->texture.after_render = finish_metal_render;
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{

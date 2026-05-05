@@ -1,6 +1,7 @@
 /**
  * @file maplibre_native_c/map.h
- * Public C API declarations for map types, lifecycle, and style.
+ * Public C API declarations for map lifecycle, shared types, and offline
+ * regions.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_MAP_H
@@ -20,7 +21,6 @@
 extern "C" {
 #endif
 
-#pragma region Map types, lifecycle, and style
 /** Field mask values for mln_camera_options. */
 typedef enum mln_camera_option_field : uint32_t {
   MLN_CAMERA_OPTION_CENTER = 1U << 0U,
@@ -917,7 +917,7 @@ MLN_API mln_status mln_map_request_still_image(mln_map* map) MLN_NOEXCEPT;
 /**
  * Destroys a map handle on its owner thread.
  *
- * The map must not have an attached render target session.
+ * The map must not have an attached render session.
  *
  * Returns:
  * - MLN_STATUS_OK on success.
@@ -966,8 +966,6 @@ mln_map_set_style_url(mln_map* map, const char* url) MLN_NOEXCEPT;
  */
 MLN_API mln_status
 mln_map_set_style_json(mln_map* map, const char* json) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,25 @@
+[tasks."api:c"]
+run = [
+  "rm -rf api/c/gen src/content/docs/api/c src/content/docs/api/c.md src/content/docs/reference/c src/content/docs/reference/c.md",
+  "mkdir -p api/c/gen src/content/docs/reference",
+  "doxygen api/c/Doxyfile",
+  "pnpm exec moxygen --quiet --frontmatter --html-anchors --source-root ../include --templates api/c/templates/cpp --output src/content/docs/reference/c.md api/c/gen/xml",
+]
+
+[tasks.dev]
+depends = ["api:c"]
+run = "pnpm exec astro dev"
+
+[tasks.start]
+depends = ["api:c"]
+run = "pnpm exec astro dev"
+
+[tasks.build]
+depends = ["api:c"]
+run = "pnpm exec astro build"
+
+[tasks.preview]
+run = "pnpm exec astro preview"
+
+[tasks.astro]
+run = "pnpm exec astro"

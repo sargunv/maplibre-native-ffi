@@ -1,11 +1,21 @@
 build*/
-docs/api/c/
+docs/api/c/gen/
+docs/src/content/docs/api/c.md
+docs/src/content/docs/reference/c.md
 .zig-cache/
 zig-out/
 zig-pkg/
 *.spv
-workpad.md
 
 # Fetched on demand by CMake (see cmake/mln_version.cmake) when
 # MLN_SOURCE_DIR is not set externally.
 third_party/maplibre-native/
+
+# astro / node
+dist/
+.astro/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

@@ -1,3 +1,6 @@
+// hk orchestrates checks for pre-commit, `mise run check`, and `mise run fix`.
+// Tools used here must be installed by `mise install`.
+
 amends "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Config.pkl"
 
 import "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Builtins.pkl"
@@ -19,6 +22,12 @@ local commonSteps = new Mapping<String, Step> {
     profiles = commonProfiles
     check = "jvl check {{files}}"
   }
+  ["vp-check"] {
+    glob = List("docs/**/*.ts", "docs/**/*.tsx", "docs/**/*.js", "docs/**/*.jsx", "docs/**/*.mjs", "docs/**/*.cjs")
+    profiles = commonProfiles
+    check = "pnpm --dir docs exec vp check --no-fmt"
+    fix = "pnpm --dir docs exec vp check --no-fmt --fix"
+  }
   ["zig-ast-check"] {
     glob = List("**/*.zig")
     profiles = commonProfiles
@@ -28,20 +37,21 @@ local commonSteps = new Mapping<String, Step> {
 
 local nativeSteps = new Mapping<String, Step> {
   ["clang-tidy"] {
-    glob = List("src/**/*.cpp", "src/**/*.cc", "src/**/*.cxx", "src/**/*.hpp")
-    exclude = List("src/render/vulkan/**")
+    glob = List("**/*.cpp", "**/*.cc", "**/*.cxx", "**/*.hpp")
+    exclude = List("src/render/metal/**", "src/render/vulkan/**")
     profiles = nativeProfiles
     check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
   }
-  ["clang-tidy-public-headers"] {
-    glob = List("include/**/*.h", "include/**/*.hpp")
+  ["clang-tidy-macos"] {
+    glob = List("src/render/metal/**/*.mm")
     profiles = nativeProfiles
-    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy-public-headers -p build {{files}}"
+    step_condition = "exec('test \"$(uname -s)\" = Darwin && printf true || printf false') == 'true'"
+    check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
   }
-  ["clang-tidy-vulkan"] {
+  ["clang-tidy-linux"] {
     glob = List("src/render/vulkan/**/*.cpp", "src/render/vulkan/**/*.hpp")
     profiles = nativeProfiles
-    step_condition = "exec('uname -s') == 'Linux'"
+    step_condition = "exec('test \"$(uname -s)\" = Linux && printf true || printf false') == 'true'"
     check = "pixi run clang-tidy --quiet --config-file=.clang-tidy -p build {{files}}"
   }
 }

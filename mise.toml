@@ -1,3 +1,7 @@
+# https://mise.jdx.dev
+# Mise is the contributor entrypoint: it pins tools, installs hooks, and runs
+# repository tasks.
+
 experimental_monorepo_root = true
 
 [settings]
@@ -5,7 +9,7 @@ pin = true
 experimental = true
 
 [monorepo]
-config_roots = ["examples/*"]
+config_roots = ["examples/*", "docs"]
 
 [tools]
 hk = "1.40.0"
@@ -17,11 +21,15 @@ pixi = "0.67.2"
 zig = "0.16.0"
 "conda:doxygen" = "1.13.2"
 actionlint = "1.7.8"
+pnpm = "10.33.2"
+node = "24.11.0"
+usage = "3.3.0"
 
 [hooks]
 postinstall = [
   "hk install --mise",
   "pixi install --locked",
+  "cd docs && pnpm install",
 ]
 
 [tasks.configure]
@@ -45,11 +53,3 @@ run = "hk check --all"
 
 [tasks.fix]
 run = "hk fix --all"
-
-[tasks."docs:c"]
-run = "doxygen docs/api/Doxyfile"
-
-[tasks._verify-clean-worktree]
-description = "Verify the worktree is clean after the task run"
-hide = true
-run = "git update-index -q --refresh && git diff --exit-code && git diff --cached --exit-code"

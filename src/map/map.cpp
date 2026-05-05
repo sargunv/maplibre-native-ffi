@@ -2706,7 +2706,7 @@ auto destroy_map(mln_map* map) -> mln_status {
   }
 
   if (map->render_target_session != nullptr) {
-    set_thread_error("map still has an attached render target session");
+    set_thread_error("map still has an attached render session");
     return MLN_STATUS_INVALID_STATE;
   }
 
@@ -2805,11 +2805,11 @@ auto map_attach_render_target_session(mln_map* map, void* session)
     return status;
   }
   if (session == nullptr) {
-    set_thread_error("render target session must not be null");
+    set_thread_error("render session must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   if (map->render_target_session != nullptr) {
-    set_thread_error("map already has an attached render target session");
+    set_thread_error("map already has an attached render session");
     return MLN_STATUS_INVALID_STATE;
   }
   map->render_target_session = session;
@@ -2823,11 +2823,11 @@ auto map_detach_render_target_session(mln_map* map, void* session)
     return status;
   }
   if (session == nullptr) {
-    set_thread_error("render target session must not be null");
+    set_thread_error("render session must not be null");
     return MLN_STATUS_INVALID_ARGUMENT;
   }
   if (map->render_target_session != session) {
-    set_thread_error("render target session is not attached to this map");
+    set_thread_error("render session is not attached to this map");
     return MLN_STATUS_INVALID_STATE;
   }
   map->render_target_session = nullptr;

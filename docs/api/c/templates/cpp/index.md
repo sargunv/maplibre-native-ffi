@@ -1,0 +1,40 @@
+---
+title: "C API"
+description: "Public C ABI reference for MapLibre Native FFI."
+---
+
+# API Reference
+
+{{#if filtered.compounds}}
+| Name | Description |
+|------|-------------|
+{{#each filtered.compounds}}| [`{{shortname name}}`](#{{cleanId refid name}}) | {{cell summary}} |
+{{/each}}
+{{/if}}
+
+{{#each filtered.sections}}
+## {{label}}
+
+{{#each members}}
+
+{{cleanAnchor refid name}}
+
+#### {{name}}
+
+```cpp
+{{signature}}
+```
+
+{{briefdescription}}
+
+{{#if enumvalue}}
+| Value | Description |
+|-------|-------------|
+{{#each enumvalue}}| `{{name}}` | {{summary}} |
+{{/each}}
+{{/if}}
+
+{{detaileddescription}}
+
+{{/each}}
+{{/each}}

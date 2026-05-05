@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/texture.h
- * Public C API declarations for texture sessions.
+ * Public C API declarations for texture render targets.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_TEXTURE_H
@@ -14,8 +14,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#pragma region Texture sessions
 
 /** Default texture session attachment options for a session-owned target. */
 typedef struct mln_owned_texture_descriptor {
@@ -227,7 +225,7 @@ mln_texture_image_info_default(void) MLN_NOEXCEPT;
 /**
  * Attaches an offscreen texture render target owned by the session to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every texture-session call are owner-thread affine to the map owner thread.
  * The session creates a backend-native offscreen target using the default
  * headless backend for this build. On success, *out_session receives a handle
@@ -241,7 +239,7 @@ mln_texture_image_info_default(void) MLN_NOEXCEPT;
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_NATIVE_ERROR when an internal exception is converted to status.
@@ -254,7 +252,7 @@ MLN_API mln_status mln_owned_texture_attach(
 /**
  * Attaches a Metal texture render target owned by the session to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every texture-session call are owner-thread affine to the map owner thread.
  * The session renders into a session-owned texture created on
  * descriptor->device. On success, *out_session receives a handle the caller
@@ -264,7 +262,7 @@ MLN_API mln_status mln_owned_texture_attach(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Metal texture sessions are not supported by
@@ -279,7 +277,7 @@ MLN_API mln_status mln_metal_owned_texture_attach(
 /**
  * Attaches a Metal caller-owned texture render target to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every texture-session call are owner-thread affine to the map owner thread.
  * The session renders into descriptor->texture. The caller owns the texture,
  * keeps it valid until detach or destroy, and synchronizes any use outside this
@@ -290,7 +288,7 @@ MLN_API mln_status mln_metal_owned_texture_attach(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Metal borrowed texture sessions are not
@@ -305,7 +303,7 @@ MLN_API mln_status mln_metal_borrowed_texture_attach(
 /**
  * Attaches a Vulkan texture render target owned by the session to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every texture-session call are owner-thread affine to the map owner thread.
  * The session renders into a session-owned image created on descriptor->device.
  * Vulkan handles are borrowed and must remain valid until detach or destroy. On
@@ -316,7 +314,7 @@ MLN_API mln_status mln_metal_borrowed_texture_attach(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Vulkan texture sessions are not supported by
@@ -331,7 +329,7 @@ MLN_API mln_status mln_vulkan_owned_texture_attach(
 /**
  * Attaches a Vulkan caller-owned texture render target to a map.
  *
- * The map may have at most one live render target session. The session and
+ * The map may have at most one live render session. The session and
  * every texture-session call are owner-thread affine to the map owner thread.
  * The session renders into descriptor->image through descriptor->image_view.
  * The caller owns the image and view, keeps them valid until detach or destroy,
@@ -349,7 +347,7 @@ MLN_API mln_status mln_vulkan_owned_texture_attach(
  * - MLN_STATUS_OK on success.
  * - MLN_STATUS_INVALID_ARGUMENT when map is null or not live, descriptor is
  *   null or invalid, out_session is null, or *out_session is not null.
- * - MLN_STATUS_INVALID_STATE when the map already has a render target session.
+ * - MLN_STATUS_INVALID_STATE when the map already has a render session.
  * - MLN_STATUS_WRONG_THREAD when called from a thread other than the map owner
  *   thread.
  * - MLN_STATUS_UNSUPPORTED when Vulkan borrowed texture sessions are not
@@ -489,8 +487,6 @@ MLN_API mln_status mln_metal_owned_texture_release_frame(
 MLN_API mln_status mln_vulkan_owned_texture_release_frame(
   mln_render_session* session, const mln_vulkan_owned_texture_frame* frame
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

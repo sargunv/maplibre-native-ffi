@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/style.h
- * Public C API declarations for style mutation.
+ * Public C API declarations for style sources, layers, and images.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_STYLE_H
@@ -19,8 +19,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#pragma region Style mutation
 
 typedef struct mln_style_id_list mln_style_id_list;
 
@@ -1305,8 +1303,6 @@ MLN_API mln_status mln_map_set_layer_filter(
 MLN_API mln_status mln_map_get_layer_filter(
   mln_map* map, mln_string_view layer_id, mln_json_snapshot** out_filter
 ) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

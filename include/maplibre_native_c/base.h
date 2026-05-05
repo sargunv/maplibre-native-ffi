@@ -1,6 +1,6 @@
 /**
  * @file maplibre_native_c/base.h
- * Public C API declarations for common c api contract.
+ * Public C API declarations for base ABI types and status values.
  */
 
 #ifndef MAPLIBRE_NATIVE_C_BASE_H
@@ -33,7 +33,6 @@
 extern "C" {
 #endif
 
-#pragma region Common C API contract
 /** Status values returned by status-returning functions. */
 typedef enum mln_status : int32_t {
   MLN_STATUS_OK = 0,
@@ -60,14 +59,10 @@ typedef struct mln_resource_request_handle mln_resource_request_handle;
 typedef struct mln_render_session mln_render_session;
 
 /**
- * Reports the C ABI contract version.
- *
- * The value is 0 while the ABI is unstable. Stable ABI contract editions use
- * YYYYMMDD and change only when the ABI contract changes.
+ * Reports the C ABI contract version. The value is 0 while the ABI is unstable,
+ * and will increment on each SemVer major release.
  */
 MLN_API uint32_t mln_c_version(void) MLN_NOEXCEPT;
-
-#pragma endregion
 
 #ifdef __cplusplus
 }

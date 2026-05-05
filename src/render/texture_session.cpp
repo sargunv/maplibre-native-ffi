@@ -45,6 +45,29 @@ auto validate_owned_descriptor(const mln_owned_texture_descriptor* descriptor)
   return MLN_STATUS_OK;
 }
 
+class GenericTextureSessionBackend final
+    : public mln::core::TextureSessionBackend {
+ public:
+  explicit GenericTextureSessionBackend(mbgl::Size size)
+      : backend_(
+          mbgl::gfx::HeadlessBackend::Create(
+            size, mbgl::gfx::Renderable::SwapBehaviour::Flush,
+            mbgl::gfx::ContextMode::Unique
+          )
+        ) {}
+
+  auto headless_backend() -> mbgl::gfx::HeadlessBackend& override {
+    return *backend_;
+  }
+
+  [[nodiscard]] auto is_valid() const noexcept -> bool {
+    return backend_ != nullptr;
+  }
+
+ private:
+  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend_;
+};
+
 }  // namespace
 
 namespace mln::core {
@@ -132,10 +155,14 @@ auto owned_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Generic;
   session->texture.mode = TextureSessionMode::Owned;
-  session->texture.backend = mbgl::gfx::HeadlessBackend::Create(
-    mbgl::Size{session->physical_width, session->physical_height},
-    mbgl::gfx::Renderable::SwapBehaviour::Flush, mbgl::gfx::ContextMode::Unique
+  auto backend = std::make_unique<GenericTextureSessionBackend>(
+    mbgl::Size{session->physical_width, session->physical_height}
   );
+  if (!backend->is_valid()) {
+    set_thread_error("texture session backend is not available");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  session->texture.backend = std::move(backend);
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{
@@ -199,7 +226,7 @@ auto texture_read_premultiplied_rgba8(
     return MLN_STATUS_INVALID_ARGUMENT;
   }
 
-  auto* renderer_backend = texture->texture.backend->getRendererBackend();
+  auto* renderer_backend = texture->texture.backend->renderer_backend();
   if (renderer_backend == nullptr) {
     set_thread_error("texture session renderer backend is not available");
     return MLN_STATUS_INVALID_STATE;
@@ -207,7 +234,7 @@ auto texture_read_premultiplied_rgba8(
   auto guard = mbgl::gfx::BackendScope{
     *renderer_backend, mbgl::gfx::BackendScope::ScopeType::Implicit
   };
-  auto image = texture->texture.backend->readStillImage();
+  auto image = texture->texture.backend->headless_backend().readStillImage();
   if (!image.valid()) {
     set_thread_error("texture readback did not produce an image");
     return MLN_STATUS_INVALID_STATE;
