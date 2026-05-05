@@ -917,7 +917,7 @@ MLN_API mln_status mln_map_request_still_image(mln_map* map) MLN_NOEXCEPT;
 /**
  * Destroys a map handle on its owner thread.
  *
- * The map must not have an attached render target session.
+ * The map must not have an attached render session.
  *
  * Returns:
  * - MLN_STATUS_OK on success.

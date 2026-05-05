@@ -155,7 +155,7 @@ documented return behavior.
 
 Keep map state separate from render targets. `mln_map` owns style, camera,
 observer events, and render invalidation state. Each map may have one live
-render target session; that session owns backend-bound resources.
+render session; that session owns backend-bound resources.
 
 Texture sessions render offscreen into session-owned backend targets or
 caller-owned borrowed backend targets. Surface sessions render and present

@@ -5,53 +5,46 @@ description: Core mental models for using and wrapping MapLibre Native FFI.
 
 ## Mental Model
 
-MapLibre Native FFI exposes MapLibre Native as direct concepts, not as a full
-application SDK.
+MapLibre Native FFI exposes MapLibre Native concepts directly. It is intended to
+underpin framework and language integrations with a common portable API surface.
+
+Three concepts form the core API: the runtime, the map, and the render session.
 
 The runtime owns scheduler state and event storage for one host owner thread.
 The map owns style, camera, observer events, and render invalidation state. A
-render target session attaches backend resources to a map for surface or texture
-rendering.
-
-Host integrations own application lifecycle, widgets, gestures, input routing,
-and higher-level async models.
+render session renders a map to a surface or texture render target.
 
 Core relationships:
 
 - A runtime is host-pumped from its owner thread.
-- A map owns map state independently of any particular render target.
-- A render target session owns or borrows backend resources while attached.
+- A map belongs to a runtime and keeps map state independent of any particular
+  render target.
+- A render session connects a map to a surface or texture render target.
 - Events are copied into runtime-owned storage and drained by the host.
 - Bindings sit above the C API and preserve the same core model.
 
-## API Scope
+## Scope
 
-The C API exposes core MapLibre Native features on supported native platforms:
+MapLibre Native FFI provides a C API exposing core MapLibre Native features:
 runtime, resources, maps, cameras, events, diagnostics, logging, render target
 primitives, texture readback, and low-level extension points such as resource
 providers and URL transforms.
-
-The C API excludes convenience APIs such as snapshotting and platform
-integrations such as gestures and device sensors.
 
 Language bindings sit directly above the C API. They manage C handles, struct
 initialization, scoped lifetimes, status codes, diagnostics, borrowed data,
 events, threading, and event draining in the target language.
 
-Bindings preserve the C API's concepts. Higher-level adapters may provide full
-application SDKs, async models over runtime events, view lifecycle integrations,
-convenience workflows, or new abstractions.
+The FFI bindings here preserve the C API's concepts. Higher-level adapters built
+on this project may provide full application SDKs, async models over runtime
+events, view lifecycle integrations, convenience workflows, or new abstractions.
 
 ## Runtime, Threading, And Events
 
 The runtime and map use a host-pumped model. Runtime creation records the owner
-thread. Runtime, map, map-projection, and render-target-session calls that touch
+thread. Runtime, map, projection, style, and render session calls that touch
 thread-affine state validate the owner thread.
 
-MapLibre's `RunLoop` is owner-thread scheduler state. Each owner thread may hold
-one live runtime, and the host pumps work through that runtime.
-
-Calls return status for synchronous acceptance or failure. The runtime reports
+Synchronous calls return status for acceptance or failure. The runtime reports
 later native work through copied events that the host drains explicitly.
 
 Operation shapes:
@@ -82,7 +75,7 @@ contracts on each function and type.
 
 Map state is separate from render targets. An `mln_map` owns style, camera,
 observer events, and render invalidation state. Each map may have one live
-render target session, and that session owns backend-bound rendering resources.
+render session, and that session owns backend-bound rendering resources.
 
 Texture sessions render offscreen into session-owned backend targets or
 caller-owned borrowed backend targets. Surface sessions render and present
