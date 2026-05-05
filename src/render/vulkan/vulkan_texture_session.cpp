@@ -1,8 +1,14 @@
 #include <cmath>
+#include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
+#include <mbgl/gfx/headless_backend.hpp>
 #include <mbgl/util/size.hpp>
+
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "diagnostics/diagnostics.hpp"
 #include "map/map.hpp"
@@ -258,7 +264,7 @@ class VulkanTextureSessionBackend final
   }
 
  private:
-  VulkanTextureBackend backend_;
+  mln::core::VulkanTextureBackend backend_;
 };
 
 }  // namespace

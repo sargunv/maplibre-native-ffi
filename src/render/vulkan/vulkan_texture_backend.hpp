@@ -7,7 +7,7 @@
 #include <mbgl/util/size.hpp>
 #include <mbgl/vulkan/renderer_backend.hpp>
 
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include "maplibre_native_c.h"
 

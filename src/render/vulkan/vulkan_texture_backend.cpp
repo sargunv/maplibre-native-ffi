@@ -1,15 +1,21 @@
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/vulkan/buffer_resource.hpp>
 #include <mbgl/vulkan/context.hpp>
 #include <mbgl/vulkan/renderable_resource.hpp>
 #include <mbgl/vulkan/texture2d.hpp>
+
+#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "render/vulkan/vulkan_texture_backend.hpp"
 
