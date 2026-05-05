@@ -11,6 +11,9 @@ importers:
       '@astrojs/starlight':
         specifier: ^0.38.4
         version: 0.38.4(astro@6.2.1(@types/node@24.12.2)(lightningcss@1.32.0)(rollup@4.60.2)(yaml@2.8.4))
+      '@fontsource/alata':
+        specifier: ^5.2.8
+        version: 5.2.8
       astro:
         specifier: ^6.1.9
         version: 6.2.1(@types/node@24.12.2)(lightningcss@1.32.0)(rollup@4.60.2)(yaml@2.8.4)
@@ -287,6 +290,9 @@ packages:
 
   '@expressive-code/plugin-text-markers@0.41.7':
     resolution: {integrity: sha512-Ewpwuc5t6eFdZmWlFyeuy3e1PTQC0jFvw2Q+2bpcWXbOZhPLsT7+h8lsSIJxb5mS7wZko7cKyQ2RLYDyK6Fpmw==}
+
+  '@fontsource/alata@5.2.8':
+    resolution: {integrity: sha512-E+QjT/nw8t2J7qJ+20mN0b/mVc6jXDTPyZHM3/VnOLj86GA91l2whD2EgBcLU5zi5/GVp5Gyzh/RcwiwkbQ89g==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -3218,6 +3224,8 @@ snapshots:
   '@expressive-code/plugin-text-markers@0.41.7':
     dependencies:
       '@expressive-code/core': 0.41.7
+
+  '@fontsource/alata@5.2.8': {}
 
   '@img/colour@1.1.0': {}
 
