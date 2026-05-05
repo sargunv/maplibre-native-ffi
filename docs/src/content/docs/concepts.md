@@ -24,8 +24,8 @@ MapLibre Native make progress and to collect completed work.
 
 ## Map
 
-A map belongs to a runtime. It owns map state: style, camera, observer events,
-and render invalidation.
+A map belongs to a runtime. It owns map state: style documents, sources, layers,
+images, camera state, feature state, observer events, and render invalidation.
 
 A map is independent of any particular render target. Host code can create,
 configure, query, and observe the map without tying that map state to a window,
