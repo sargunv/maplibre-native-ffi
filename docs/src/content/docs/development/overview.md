@@ -47,50 +47,22 @@ The first build configures CMake and fetches MapLibre Native into
 
 ## Common Commands
 
-Build and test:
-
 ```bash
+# Build and test
 mise run test
-```
 
-Build only:
-
-```bash
+# Build only
 mise run build
-```
 
-Run checks:
-
-```bash
-mise run check
-```
-
-Run formatters and linters that may edit files:
-
-```bash
+# Run linters and formatters
 mise run fix
-```
 
-Run targeted examples when they provide evidence beyond automated tests, such as
-rendering or host integration:
+# Run examples
+mise run //examples/zig-map:run
 
-```bash
-mise run //examples/<project>:run
-```
-
-Build the documentation site and regenerate API reference pages:
-
-```bash
+# Build the documentation site
 mise run //docs:build
 ```
-
-Regenerate only the C API reference:
-
-```bash
-mise run //docs:api:c
-```
-
-Pre-commit runs the configured formatters and linters on changed files.
 
 ## How Tools Fit Together
 
