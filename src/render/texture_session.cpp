@@ -60,6 +60,10 @@ class GenericTextureSessionBackend final
     return *backend_;
   }
 
+  [[nodiscard]] auto is_valid() const noexcept -> bool {
+    return backend_ != nullptr;
+  }
+
  private:
   std::unique_ptr<mbgl::gfx::HeadlessBackend> backend_;
 };
@@ -151,9 +155,14 @@ auto owned_texture_attach(
     physical_dimension(descriptor->height, descriptor->scale_factor);
   session->texture.api_kind = TextureSessionApi::Generic;
   session->texture.mode = TextureSessionMode::Owned;
-  session->texture.backend = std::make_unique<GenericTextureSessionBackend>(
+  auto backend = std::make_unique<GenericTextureSessionBackend>(
     mbgl::Size{session->physical_width, session->physical_height}
   );
+  if (!backend->is_valid()) {
+    set_thread_error("texture session backend is not available");
+    return MLN_STATUS_UNSUPPORTED;
+  }
+  session->texture.backend = std::move(backend);
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Texture,
     RenderSessionAttachMessages{

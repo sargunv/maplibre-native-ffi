@@ -1,7 +1,3 @@
-// Vulkan-Hpp exposes vk::* wrapper types through generated headers that
-// clang-tidy include-cleaner does not map reliably.
-// NOLINTBEGIN(misc-include-cleaner)
-
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -626,5 +622,3 @@ auto metal_owned_texture_release_frame(
 }
 
 }  // namespace mln::core
-
-// NOLINTEND(misc-include-cleaner)

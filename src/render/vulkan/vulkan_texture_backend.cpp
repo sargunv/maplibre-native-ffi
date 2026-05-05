@@ -1,7 +1,3 @@
-// Vulkan-Hpp exposes vk::* wrapper types through generated headers that
-// clang-tidy include-cleaner does not map reliably.
-// NOLINTBEGIN(misc-include-cleaner)
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -562,5 +558,3 @@ auto VulkanTextureBackend::getDeviceExtensions() -> std::vector<const char*> {
 }
 
 }  // namespace mln::core
-
-// NOLINTEND(misc-include-cleaner)
