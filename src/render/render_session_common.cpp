@@ -127,9 +127,9 @@ auto validate_dimensions(
 auto renderer_backend(mln_render_session* session)
   -> mbgl::gfx::RendererBackend* {
   if (session->kind == mln::core::RenderSessionKind::Surface) {
-    return session->surface.backend.get();
+    return &session->surface.backend->renderer_backend();
   }
-  return session->texture.backend->getRendererBackend();
+  return session->texture.backend->renderer_backend();
 }
 
 auto validate_renderer_backend(mln_render_session* session)
@@ -805,11 +805,9 @@ auto render_session_resize(
   const auto physical_width = physical_dimension(width, scale_factor);
   const auto physical_height = physical_dimension(height, scale_factor);
   if (session->kind == RenderSessionKind::Surface) {
-    if (session->surface.resize_backend != nullptr) {
-      session->surface.resize_backend(session, physical_width, physical_height);
-    }
+    session->surface.backend->resize(physical_width, physical_height);
   } else {
-    session->texture.backend->setSize(
+    session->texture.backend->headless_backend().setSize(
       mbgl::Size{physical_width, physical_height}
     );
     session->texture.rendered_native_texture = nullptr;
@@ -848,11 +846,8 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
     return MLN_STATUS_INVALID_STATE;
   }
 
-  if (
-    session->kind == RenderSessionKind::Texture &&
-    session->texture.prepare_render_resources != nullptr
-  ) {
-    session->texture.prepare_render_resources(session);
+  if (session->kind == RenderSessionKind::Texture) {
+    session->texture.backend->prepare_render_resources();
   }
   auto* backend = renderer_backend(session);
   if (backend == nullptr) {
@@ -871,11 +866,8 @@ auto render_session_render_update(mln_render_session* session) -> mln_status {
   }
 
   session->renderer->render(update);
-  if (
-    session->kind == RenderSessionKind::Texture &&
-    session->texture.after_render != nullptr
-  ) {
-    const auto after_status = session->texture.after_render(session);
+  if (session->kind == RenderSessionKind::Texture) {
+    const auto after_status = session->texture.backend->after_render(*session);
     if (after_status != MLN_STATUS_OK) {
       return after_status;
     }

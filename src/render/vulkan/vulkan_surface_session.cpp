@@ -379,12 +379,25 @@ class VulkanSurfaceBackend final : public mbgl::vulkan::RendererBackend,
   mln_vulkan_surface_descriptor descriptor_;
 };
 
-void resize_vulkan_surface(
-  mln_render_session* surface, uint32_t physical_width, uint32_t physical_height
-) {
-  static_cast<VulkanSurfaceBackend&>(*surface->surface.backend)
-    .setSize(mbgl::Size{physical_width, physical_height});
-}
+class VulkanSurfaceSessionBackend final
+    : public mln::core::SurfaceSessionBackend {
+ public:
+  VulkanSurfaceSessionBackend(
+    const mln_vulkan_surface_descriptor& descriptor, mbgl::Size size
+  )
+      : backend_(descriptor, size) {}
+
+  auto renderer_backend() -> mbgl::gfx::RendererBackend& override {
+    return backend_;
+  }
+
+  void resize(uint32_t physical_width, uint32_t physical_height) override {
+    backend_.setSize(mbgl::Size{physical_width, physical_height});
+  }
+
+ private:
+  VulkanSurfaceBackend backend_;
+};
 
 }  // namespace
 
@@ -461,10 +474,9 @@ auto vulkan_surface_attach(
     physical_dimension(descriptor->width, descriptor->scale_factor);
   session->physical_height =
     physical_dimension(descriptor->height, descriptor->scale_factor);
-  session->surface.backend = std::make_unique<VulkanSurfaceBackend>(
+  session->surface.backend = std::make_unique<VulkanSurfaceSessionBackend>(
     *descriptor, mbgl::Size{session->physical_width, session->physical_height}
   );
-  session->surface.resize_backend = resize_vulkan_surface;
   return attach_render_session(
     std::move(session), out_session, RenderSessionKind::Surface,
     RenderSessionAttachMessages{
