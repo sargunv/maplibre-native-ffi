@@ -14,6 +14,8 @@
 #include "diagnostics/diagnostics.hpp"
 #include "maplibre_native_c.h"
 
+struct mln_render_session;
+
 namespace mln::core {
 
 enum class RenderSessionKind : uint8_t { Surface, Texture };
@@ -21,18 +23,52 @@ enum class TextureSessionApi : uint8_t { Generic, Metal, Vulkan };
 enum class TextureSessionFrameKind : uint8_t { None, MetalOwned, VulkanOwned };
 enum class TextureSessionMode : uint8_t { Owned, Borrowed };
 
-using SurfaceSessionResizeCallback =
-  void (*)(mln_render_session*, uint32_t, uint32_t);
-using TextureSessionPrepareCallback = void (*)(mln_render_session*);
-using TextureSessionAfterRenderCallback = mln_status (*)(mln_render_session*);
+class SurfaceSessionBackend {
+ public:
+  SurfaceSessionBackend() = default;
+  SurfaceSessionBackend(const SurfaceSessionBackend&) = delete;
+  auto operator=(const SurfaceSessionBackend&) -> SurfaceSessionBackend& = delete;
+  SurfaceSessionBackend(SurfaceSessionBackend&&) = delete;
+  auto operator=(SurfaceSessionBackend&&) -> SurfaceSessionBackend& = delete;
+  virtual ~SurfaceSessionBackend() = default;
+
+  virtual auto renderer_backend() -> mbgl::gfx::RendererBackend& = 0;
+  virtual void resize(uint32_t physical_width, uint32_t physical_height) = 0;
+};
+
+class TextureSessionBackend {
+ public:
+  TextureSessionBackend() = default;
+  TextureSessionBackend(const TextureSessionBackend&) = delete;
+  auto operator=(const TextureSessionBackend&) -> TextureSessionBackend& = delete;
+  TextureSessionBackend(TextureSessionBackend&&) = delete;
+  auto operator=(TextureSessionBackend&&) -> TextureSessionBackend& = delete;
+  virtual ~TextureSessionBackend() = default;
+
+  virtual auto headless_backend() -> mbgl::gfx::HeadlessBackend& = 0;
+  virtual auto renderer_backend() -> mbgl::gfx::RendererBackend* {
+    return headless_backend().getRendererBackend();
+  }
+  virtual void prepare_render_resources() {}
+  virtual auto after_render(mln_render_session& session) -> mln_status {
+    (void)session;
+    return MLN_STATUS_OK;
+  }
+  virtual auto acquire_vulkan_owned_frame(
+    const mln_render_session& session, mln_vulkan_owned_texture_frame& out_frame
+  ) -> mln_status {
+    (void)session;
+    (void)out_frame;
+    return MLN_STATUS_UNSUPPORTED;
+  }
+};
 
 struct RenderSurfaceState {
-  std::unique_ptr<mbgl::gfx::RendererBackend> backend = nullptr;
-  SurfaceSessionResizeCallback resize_backend = nullptr;
+  std::unique_ptr<SurfaceSessionBackend> backend = nullptr;
 };
 
 struct RenderTextureState {
-  std::unique_ptr<mbgl::gfx::HeadlessBackend> backend = nullptr;
+  std::unique_ptr<TextureSessionBackend> backend = nullptr;
   uint64_t next_frame_id = 1;
   uint64_t acquired_frame_id = 0;
   bool acquired = false;
@@ -41,8 +77,6 @@ struct RenderTextureState {
   TextureSessionMode mode = TextureSessionMode::Owned;
   void* rendered_native_texture = nullptr;
   void* acquired_native_texture = nullptr;
-  TextureSessionPrepareCallback prepare_render_resources = nullptr;
-  TextureSessionAfterRenderCallback after_render = nullptr;
 };
 
 }  // namespace mln::core
