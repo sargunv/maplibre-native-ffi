@@ -2,7 +2,7 @@
 title: Control the Camera
 description: Planned guide for camera state, transitions, fitting, and coordinates.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 This planned guide will show how to read and set camera state, apply

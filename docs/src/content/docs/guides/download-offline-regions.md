@@ -2,7 +2,7 @@
 title: Download Offline Regions
 description: Planned guide for creating, observing, updating, and deleting offline regions.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 This planned guide will show how to create offline regions, observe download

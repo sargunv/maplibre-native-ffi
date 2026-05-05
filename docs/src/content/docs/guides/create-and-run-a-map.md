@@ -2,7 +2,7 @@
 title: Create and Run a Map
 description: Planned guide for the minimum host-owned map lifecycle.
 sidebar:
-  order: 1
+  order: 2
 ---
 
 This planned guide will show how to create a runtime, create a map, load a style

@@ -2,7 +2,7 @@
 title: Render to a Surface
 description: Planned guide for rendering and presenting through native surfaces.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 This planned guide will show how to attach a native surface render target,

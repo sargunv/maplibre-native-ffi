@@ -2,7 +2,7 @@
 title: Configure Resource Loading
 description: Planned guide for resource providers, URL transforms, network status, and cache paths.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 This planned guide will show how to configure resource loading before maps are
