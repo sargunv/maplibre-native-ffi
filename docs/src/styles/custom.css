@@ -1,3 +1,5 @@
+@import "@fontsource/alata/400.css";
+
 /* Dark mode colors. */
 :root {
   --sl-color-accent-low: #002a30;
@@ -26,4 +28,9 @@
   --sl-color-gray-6: #e3e5e8;
   --sl-color-gray-7: #f1f3f5;
   --sl-color-black: #ffffff;
+}
+
+.site-title {
+  font-family: "Alata", var(--sl-font-system);
+  font-weight: 400;
 }
